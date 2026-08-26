@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800" role="img" aria-label="A bordo">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0E7C86"/>
+      <stop offset="100%" stop-color="#7FD3D0"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="800" fill="url(#g)"/>
+  <g fill="#FFFFFF" opacity="0.14">
+    <path d="M0 620c120-40 200 40 320 0s200 40 320 0 200 40 320 0 200 40 240 20v160H0z"/>
+    <path d="M0 690c140-36 220 36 340 0s200 36 320 0 200 36 320 0 180 26 220 12v98H0z" opacity="0.7"/>
+  </g>
+  <circle cx="1010" cy="180" r="86" fill="#FFFFFF" opacity="0.16"/>
+  <text x="80" y="392" font-family="Verdana,Helvetica,sans-serif" font-size="62" font-weight="700" fill="#FFFFFF">A bordo</text>
+  <text x="80" y="452" font-family="Verdana,Helvetica,sans-serif" font-size="30" fill="#FFFFFF" opacity="0.82">Lancha 30 pés</text>
+  <text x="80" y="740" font-family="Verdana,Helvetica,sans-serif" font-size="22" letter-spacing="4" fill="#FFFFFF" opacity="0.7">IMAGEM DE EXEMPLO</text>
+</svg>

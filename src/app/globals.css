@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-display: 'Bricolage Grotesque', 'Segoe UI', system-ui, sans-serif;
+  --font-body: 'Instrument Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-white font-sans text-ink antialiased;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-display tracking-tight;
+    font-optical-sizing: auto;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-sun ring-offset-2 ring-offset-white;
+  }
+}
+
+@layer components {
+  .shell {
+    @apply mx-auto w-full max-w-shell px-5 sm:px-6 lg:px-8;
+  }
+
+  .eyebrow {
+    @apply font-sans text-xs font-semibold uppercase tracking-[0.18em] text-sea;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-full font-semibold transition-colors duration-150;
+  }
+
+  .btn-primary {
+    @apply btn bg-sun px-6 py-3 text-white hover:bg-sun-dark;
+  }
+
+  .btn-secondary {
+    @apply btn border border-ink/15 bg-white px-6 py-3 text-ink hover:border-ink/40;
+  }
+
+  .btn-ghost {
+    @apply btn px-4 py-2 text-ink hover:bg-foam;
+  }
+
+  /* Assinatura visual: o cartão de embarque, usado na seção de embarque
+     e no resumo lateral da página do passeio. */
+  .boarding-card {
+    @apply relative overflow-hidden rounded-card bg-ink text-white;
+  }
+
+  /* A linha picotada com os furos das laterais, como em um bilhete. */
+  .perforation {
+    @apply relative border-t border-dashed border-white/30;
+  }
+
+  .perforation::before,
+  .perforation::after {
+    content: '';
+    @apply absolute h-7 w-7 -translate-y-1/2 rounded-full bg-white;
+    top: 0;
+  }
+
+  .perforation::before {
+    left: -0.875rem;
+  }
+
+  .perforation::after {
+    right: -0.875rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
