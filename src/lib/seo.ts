@@ -8,6 +8,11 @@ interface PageSeo {
   image?: string;
 }
 
+/** Imagens do mock são caminho relativo (`/img/...`); fotos reais do NauticFlow já são URL absoluta (signed URL). */
+function absoluteImageUrl(image: string): string {
+  return /^https?:\/\//.test(image) ? image : `${site.url}${image}`;
+}
+
 /** Metadata padrão de página, com canonical e Open Graph consistentes. */
 export function pageMetadata({ title, description, path, image }: PageSeo): Metadata {
   const url = `${site.url}${path}`;
@@ -22,7 +27,7 @@ export function pageMetadata({ title, description, path, image }: PageSeo): Meta
       siteName: site.name,
       locale: 'pt_BR',
       type: 'website',
-      images: image ? [{ url: `${site.url}${image}` }] : undefined,
+      images: image ? [{ url: absoluteImageUrl(image) }] : undefined,
     },
     twitter: {
       card: 'summary_large_image',

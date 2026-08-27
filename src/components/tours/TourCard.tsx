@@ -1,6 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
-import { Clock, MapPin, ShieldCheck } from 'lucide-react';
+import { Clock, ImageOff, MapPin, ShieldCheck } from 'lucide-react';
 import type { TourWithRelations } from '@/types';
 import { formatDuration } from '@/lib/format';
 import { routes } from '@/lib/routes';
@@ -21,14 +21,20 @@ export function TourCard({ tour, priority = false }: TourCardProps) {
   return (
     <article className="group relative flex h-full flex-col overflow-hidden rounded-card border border-ink/10 bg-white shadow-card transition-shadow duration-200 hover:shadow-lift">
       <div className="relative aspect-[4/3] overflow-hidden bg-foam">
-        <Image
-          src={cover.url}
-          alt={cover.alt}
-          fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-          priority={priority}
-          className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-        />
+        {cover ? (
+          <Image
+            src={cover.url}
+            alt={cover.alt}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            priority={priority}
+            className="object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-ink/25">
+            <ImageOff size={32} aria-hidden />
+          </div>
+        )}
         {mainCategory ? (
           <span className="absolute left-3 top-3 inline-flex items-center gap-1.5 rounded-full bg-white/95 px-3 py-1 text-xs font-semibold text-ink shadow-sm">
             <span aria-hidden>{mainCategory.icon}</span>

@@ -21,11 +21,14 @@ export default async function HomePage() {
     listDestinations(),
     listCategories(),
     listFeaturedTours(6),
-    listTours(),
+    // Limite alto só para a contagem por destino na home. Numa escala maior
+    // isso deveria virar uma métrica agregada própria da API, não uma
+    // listagem paginada usada como proxy (ver docs/AUDITORIA-PRE-INTEGRACAO.md).
+    listTours({ limit: 100 }),
   ]);
 
   const countByDestination = new Map<string, number>();
-  allTours.forEach((tour) => {
+  allTours.tours.forEach((tour) => {
     countByDestination.set(
       tour.destinationSlug,
       (countByDestination.get(tour.destinationSlug) ?? 0) + 1,
@@ -81,32 +84,36 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <Section
-        eyebrow="Destinos"
-        title="Para onde você vai"
-        description="Cada destino tem um tipo de mar e um tipo de passeio. Comece pela cidade e refine depois."
-        action={{ label: 'Ver todos os destinos', href: routes.destinations() }}
-      >
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {destinations.map((destination) => (
-            <DestinationCard
-              key={destination.slug}
-              destination={destination}
-              tourCount={countByDestination.get(destination.slug)}
-            />
-          ))}
-        </div>
-      </Section>
+      {destinations.length > 0 ? (
+        <Section
+          eyebrow="Destinos"
+          title="Para onde você vai"
+          description="Cada destino tem um tipo de mar e um tipo de passeio. Comece pela cidade e refine depois."
+          action={{ label: 'Ver todos os destinos', href: routes.destinations() }}
+        >
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+            {destinations.map((destination) => (
+              <DestinationCard
+                key={destination.slug}
+                destination={destination}
+                tourCount={countByDestination.get(destination.slug)}
+              />
+            ))}
+          </div>
+        </Section>
+      ) : null}
 
-      <Section
-        eyebrow="Mais procurados"
-        title="Passeios em destaque"
-        description="Seleção do que mais sai nesta temporada, de operadores que já rodam com agenda cheia."
-        action={{ label: 'Ver todos os passeios', href: routes.tours() }}
-        className="bg-sand"
-      >
-        <TourGrid tours={featured} />
-      </Section>
+      {featured.length > 0 ? (
+        <Section
+          eyebrow="Mais procurados"
+          title="Passeios em destaque"
+          description="Seleção do que mais sai nesta temporada, de operadores que já rodam com agenda cheia."
+          action={{ label: 'Ver todos os passeios', href: routes.tours() }}
+          className="bg-sand"
+        >
+          <TourGrid tours={featured} />
+        </Section>
+      ) : null}
 
       <Section
         eyebrow="Categorias"

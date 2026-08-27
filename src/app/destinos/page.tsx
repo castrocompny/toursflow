@@ -1,6 +1,7 @@
 import { listDestinations, listTours } from '@/data/repository';
 import { DestinationCard } from '@/components/destinations/DestinationCard';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { pageMetadata } from '@/lib/seo';
 import { routes } from '@/lib/routes';
 
@@ -12,10 +13,10 @@ export const metadata = pageMetadata({
 });
 
 export default async function DestinationsPage() {
-  const [destinations, tours] = await Promise.all([listDestinations(), listTours()]);
+  const [destinations, tours] = await Promise.all([listDestinations(), listTours({ limit: 100 })]);
 
   const countByDestination = new Map<string, number>();
-  tours.forEach((tour) => {
+  tours.tours.forEach((tour) => {
     countByDestination.set(
       tour.destinationSlug,
       (countByDestination.get(tour.destinationSlug) ?? 0) + 1,
@@ -34,17 +35,27 @@ export default async function DestinationsPage() {
         </p>
       </header>
 
-      <div className="mt-10 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {destinations.map((destination) => (
-          <div key={destination.slug} className="space-y-3">
-            <DestinationCard
-              destination={destination}
-              tourCount={countByDestination.get(destination.slug)}
-              size="lg"
-            />
-            <p className="text-sm text-ink-muted">{destination.tagline}</p>
+      <div className="mt-10">
+        {destinations.length > 0 ? (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {destinations.map((destination) => (
+              <div key={destination.slug} className="space-y-3">
+                <DestinationCard
+                  destination={destination}
+                  tourCount={countByDestination.get(destination.slug)}
+                  size="lg"
+                />
+                <p className="text-sm text-ink-muted">{destination.tagline}</p>
+              </div>
+            ))}
           </div>
-        ))}
+        ) : (
+          <EmptyState
+            title="Ainda não há destinos publicados"
+            description="Os operadores estão sendo cadastrados. Volte em breve para ver os destinos disponíveis."
+            action={{ label: 'Ver todos os passeios', href: routes.tours() }}
+          />
+        )}
       </div>
     </div>
   );

@@ -1,6 +1,7 @@
 'use client';
 
 import Image from 'next/image';
+import { ImageOff } from 'lucide-react';
 import { useState } from 'react';
 import type { TourImage } from '@/types';
 
@@ -17,7 +18,17 @@ export function TourGallery({ images, title }: TourGalleryProps) {
   const [active, setActive] = useState(0);
   const current = images[active] ?? images[0];
 
-  if (!current) return null;
+  if (!current) {
+    return (
+      <div
+        role="img"
+        aria-label={`${title} — sem fotos disponíveis`}
+        className="flex aspect-[16/10] items-center justify-center rounded-card bg-foam text-ink/25 sm:aspect-[16/9]"
+      >
+        <ImageOff size={40} aria-hidden />
+      </div>
+    );
+  }
 
   return (
     <section aria-label={`Fotos de ${title}`} className="space-y-3">

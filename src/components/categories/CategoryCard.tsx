@@ -12,7 +12,9 @@ export function CategoryCard({ category }: { category: Category }) {
         {category.icon}
       </span>
       <span className="font-display text-base font-bold">{category.name}</span>
-      <span className="text-sm text-ink-muted">{category.description}</span>
+      {category.description ? (
+        <span className="text-sm text-ink-muted">{category.description}</span>
+      ) : null}
     </Link>
   );
 }

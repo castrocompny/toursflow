@@ -35,10 +35,11 @@ export default async function DestinationPage({ params }: PageProps) {
   const destination = await getDestination(params.slug);
   if (!destination) notFound();
 
-  const [tours, destinations] = await Promise.all([
-    listTours({ destination: destination.slug }),
+  const [tourResult, destinations] = await Promise.all([
+    listTours({ destination: destination.slug, limit: 100 }),
     listDestinations(),
   ]);
+  const tours = tourResult.tours;
 
   return (
     <div>

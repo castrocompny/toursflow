@@ -91,6 +91,9 @@ const items = [
   ['destinations/cabo-frio.svg', 'Cabo Frio', 'Rio de Janeiro'],
   ['destinations/angra-dos-reis.svg', 'Angra dos Reis', 'Rio de Janeiro'],
   ['destinations/paraty.svg', 'Paraty', 'Rio de Janeiro'],
+  // Fallback para destino real (vindo do NauticFlow) sem metadados de
+  // vitrine cadastrados ainda em src/data/vitrine/destinations.ts.
+  ['destinations/generic.svg', 'Novo destino', 'Em breve com mais detalhes'],
   ['og-cover.svg', 'ToursFlow', 'Encontre seu próximo passeio'],
 ];
 

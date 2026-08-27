@@ -1,5 +1,6 @@
 import type {
   Category,
+  Departure,
   Destination,
   Tour,
   TourFilters,
@@ -45,11 +46,43 @@ function matches(tour: TourWithRelations, filters: TourFilters): boolean {
   return true;
 }
 
+/** Saídas sintéticas (próximos sábados) só para exercitar a UI de disponibilidade em dev local. */
+function syntheticDepartures(tour: TourWithRelations): Departure[] {
+  const now = new Date();
+  const nextSaturday = new Date(now);
+  nextSaturday.setDate(now.getDate() + ((6 - now.getDay() + 7) % 7 || 7));
+
+  return [0, 1, 2].map((weekOffset, index) => {
+    const date = new Date(nextSaturday);
+    date.setDate(nextSaturday.getDate() + weekOffset * 7);
+    date.setUTCHours(12, 0, 0, 0);
+    return {
+      id: `${tour.id}-departure-${index}`,
+      tourId: tour.id,
+      departsAt: date.toISOString(),
+      price: tour.priceFrom,
+      priceType: tour.priceType,
+      // A última saída simulada aparece esgotada, só para a UI ter os dois estados em dev.
+      soldOut: index === 2,
+    };
+  });
+}
+
 export const mockSource: ToursDataSource = {
   name: 'mock',
 
   async listTours(filters = {}) {
-    return published().filter((tour) => matches(tour, filters));
+    const matched = published().filter((tour) => matches(tour, filters));
+    const page = filters.page && filters.page > 0 ? filters.page : 1;
+    const limit = filters.limit && filters.limit > 0 ? filters.limit : 20;
+    const start = (page - 1) * limit;
+    return {
+      tours: matched.slice(start, start + limit),
+      page,
+      limit,
+      total: matched.length,
+      totalPages: Math.max(1, Math.ceil(matched.length / limit)),
+    };
   },
 
   async getTour(destinationSlug: string, tourSlug: string) {
@@ -58,6 +91,11 @@ export const mockSource: ToursDataSource = {
         (tour) => tour.destinationSlug === destinationSlug && tour.slug === tourSlug,
       ) ?? null
     );
+  },
+
+  async listDepartures(tourSlug: string) {
+    const tour = published().find((item) => item.slug === tourSlug);
+    return tour ? syntheticDepartures(tour) : [];
   },
 
   async listFeaturedTours(limit = 6) {

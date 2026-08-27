@@ -3,16 +3,17 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { AlertTriangle, ArrowRight, Clock, MapPin, ShieldCheck, Users } from 'lucide-react';
-import { getTour, listTourPaths, listTours } from '@/data/repository';
+import { getTour, listDepartures, listTours } from '@/data/repository';
 import { TourGallery } from '@/components/tours/TourGallery';
 import { TourItinerary } from '@/components/tours/TourItinerary';
 import { TourChecklist } from '@/components/tours/TourChecklist';
 import { BoardingLocation } from '@/components/tours/BoardingLocation';
+import { DeparturesList } from '@/components/tours/DeparturesList';
 import { TourCard } from '@/components/tours/TourCard';
 import { Rating } from '@/components/ui/Rating';
 import { Price } from '@/components/ui/Price';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
-import { formatDuration } from '@/lib/format';
+import { formatDuration, formatLocation } from '@/lib/format';
 import { routes } from '@/lib/routes';
 import { pageMetadata } from '@/lib/seo';
 import { site } from '@/lib/site';
@@ -21,9 +22,16 @@ interface PageProps {
   params: { destino: string; slug: string };
 }
 
-export async function generateStaticParams() {
-  return listTourPaths();
-}
+/**
+ * Sem `generateStaticParams`: esta página busca disponibilidade
+ * (`listDepartures`) com `no-store`, que é incompatível com pré-render em
+ * build (Next.js rejeita fetch dinâmico dentro de uma rota estática). A
+ * renderização por requisição é o comportamento certo aqui — preço e vaga
+ * não podem ser congelados no momento do build. O conteúdo (nome,
+ * descrição, fotos) continua cacheado pelo `revalidate` de cada fetch,
+ * só a rota em si deixa de ser pré-gerada.
+ */
+export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
   const tour = await getTour(params.destino, params.slug);
@@ -41,9 +49,11 @@ export default async function TourPage({ params }: PageProps) {
   const tour = await getTour(params.destino, params.slug);
   if (!tour) notFound();
 
-  const related = (await listTours({ destination: tour.destinationSlug }))
-    .filter((item) => item.id !== tour.id)
-    .slice(0, 3);
+  const [relatedResult, departures] = await Promise.all([
+    listTours({ destination: tour.destinationSlug, limit: 4 }),
+    listDepartures(tour.slug),
+  ]);
+  const related = relatedResult.tours.filter((item) => item.id !== tour.id).slice(0, 3);
 
   const structuredData = {
     '@context': 'https://schema.org',
@@ -101,10 +111,12 @@ export default async function TourPage({ params }: PageProps) {
         <h1 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">{tour.name}</h1>
         <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-muted">
           <Rating rating={tour.rating} showCount />
-          <span className="inline-flex items-center gap-1.5">
-            <MapPin size={15} aria-hidden />
-            {tour.boardingPoint.city}/{tour.boardingPoint.state}
-          </span>
+          {formatLocation(tour.boardingPoint.city, tour.boardingPoint.state) ? (
+            <span className="inline-flex items-center gap-1.5">
+              <MapPin size={15} aria-hidden />
+              {formatLocation(tour.boardingPoint.city, tour.boardingPoint.state)}
+            </span>
+          ) : null}
           <span className="inline-flex items-center gap-1.5">
             <Clock size={15} aria-hidden />
             {formatDuration(tour.durationMinutes)}
@@ -129,6 +141,15 @@ export default async function TourPage({ params }: PageProps) {
               Sobre o passeio
             </h2>
             <p className="mt-4 leading-relaxed text-ink-muted">{tour.description}</p>
+          </section>
+
+          <section aria-labelledby="saidas">
+            <h2 id="saidas" className="text-2xl font-bold">
+              Datas e horários disponíveis
+            </h2>
+            <div className="mt-6">
+              <DeparturesList departures={departures} />
+            </div>
           </section>
 
           <section aria-labelledby="roteiro">
@@ -191,10 +212,12 @@ export default async function TourPage({ params }: PageProps) {
                     <ShieldCheck size={16} className="text-sea" aria-label="Operador verificado" />
                   ) : null}
                 </p>
-                <p className="text-sm text-ink-muted">
-                  {tour.operator.city}/{tour.operator.state}
-                  {tour.operator.operatingSince ? ` · desde ${tour.operator.operatingSince}` : ''}
-                </p>
+                {formatLocation(tour.operator.city, tour.operator.state) || tour.operator.operatingSince ? (
+                  <p className="text-sm text-ink-muted">
+                    {formatLocation(tour.operator.city, tour.operator.state)}
+                    {tour.operator.operatingSince ? ` · desde ${tour.operator.operatingSince}` : ''}
+                  </p>
+                ) : null}
                 {tour.operator.description ? (
                   <p className="mt-2 text-sm leading-relaxed text-ink-muted">
                     {tour.operator.description}

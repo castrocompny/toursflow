@@ -1,25 +1,22 @@
 import type { ToursDataSource } from '@/data/source';
 import { mockSource } from '@/data/sources/mock-source';
+import { nauticflowSource } from '@/data/sources/nauticflow-source';
 
 /**
  * Ponto único de troca da origem dos dados.
  *
- * Passo da integração futura:
- * 1. criar `sources/nauticflow-source.ts` implementando `ToursDataSource`
- *    sobre o Supabase do NauticFlow (apenas passeios com status publicado);
- * 2. trocar a constante abaixo por uma seleção via env, por exemplo:
- *    `const source = process.env.DATA_SOURCE === 'nauticflow' ? nauticflowSource : mockSource;`
- *
- * Nenhum componente importa mock diretamente. Toda a UI consome as funções
- * exportadas aqui, que são assíncronas justamente para que a troca por
- * chamadas de rede não exija mudança de assinatura.
+ * Com `NAUTICFLOW_API_URL` configurada (produção/preview), usa a API
+ * pública real do NauticFlow. Sem ela (dev local sem a variável setada),
+ * cai para o mock — nenhum componente importa mock diretamente, e nenhum
+ * precisa saber qual das duas está ativa.
  */
-const source: ToursDataSource = mockSource;
+const source: ToursDataSource = process.env.NAUTICFLOW_API_URL ? nauticflowSource : mockSource;
 
 export const dataSourceName = source.name;
 
 export const listTours = source.listTours.bind(source);
 export const getTour = source.getTour.bind(source);
+export const listDepartures = source.listDepartures.bind(source);
 export const listFeaturedTours = source.listFeaturedTours.bind(source);
 export const listDestinations = source.listDestinations.bind(source);
 export const getDestination = source.getDestination.bind(source);

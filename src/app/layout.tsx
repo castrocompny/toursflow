@@ -38,7 +38,11 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const destinations = await listDestinations();
+  // O rodapé aparece em toda página. Se a API cair, o site inteiro não pode
+  // quebrar por causa da lista de destinos do rodapé — degrada para rodapé
+  // sem esses links, o conteúdo principal da página segue seu próprio
+  // tratamento de erro (error.tsx).
+  const destinations = await listDestinations().catch(() => []);
 
   return (
     <html lang="pt-BR">

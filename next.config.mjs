@@ -2,9 +2,17 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    // Mocks usam SVG local em /public. Ao integrar o NauticFlow/Supabase,
-    // liberar aqui o host do Storage (ex.: <projeto>.supabase.co).
-    remotePatterns: [],
+    // Host específico do Storage do projeto Supabase do NauticFlow, de onde
+    // vêm as signed URLs das fotos dos passeios. Só este host — nunca
+    // wildcard (`**.supabase.co`), mesmo que outros projetos Supabase
+    // também usem esse domínio.
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'gggpihphjjxndpfntnvm.supabase.co',
+        pathname: '/storage/v1/object/**',
+      },
+    ],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
   },

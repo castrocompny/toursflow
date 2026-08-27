@@ -12,15 +12,21 @@ export type TourStatus = 'published' | 'draft' | 'paused';
 
 export interface Operator {
   id: string;
-  /** company_id do NauticFlow quando a integração estiver ativa. */
+  /** company_id do NauticFlow. */
   externalId?: string;
   name: string;
-  slug: string;
-  city: string;
-  state: string;
+  /**
+   * A API pública do NauticFlow ainda não expõe slug, estado, selo de
+   * verificado, logo nem descrição por operador — só nome e cidade (que
+   * também pode vir `null`). Todos opcionais aqui de propósito: nunca
+   * inventar esses dados quando a API não manda.
+   */
+  slug?: string;
+  city?: string;
+  state?: string;
   /** Ano de início de operação, quando informado pelo operador. */
   operatingSince?: number;
-  verified: boolean;
+  verified?: boolean;
   logoUrl?: string;
   description?: string;
 }
@@ -78,6 +84,22 @@ export interface TourImage {
   alt: string;
 }
 
+/**
+ * Uma saída real do passeio (data + horário + preço + disponibilidade).
+ * Vem sempre do NauticFlow — nunca calculada ou inventada pelo ToursFlow.
+ * `departsAt` é o instante UTC como a API devolve; a conversão para
+ * horário de Brasília acontece só na formatação (`lib/format.ts`), nunca
+ * com offset fixo manual.
+ */
+export interface Departure {
+  id: string;
+  tourId: string;
+  departsAt: string;
+  price: number;
+  priceType: PriceType;
+  soldOut: boolean;
+}
+
 export interface Tour {
   id: string;
   slug: string;
@@ -117,4 +139,15 @@ export interface TourFilters {
   date?: string;
   people?: number;
   search?: string;
+  page?: number;
+  limit?: number;
+}
+
+/** Resultado paginado de `listTours` — a API real pagina no banco, nunca no cliente. */
+export interface TourListResult {
+  tours: TourWithRelations[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
 }
