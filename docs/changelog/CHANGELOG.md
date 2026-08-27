@@ -14,6 +14,24 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-27 — Rate limit por visitante (X-ToursFlow-Client-Key)
+
+Implementada a identidade pseudônima do visitante exigida pelo rate limit do NauticFlow: `src/lib/client-ip.ts` (IP confiável — `x-vercel-forwarded-for` em produção Vercel, fallback controlado para `x-forwarded-for` fora dela, falha fechada com `CLIENT_IP_UNAVAILABLE` se nenhum IP confiável existir) e `src/lib/toursflow-client-key.ts` (HMAC-SHA256 do IP com o mesmo `TOURSFLOW_API_SECRET`, domain-separated com `rate-limit:v1:`). `nauticflow-bookings.ts` passou a enviar `X-ToursFlow-Client-Key` no header; a rota nunca lê esse header vindo do navegador — sempre recalcula. Novo código de erro `CLIENT_IP_UNAVAILABLE`. +26 testes (client-ip, toursflow-client-key, e casos novos na rota), total 57.
+
+Antes desta mudança, validado em E2E real contra produção (dados de teste isolados, removidos ao final): criação (201), replay idempotente (200 + `Idempotency-Replayed: true`), conflito de idempotência (409), `soldOut` refletido no catálogo após o hold.
+
+**O NauticFlow só tem a validação de `X-ToursFlow-Client-Key` no ambiente local dele** — não deployado nos dois lados ainda, então o E2E desta parte específica está pendente. Interface pública continua não conectada.
+
+## 2026-08-27 — Camada server-side de reservas (ToursFlow → NauticFlow)
+
+Implementada a integração server-to-server que inicia uma reserva no NauticFlow: `POST /api/bookings` (novo, `src/app/api/bookings/route.ts`), cliente dedicado `server-only` (`src/lib/nauticflow-bookings.ts`), validação com whitelist explícita (`src/lib/booking-validation.ts`), erro tipado preservando os 12 códigos do NauticFlow (`src/lib/booking-errors.ts`), tipos próprios (`src/types/booking.ts`). Novo `TOURSFLOW_API_SECRET` documentado em `.env.example`, nunca exposto ao cliente.
+
+Instalado `vitest` (nenhum framework de teste existia antes) e escritos 31 testes cobrindo validação, whitelist, preservação de erro/status do NauticFlow, ausência de fallback mock em falha de rede/timeout, e ausência do segredo em qualquer resposta.
+
+**A interface pública não foi conectada** — nenhum botão chama `/api/bookings` ainda; a seleção de saída em `DeparturesList` continua só visual. Teste E2E real contra produção bloqueado por não haver `TOURSFLOW_API_SECRET` configurado (próximo passo, fora desta etapa).
+
+Detalhes: [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md).
+
 ## 2026-08-26 — Plano de execução da integração com o NauticFlow
 
 Transformada a análise da auditoria em plano de arquitetura completo para a integração futura: fonte de verdade por etapa, modelo conceitual de `Departure` (saída), regras de preço/disponibilidade, estratégia de cache dividida (conteúdo vs. disponibilidade), contrato de erro, segurança de leitura (view pública + RLS), fotos, dados públicos/privados do operador, SEO de URLs estáveis, performance em escala, fluxo futuro de compra, estratégia de degradação se o NauticFlow ficar offline, proteções contra overbooking/duplicidade, e plano em 10 fases (0 a 10).

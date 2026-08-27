@@ -18,6 +18,7 @@ npm install
 npm run dev        # http://localhost:3000
 npm run typecheck  # tsc --noEmit
 npm run lint
+npm run test       # vitest run
 npm run build
 ```
 
@@ -32,6 +33,7 @@ Sem ela, o site usa `https://toursflow.com.br` como base de canonical, sitemap e
 Documentação técnica completa (rotas, camada de dados, tipos, componentes, SEO): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Auditoria pré-integração com o NauticFlow: [docs/AUDITORIA-PRE-INTEGRACAO.md](docs/AUDITORIA-PRE-INTEGRACAO.md).
 Plano de execução da integração com o NauticFlow: [docs/PLANO-INTEGRACAO-NAUTICFLOW.md](docs/PLANO-INTEGRACAO-NAUTICFLOW.md).
+Integração de reservas (server-to-server, ainda não conectada à interface pública): [docs/RESERVAS-SERVER-TO-SERVER.md](docs/RESERVAS-SERVER-TO-SERVER.md).
 Histórico de tudo o que foi feito no projeto: [docs/changelog/CHANGELOG.md](docs/changelog/CHANGELOG.md).
 
 ## Estrutura
