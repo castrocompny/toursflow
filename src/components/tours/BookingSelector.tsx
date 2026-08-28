@@ -12,6 +12,10 @@ import {
   isSellablePriceType,
   sortDeparturesByDate,
 } from '@/lib/booking-selection';
+import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
+import { idempotencyFingerprint, resolveIdempotencyKey, type IdempotencyKeyState } from '@/lib/idempotency-key';
+import { CustomerForm } from './CustomerForm';
+import { BookingReview } from './BookingReview';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
 
@@ -19,14 +23,13 @@ interface BookingSelectorProps {
   departures: Departure[];
 }
 
-type Step = 'selection' | 'customer-placeholder';
+type Step = 'selection' | 'customer-form' | 'review';
 
 /**
- * Interface real de seleção de reserva: saída -> quantidade -> total
- * estimado -> "Continuar reserva". Fase 1 do fluxo de reserva — não chama
- * nenhum backend. O clique em "Continuar" só avança para um estado
- * placeholder; a Fase 2 substitui esse placeholder pelo formulário real
- * do comprador e liga tudo a `POST /api/bookings`.
+ * Interface real de reserva: saída -> quantidade -> total estimado ->
+ * dados do comprador -> revisão. Fase 2 do fluxo — ainda NÃO chama
+ * `POST /api/bookings` em nenhum step; a Fase 3 conecta o step de revisão
+ * ao backend.
  *
  * O total mostrado aqui é só para o turista decidir — nunca é a fonte de
  * verdade do preço. Quando o checkout existir, o valor cobrado será
@@ -45,11 +48,26 @@ type Step = 'selection' | 'customer-placeholder';
  * equivalente confirmado no NauticFlow hoje) aparecem na lista mas não
  * podem ser selecionadas — o card fica desabilitado e a mensagem de
  * indisponibilidade é exibida, nunca é possível chegar em "Continuar".
+ *
+ * Estado (departure/quantidade/dados do comprador) vive todo aqui, em
+ * memória — nunca em localStorage/sessionStorage/URL — para sobreviver à
+ * navegação entre steps sem se perder, e para nunca deixar PII em nenhum
+ * lugar persistente antes de existir uma reserva de verdade.
  */
 export function BookingSelector({ departures }: BookingSelectorProps) {
   const [selectedDepartureId, setSelectedDepartureId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(MIN_BOOKING_QUANTITY);
+  const [customer, setCustomer] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM_VALUES);
   const [step, setStep] = useState<Step>('selection');
+  // Estado bruto ({key, fingerprint}) para resolveIdempotencyKey() decidir
+  // reaproveitar ou regenerar — nunca enviada nesta fase (sem fetch algum).
+  // Depois de um sucesso definitivo (Fase 3), resetar para {key: null,
+  // fingerprint: null} garante que a próxima reserva NUNCA reaproveita a
+  // key de uma reserva já concluída, mesmo com os mesmos dados.
+  const [idempotencyKeyState, setIdempotencyKeyState] = useState<IdempotencyKeyState>({
+    key: null,
+    fingerprint: null,
+  });
 
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
@@ -67,7 +85,20 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
 
   function handleContinue() {
     if (!canContinue) return;
-    setStep('customer-placeholder');
+    setStep('customer-form');
+  }
+
+  function handleCustomerSubmit(values: CustomerFormValues) {
+    setCustomer(values);
+
+    // Reaproveita a Idempotency-Key existente se os dados relevantes não
+    // mudaram desde a última vez, ou gera uma nova — nunca enviada nesta
+    // fase, só preparada para a Fase 3 (ver src/lib/idempotency-key.ts).
+    const fingerprint = idempotencyFingerprint({ departureId: selectedDepartureId, quantity, ...values });
+    const resolved = resolveIdempotencyKey(idempotencyKeyState, fingerprint);
+    setIdempotencyKeyState({ key: resolved.key, fingerprint: resolved.fingerprint });
+
+    setStep('review');
   }
 
   if (departures.length === 0) {
@@ -78,40 +109,27 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
     );
   }
 
-  if (step === 'customer-placeholder' && selectedDeparture) {
-    const { date, time } = formatDepartureDateTime(selectedDeparture.departsAt);
+  if (step === 'customer-form' && selectedDeparture) {
     return (
-      <div className="rounded-card border border-ink/10 bg-white p-6">
-        <p className="eyebrow">Próxima etapa</p>
-        <h3 className="mt-2 font-display text-xl font-bold">Dados do comprador</h3>
-        <p className="mt-2 text-sm text-ink-muted">
-          Reserva online chega em breve. Por enquanto, confira o resumo abaixo e fale com o operador para
-          confirmar.
-        </p>
+      <CustomerForm
+        values={customer}
+        onChange={setCustomer}
+        onSubmit={handleCustomerSubmit}
+        onBack={() => setStep('selection')}
+      />
+    );
+  }
 
-        <dl className="mt-5 space-y-2 rounded-2xl bg-sand p-4 text-sm">
-          <div className="flex justify-between gap-4">
-            <dt className="text-ink-muted">Data</dt>
-            <dd className="font-semibold capitalize">{date}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-ink-muted">Horário</dt>
-            <dd className="font-semibold">{time}</dd>
-          </div>
-          <div className="flex justify-between gap-4">
-            <dt className="text-ink-muted">Pessoas</dt>
-            <dd className="font-semibold">{quantity}</dd>
-          </div>
-          <div className="flex justify-between gap-4 border-t border-ink/10 pt-2">
-            <dt className="text-ink-muted">Total estimado</dt>
-            <dd className="font-display text-base font-bold">{formatPrice(estimatedTotal ?? 0)}</dd>
-          </div>
-        </dl>
-
-        <button type="button" onClick={() => setStep('selection')} className="btn-secondary mt-5 w-full">
-          Voltar
-        </button>
-      </div>
+  if (step === 'review' && selectedDeparture) {
+    return (
+      <BookingReview
+        departure={selectedDeparture}
+        quantity={quantity}
+        estimatedTotal={estimatedTotal ?? 0}
+        customer={customer}
+        onEdit={() => setStep('customer-form')}
+        onBack={() => setStep('selection')}
+      />
     );
   }
 

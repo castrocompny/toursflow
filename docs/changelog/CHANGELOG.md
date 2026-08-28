@@ -14,6 +14,48 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-28 — Correções na Fase 2 antes do commit: limite de corpo real, reconciliação do histórico do rate limit, testes de Origin/idempotência
+
+Revisão do relatório da Fase 2 encontrou dois pontos a corrigir antes de commitar, nenhum deles um problema de segurança novo — os dois eram sobre a rota já estar mais forte ou mais bem documentada do que o relatório anterior deixava claro.
+
+**1. Limite de corpo passou a contar bytes reais, não só `Content-Length`.** `readBodyWithLimit()` (`src/app/api/bookings/route.ts`) lê o corpo em streaming, contando bytes chunk a chunk, e aborta com `413` assim que ultrapassa 10KB — antes o limite dependia só do header `Content-Length`, que um cliente pode omitir ou declarar errado. `Content-Length` continua servindo como rejeição antecipada (sem ler nada) quando ele mesmo já admite um valor grande demais, mas nunca mais é usado para *permitir* passagem. 6 testes novos cobrindo os 4 cenários reais (corpo normal, `Content-Length` grande, corpo grande sem `Content-Length`, `Content-Length` mentiroso) + JSON malformado + maior payload legítimo possível ainda bem abaixo do limite.
+
+**2. Reconciliado o histórico real do `X-ToursFlow-Client-Key` — não foi encontrada evidência de E2E cross-serviço já concluído.** Revisão de `RESERVAS-SERVER-TO-SERVER.md`, `CHANGELOG.md` (entrada de 2026-08-27) e do histórico de commits confirmou que a implementação do lado ToursFlow (fonte de IP, HMAC, rota ignorando header forjado, servidor sempre gerando a própria key) está correta e comprovada por teste automatizado real — mas nenhum documento, commit ou teste registra um E2E que tenha confirmado o NauticFlow, do lado dele, aplicando o limite ou ignorando um header forjado equivalente. A documentação de 2026-08-27 já registrava isso como pendente ("o NauticFlow só tem a validação... no ambiente local dele... o E2E desta parte específica está pendente") e nada mudou isso desde então — a lacuna é real, não uma suposição.
+
+Como consequência dessa reconciliação, **a decisão de não implementar rate limit próprio do ToursFlow (ADR-007) foi reclassificada de "bloqueador" para "hardening/defesa em profundidade"**: o risco mais grave (overbooking, reserva duplicada) já é protegido por hold + idempotência do NauticFlow, comprovados em E2E real contra produção antes desta fase — o que falta é só a confirmação E2E específica da granularidade por visitante, não a ausência de proteção. Análise completa em [docs/DECISIONS.md](../DECISIONS.md) (ADR-007, com nota de revisão).
+
+**3. Testes de Origin explícitos** (`route.test.ts`): aceita `toursflow.com.br`/`toursflow.vercel.app` em qualquer combinação Origin/Host; rejeita `toursflow.com.br.attacker.example` (prova comparação por host exato, não substring) e `attacker.example`; rejeita `Sec-Fetch-Site: cross-site` mesmo com Origin batendo; confirma que `localhost` não é liberado em produção e só é aceito quando o Host da própria requisição também é `localhost` (dev local).
+
+**4. Ciclo de vida da Idempotency-Key extraído para função pura testável** (`resolveIdempotencyKey()` em `src/lib/idempotency-key.ts`, usada agora por `BookingSelector`): reaproveita a key em re-render/retry da mesma tentativa, regenera quando departure/quantidade/dados do comprador mudam, e — regra nova, documentada para a Fase 3 — sempre gera key nova depois de um reset pós-sucesso (`key: null`), mesmo que os dados da próxima tentativa sejam idênticos aos da reserva já concluída.
+
+**5. Auditoria de PII confirmada limpa** no diff inteiro da Fase 2: nenhum `console.log`/`console.error`/`localStorage`/`sessionStorage`/`analytics`/`URLSearchParams`/`router.push` toca em `cpf`/`email`/`phone`/`customer` fora do já documentado (máscaras na revisão, nada persistido, nada enviado).
+
+19 testes novos nesta correção (145 no total). `npm run typecheck`, `lint`, `test`, `build` verificados, todos verdes. Documentado em [docs/SECURITY.md](../SECURITY.md), [docs/DECISIONS.md](../DECISIONS.md), [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md). **Ainda não commitado.**
+
+## 2026-08-28 — Fase 2 do fluxo de reserva: dados do comprador + hardening de /api/bookings
+
+Substituído o placeholder "Dados do comprador" (Fase 1) por um formulário real: `CustomerForm` (nome, e-mail, telefone, CPF opcional) → `BookingReview` (resumo com e-mail/telefone/CPF mascarados). `BookingSelector` agora orquestra 3 steps (seleção → formulário → revisão), com departure/quantidade/dados do comprador preservados ao navegar entre eles (estado só em memória, nunca localStorage/URL). **Nenhum `fetch` acontece em nenhum step** — confirmado por teste (spy em `global.fetch`) e por verificação em browser real (Playwright).
+
+Lógica pura nova, testável sem DOM:
+- `src/lib/customer-form.ts` — validação de nome/e-mail/telefone (regras de UX do ToursFlow, não do contrato — o backend só exige string não vazia dentro do limite de tamanho), validação de CPF com checksum real + rejeição de sequência repetida (CPF continua opcional, como já era em `BookingCustomerInput`), máscaras de digitação e de exibição (`maskEmail`/`maskPhone`/`maskCpf` — nunca o dado completo no step de revisão).
+- `src/lib/idempotency-key.ts` — gera e mantém uma `Idempotency-Key` por tentativa lógica de reserva (regenerada só quando `departureId`/`quantity`/dados do comprador mudam), preparada para a Fase 3. **Não enviada ainda.**
+- `src/lib/booking-error-messages.ts` — mensagem segura em português para cada um dos 14 `BookingErrorCode`, preparada para a Fase 3. **Não usada ainda.**
+
+Hardening de `/api/bookings` (`src/app/api/bookings/route.ts`), antes de a rota receber tráfego real da UI:
+- Content-Type restrito a `application/json` (415 caso contrário).
+- Limite de corpo via `Content-Length` (10KB, 413 se exceder) — limitação documentada: não protege contra corpo grande sem esse header.
+- `isTrustedOrigin()` reforçada: `Sec-Fetch-Site: cross-site` rejeita sempre (sinal que o navegador não deixa a página forjar); sem esse sinal, cai para `Origin` vs. `Host`/allowlist de hosts oficiais (`toursflow.com.br`, `toursflow.vercel.app`).
+
+Decisão formal registrada em [ADR-007](../DECISIONS.md#adr-007--sem-rate-limit-próprio-no-toursflow-nesta-fase): **não** implementar rate limit próprio do ToursFlow nesta fase — exigiria uma dependência SaaS nova (ex.: Upstash Redis) para funcionar de verdade em serverless, fora de escopo sem autorização; o NauticFlow continua sendo a autoridade real de rate limit. Continua um bloqueador a revisitar antes da Fase 3.
+
+Headers de segurança de baixo risco adicionados em `next.config.mjs` (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`). CSP deliberadamente fora de escopo — exigiria investigação própria para não quebrar hidratação do Next/JSON-LD inline/Google Fonts.
+
+37 testes novos (customer-form, idempotency-key, booking-error-messages, hardening da rota, componente do novo fluxo) — total 126. `npm run typecheck`, `lint`, `test` e `build` verificados, todos verdes. Fluxo completo (seleção → formulário com erro → formulário válido → revisão mascarada → editar → voltar) verificado em browser real (Playwright) contra o passeio de integração — zero requisições de rede, zero erro de console.
+
+Documentado em [docs/SECURITY.md](../SECURITY.md) (seções 5, 9, 10, 11 novas/atualizadas), [docs/DECISIONS.md](../DECISIONS.md) (ADR-007), [docs/ARCHITECTURE.md](../ARCHITECTURE.md) e [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md).
+
+**Não commitado nesta entrada** — mudança entregue para revisão antes do commit (ver instrução da tarefa).
+
 ## 2026-08-28 — Deploy automático confirmado: fix de XSS ativo em produção
 
 Commit `9594cec` (fix de XSS no JSON-LD + documentação) foi pushado em `main` e apareceu como Production Deployment `READY` no dashboard da Vercel sem nenhum `vercel --prod` manual — confirmado que a integração GitHub → Vercel do ToursFlow faz deploy automático a cada push em `main`. Isso corrige uma suposição incorreta registrada antes em `docs/DEPLOYMENT.md` (de que o deploy seria sempre manual); a suposição nunca tinha sido verificada contra a configuração real da conta Vercel.

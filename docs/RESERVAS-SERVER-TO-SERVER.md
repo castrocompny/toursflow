@@ -1,7 +1,7 @@
 # Reservas: ToursFlow → NauticFlow (server-to-server)
 
-Data: 2026-08-27
-Status: **infraestrutura pronta e validada em E2E real (caminho de sucesso, replay e conflito de idempotência confirmados contra produção); rate limit por visitante implementado e testado localmente, aguardando deploy coordenado dos dois lados. Não conectada à interface pública.**
+Data: 2026-08-27 (última atualização: 2026-08-28, Fase 2)
+Status: **infraestrutura pronta e validada em E2E real (caminho de sucesso, replay e conflito de idempotência confirmados contra produção); rate limit por visitante implementado e testado localmente, aguardando deploy coordenado dos dois lados. Rota reforçada (Content-Type, limite de corpo, Origin/Sec-Fetch-Site). Formulário do comprador e revisão prontos na UI (Fase 2). Não conectada à interface pública — nenhum `fetch` para esta rota acontece ainda.**
 
 Este documento descreve a integração de escrita (criação de reserva) entre o ToursFlow e o NauticFlow, complementar a [PLANO-INTEGRACAO-NAUTICFLOW.md](PLANO-INTEGRACAO-NAUTICFLOW.md) (que cobre só leitura de catálogo).
 
@@ -91,20 +91,21 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 
 ## O que ainda NÃO existe
 
-- Nenhum botão da interface pública chama `/api/bookings`. A seleção de saída em `DeparturesList` continua sendo só visual (estado local, sem submit) — confirmado por grep, nenhuma referência a `/api/bookings` fora da própria rota e dos testes.
+- Nenhum botão da interface pública chama `/api/bookings`. O fluxo em `BookingSelector` (seleção → `CustomerForm` → `BookingReview`, Fase 2) termina numa tela de revisão — confirmado por teste (spy em `fetch`, zero chamadas) e por verificação manual em browser real.
 - Checkout, pagamento, Asaas, Split, voucher, QR Code, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros.
-- **O rate limit por visitante (`X-ToursFlow-Client-Key`) está implementado e testado localmente, mas o NauticFlow só tem a validação correspondente no ambiente local dele — ainda não foi commitado/pushado/deployado nos dois lados.** Por isso o E2E real desta parte específica ainda não foi refeito (o E2E validado acima é anterior a esta mudança).
-- Rate limiting próprio da rota `/api/bookings` no ToursFlow (o NauticFlow já tem o dele; ver "Limitações" abaixo).
+- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado); o lado NauticFlow só tem a validação correspondente no ambiente local dele — não deployado nos dois lados de forma coordenada ainda.** Por isso o E2E cross-serviço desta parte específica continua pendente (o E2E validado acima, contra produção, é anterior a esta mudança e não a cobre). Revisado em 2026-08-28: nenhuma evidência posterior (commit, teste, changelog) fecha essa lacuna — continua real, não é suposição.
+- Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador) (ver "Limitações" abaixo).
+- Envio da `Idempotency-Key` gerada no navegador (`src/lib/idempotency-key.ts` já existe, com ciclo de vida completo via `resolveIdempotencyKey()` — reaproveita em retry, regenera em mudança relevante — mas nenhum `fetch` a envia ainda).
 
 ## Limitações conhecidas (documentadas, não resolvidas nesta etapa)
 
-- **Proteção de origem é best-effort.** `isTrustedOrigin()` em `route.ts` compara o host do header `Origin` (quando o navegador o envia) com o host da própria requisição. Isso não é autenticação nem proteção CSRF completa — é só uma primeira barreira contra POST cross-site óbvio. Não há sessão de usuário nesta etapa para uma proteção mais forte. É uma camada independente do rate limit por `X-ToursFlow-Client-Key` — uma não substitui a outra.
-- **Sem rate limit próprio na rota `/api/bookings`.** O rate limit real agora existe (no NauticFlow, via `X-ToursFlow-Client-Key`), mas antes de conectar um botão público vale reavaliar se o ToursFlow também precisa de uma camada própria — com estado compartilhado entre execuções serverless (ex.: Upstash Redis), nunca um limiter em memória, que não protege nada na Vercel porque cada invocação pode rodar numa instância diferente.
+- **Proteção de origem é best-effort, reforçada e testada explicitamente na Fase 2.** `isTrustedOrigin()` em `route.ts` agora usa `Sec-Fetch-Site` (rejeita sempre que `cross-site`) e, na ausência desse sinal, o host do `Origin` vs. `Host`/allowlist de hosts oficiais (`toursflow.com.br`, `toursflow.vercel.app`) — testado contra host oficial, host "parecido" (`toursflow.com.br.attacker.example`, rejeitado por comparação exata) e `localhost` em produção (rejeitado). Isso não é autenticação nem proteção CSRF completa — é só uma barreira contra POST cross-site óbvio, mais forte que antes mas ainda não sessão-based. Não há sessão de usuário nesta etapa para uma proteção mais forte. É uma camada independente do rate limit por `X-ToursFlow-Client-Key` — uma não substitui a outra. Detalhe: [SECURITY.md](SECURITY.md#5-proteção-de-origem-best-effort-documentada-como-tal--reforçada-na-fase-2).
+- **Sem rate limit próprio na rota `/api/bookings` — hardening, não bloqueador.** O NauticFlow já tem hold de capacidade e idempotência **comprovados em E2E real** (protegem o risco mais grave: overbooking/duplicidade), mais rate limit global e por visitante como contrato documentado. Implementar uma camada própria no ToursFlow exigiria estado compartilhado serverless (Upstash Redis ou equivalente) — dependência SaaS nova, fora de escopo sem autorização — para reforçar uma proteção que já existe a jusante. Decisão e análise completa em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador). Não bloqueia a Fase 3.
 - **CAPTCHA:** não implementado, fora de escopo desta etapa.
+- **Content-Type e tamanho real do corpo (Fase 2):** rota rejeita Content-Type ≠ `application/json` (415) e corpo acima de 10KB (413) — a proteção de tamanho conta os bytes REALMENTE recebidos em streaming (`readBodyWithLimit()`), não confia só em `Content-Length` (que só serve como rejeição antecipada quando ele mesmo já admite ser grande demais). Cobre corpo grande com ou sem `Content-Length`, e `Content-Length` mentiroso/menor que o corpo real.
 
 ## Próximo passo (fora desta etapa)
 
 1. Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos (NauticFlow e ToursFlow) de forma coordenada.
-2. Refazer um E2E controlado específico para o rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele).
-3. Decidir se o ToursFlow precisa de uma camada própria de rate limit antes de expor a rota publicamente.
-4. Só depois disso: conectar a interface pública.
+2. Fazer o E2E cross-serviço específico do rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele) — item de acompanhamento, não bloqueador para a Fase 3.
+3. Fase 3: conectar `BookingReview` a `POST /api/bookings` de verdade (enviar a `Idempotency-Key` já preparada — resetando o estado para `null` depois de um sucesso definitivo, ver [SECURITY.md](SECURITY.md#12-ciclo-de-vida-da-idempotency-key-definido-não-enviada--fase-2) —, tratar os 14 `BookingErrorCode` com as mensagens já preparadas em `booking-error-messages.ts`).

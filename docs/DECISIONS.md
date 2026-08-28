@@ -156,10 +156,92 @@ quanto na validação de reserva).
 
 ---
 
+## ADR-007 — Rate limit próprio do ToursFlow: classificado como hardening, não bloqueador
+
+**Contexto:** a Fase 2 prepara `/api/bookings` para receber tráfego real
+da UI na Fase 3. A rota já tem proteção de origem (Origin/Sec-Fetch-Site,
+seção 5 de [SECURITY.md](SECURITY.md)) e o NauticFlow já aplica rate
+limit global e por visitante via `X-ToursFlow-Client-Key`. A pergunta
+desta fase: o ToursFlow precisa de uma camada própria de rate limit antes
+de expor a rota publicamente — isso é um bloqueador real, ou defesa em
+profundidade sobre uma proteção que já existe a jusante?
+
+**Decisão:** não implementar rate limit próprio do ToursFlow. Classificado
+como **hardening/defesa em profundidade**, não como bloqueador para
+iniciar a Fase 3.
+
+**Motivo:** revisando o que já está de fato comprovado (não só
+implementado) contra produção:
+
+- **Hold de capacidade e idempotência do NauticFlow** — comprovados em
+  E2E real contra produção antes desta fase (criação `201`, replay
+  idempotente `200`, conflito de idempotência `409`, `soldOut` refletido
+  no catálogo). Isso é o que protege o risco mais grave (overbooking,
+  reserva duplicada) — e já funciona, verificado.
+- **Rate limit global + por visitante do NauticFlow** — documentado como
+  contrato acordado (`RESERVAS-SERVER-TO-SERVER.md`); o lado ToursFlow da
+  identidade por visitante (`X-ToursFlow-Client-Key`) está implementado e
+  comprovado por teste automatizado real (HMAC calculado de verdade, não
+  mockado — `toursflow-client-key.test.ts`, `route.test.ts`). O que
+  falta comprovar é só o lado NauticFlow em produção (E2E cross-serviço
+  específico, pendente por falta de deploy coordenado — ver
+  [SECURITY.md](SECURITY.md#2-identidade-do-visitante-no-rate-limit-nunca-o-ip-em-claro)) — uma
+  lacuna de verificação/coordenação, não de código faltando neste
+  repositório.
+- Dado que a proteção contra o risco mais sério (overbooking) já é real e
+  comprovada, e a proteção de volume/abuso já tem uma implementação
+  (pendente só de confirmação E2E, não de construção), uma segunda camada
+  de rate limit no ToursFlow seria redundante com o que já existe a
+  jusante — não uma lacuna que impeça começar a Fase 3.
+- Tecnicamente, qualquer implementação real em ambiente serverless
+  (Vercel) exigiria estado compartilhado entre invocações — um `Map` em
+  memória não protege nada, porque cada invocação pode rodar numa
+  instância diferente. A opção correta (ex.: Upstash Redis, ou um KV
+  gerenciado) é uma dependência SaaS nova, não configurada neste projeto
+  — fora de escopo sem autorização explícita, e desproporcional para
+  reforçar uma proteção que já existe a jusante.
+
+**Alternativas consideradas:**
+- Limiter em memória (`Map`/contador local) — rejeitado: falso senso de
+  proteção em serverless, pior que não ter nada porque sugere uma garantia
+  que não existe.
+- Upstash Redis (ou equivalente) — rejeitado por exigir uma
+  conta/credencial nova sem autorização; desproporcional dado que o risco
+  principal já tem cobertura comprovada a jusante.
+- Vercel WAF/Attack Challenge Mode (recurso da própria plataforma, sem
+  dependência nova) — não avaliado (depende do plano da conta Vercel, não
+  verificado); permanece como opção de custo zero de nova dependência se
+  o volume de tráfego real algum dia justificar.
+
+**Consequências:** a proteção contra abuso de tráfego na rota do
+ToursFlow continua sendo, em ordem de força real: (1) hold + idempotência
+do NauticFlow (comprovado, protege o risco mais grave), (2) rate limit
+do NauticFlow (contrato real, identidade por visitante pronta do lado
+ToursFlow, E2E cross-serviço pendente de coordenação), (3) Origin/
+Sec-Fetch-Site (reduz POST cross-site trivial, não é rate limit), (4)
+limite de tamanho de corpo (não é rate limit de frequência). Isso é
+aceito como suficiente para **iniciar** a Fase 3 — não bloqueia. O item
+que continua valendo a pena resolver, independente da Fase 3, é fechar o
+E2E cross-serviço específico do `X-ToursFlow-Client-Key` assim que o
+deploy coordenado com o NauticFlow acontecer — registrado como item de
+acompanhamento (não bloqueador) em
+[SECURITY.md](SECURITY.md#limitações-conhecidas-aceitas-não-resolvidas-nesta-etapa).
+
+**Revisão (2026-08-28):** classificação original desta entrada era
+"bloqueador a reavaliar antes da Fase 3". Corrigida no mesmo dia, depois
+de revisar a documentação/testes históricos do `X-ToursFlow-Client-Key`
+com mais rigor — a lacuna real é só o E2E cross-serviço, não a ausência
+de proteção; o motivo acima reflete essa análise mais precisa.
+
+---
+
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Revalidação sob demanda (`revalidateTag`) para eliminar a janela de até
   5 min entre publicar/despublicar um passeio no NauticFlow e isso
   refletir no catálogo (ADR-002).
-- Rate limit próprio do ToursFlow na rota `/api/bookings` (hoje o limite
-  real mora só no NauticFlow).
+- Rate limit próprio do ToursFlow na rota `/api/bookings` — classificado
+  como hardening/defesa em profundidade em ADR-007, não bloqueador; não
+  implementado, revisitável se o volume de tráfego real justificar.
+- E2E cross-serviço específico do `X-ToursFlow-Client-Key` contra o
+  NauticFlow em produção — pendente de deploy coordenado dos dois lados.

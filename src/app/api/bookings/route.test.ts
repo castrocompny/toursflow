@@ -81,6 +81,154 @@ describe('POST /api/bookings', () => {
     expect(createNauticFlowBooking).not.toHaveBeenCalled();
   });
 
+  describe('política de Origin — hosts oficiais explícitos', () => {
+    const successData = {
+      bookingId: 'b1',
+      status: 'pendente',
+      holdExpiresAt: '2026-09-01T12:15:00Z',
+      tour: { slug: 't', name: 'T' },
+      departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+      quantity: 2,
+      priceType: 'por_pessoa',
+      priceCents: 15000,
+      totalCents: 30000,
+      currency: 'BRL',
+    };
+
+    it('ACEITA Origin https://toursflow.com.br (Host diferente, ex.: toursflow.vercel.app)', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({ status: 201, replayed: false, data: successData });
+      const request = new Request('https://toursflow.vercel.app/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.vercel.app',
+          origin: 'https://toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      expect((await POST(request)).status).toBe(201);
+    });
+
+    it('ACEITA Origin https://toursflow.vercel.app', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({ status: 201, replayed: false, data: successData });
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          origin: 'https://toursflow.vercel.app',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      expect((await POST(request)).status).toBe(201);
+    });
+
+    it('REJEITA Origin https://toursflow.com.br.attacker.example (não é match exato, só contém o nome oficial)', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          origin: 'https://toursflow.com.br.attacker.example',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(403);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('REJEITA Origin https://attacker.example', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          origin: 'https://attacker.example',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(403);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('REJEITA quando Sec-Fetch-Site: cross-site, independente do Origin', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          origin: 'https://toursflow.com.br',
+          'sec-fetch-site': 'cross-site',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(403);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('Origin ausente: política atual é deixar passar (limitação documentada) — não bloqueia dev/ferramentas sem Origin', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({ status: 201, replayed: false, data: successData });
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+          // propositalmente sem Origin nem Sec-Fetch-Site
+        },
+        body: JSON.stringify(validPayload),
+      });
+      expect((await POST(request)).status).toBe(201);
+    });
+
+    it('produção não libera localhost fora do allowlist (Origin http://localhost:3000 com Host de produção é rejeitado)', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          origin: 'http://localhost:3000',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(403);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('dev local: Origin e Host ambos localhost são aceitos (mesmo host da própria requisição)', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({ status: 201, replayed: false, data: successData });
+      const request = new Request('http://localhost:3000/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'localhost:3000',
+          origin: 'http://localhost:3000',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      expect((await POST(request)).status).toBe(201);
+    });
+  });
+
   it('nunca repassa campos extras/maliciosos ao client do NauticFlow', async () => {
     vi.mocked(createNauticFlowBooking).mockResolvedValue({
       status: 201,
@@ -294,5 +442,270 @@ describe('POST /api/bookings', () => {
     expect(res.status).toBe(429);
     const body = await res.json();
     expect(body.error.code).toBe('RATE_LIMITED');
+  });
+
+  it('rejeita Content-Type diferente de application/json com 415, sem chamar o NauticFlow', async () => {
+    const request = new Request('https://toursflow.com.br/api/bookings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'text/plain',
+        host: 'toursflow.com.br',
+        'x-forwarded-for': TEST_IP,
+        'idempotency-key': IDEMPOTENCY_KEY,
+      },
+      body: JSON.stringify(validPayload),
+    });
+    const res = await POST(request);
+    expect(res.status).toBe(415);
+    const body = await res.json();
+    expect(body.error.code).toBe('INVALID_REQUEST');
+    expect(createNauticFlowBooking).not.toHaveBeenCalled();
+  });
+
+  it('aceita Content-Type com charset (application/json; charset=utf-8)', async () => {
+    vi.mocked(createNauticFlowBooking).mockResolvedValue({
+      status: 201,
+      replayed: false,
+      data: {
+        bookingId: 'b1',
+        status: 'pendente',
+        holdExpiresAt: '2026-09-01T12:15:00Z',
+        tour: { slug: 't', name: 'T' },
+        departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+        quantity: 2,
+        priceType: 'por_pessoa',
+        priceCents: 15000,
+        totalCents: 30000,
+        currency: 'BRL',
+      },
+    });
+    const res = await POST(
+      makeRequest(validPayload, {
+        'content-type': 'application/json; charset=utf-8',
+        'idempotency-key': IDEMPOTENCY_KEY,
+      }),
+    );
+    expect(res.status).toBe(201);
+  });
+
+  it('rejeita corpo maior que o limite (Content-Length) com 413, sem ler o body', async () => {
+    const request = new Request('https://toursflow.com.br/api/bookings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'content-length': '999999',
+        host: 'toursflow.com.br',
+        'x-forwarded-for': TEST_IP,
+        'idempotency-key': IDEMPOTENCY_KEY,
+      },
+      body: JSON.stringify(validPayload),
+    });
+    const res = await POST(request);
+    expect(res.status).toBe(413);
+    const body = await res.json();
+    expect(body.error.code).toBe('INVALID_REQUEST');
+    expect(createNauticFlowBooking).not.toHaveBeenCalled();
+  });
+
+  it('aceita Origin de host oficial (toursflow.vercel.app) mesmo com Host diferente', async () => {
+    vi.mocked(createNauticFlowBooking).mockResolvedValue({
+      status: 201,
+      replayed: false,
+      data: {
+        bookingId: 'b1',
+        status: 'pendente',
+        holdExpiresAt: '2026-09-01T12:15:00Z',
+        tour: { slug: 't', name: 'T' },
+        departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+        quantity: 2,
+        priceType: 'por_pessoa',
+        priceCents: 15000,
+        totalCents: 30000,
+        currency: 'BRL',
+      },
+    });
+    const request = new Request('https://toursflow.com.br/api/bookings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        host: 'toursflow.com.br',
+        origin: 'https://toursflow.vercel.app',
+        'x-forwarded-for': TEST_IP,
+        'idempotency-key': IDEMPOTENCY_KEY,
+      },
+      body: JSON.stringify(validPayload),
+    });
+    const res = await POST(request);
+    expect(res.status).toBe(201);
+  });
+
+  it('rejeita quando Sec-Fetch-Site: cross-site, mesmo que Origin bata com Host', async () => {
+    const request = new Request('https://toursflow.com.br/api/bookings', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        host: 'toursflow.com.br',
+        origin: 'https://toursflow.com.br',
+        'sec-fetch-site': 'cross-site',
+        'x-forwarded-for': TEST_IP,
+        'idempotency-key': IDEMPOTENCY_KEY,
+      },
+      body: JSON.stringify(validPayload),
+    });
+    const res = await POST(request);
+    expect(res.status).toBe(403);
+    expect(createNauticFlowBooking).not.toHaveBeenCalled();
+  });
+
+  it('rejeita nomes/e-mails/telefones muito longos com 400, sem chamar o NauticFlow', async () => {
+    const res = await POST(
+      makeRequest(
+        { ...validPayload, customer: { ...validPayload.customer, name: 'A'.repeat(500) } },
+        { 'idempotency-key': IDEMPOTENCY_KEY },
+      ),
+    );
+    expect(res.status).toBe(400);
+    expect(createNauticFlowBooking).not.toHaveBeenCalled();
+  });
+
+  describe('limite real de tamanho do corpo (não confia só em Content-Length)', () => {
+    it('1. corpo normal, dentro do limite, processa normalmente', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({
+        status: 201,
+        replayed: false,
+        data: {
+          bookingId: 'b1',
+          status: 'pendente',
+          holdExpiresAt: '2026-09-01T12:15:00Z',
+          tour: { slug: 't', name: 'T' },
+          departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+          quantity: 2,
+          priceType: 'por_pessoa',
+          priceCents: 15000,
+          totalCents: 30000,
+          currency: 'BRL',
+        },
+      });
+      const res = await POST(makeRequest(validPayload, { 'idempotency-key': IDEMPOTENCY_KEY }));
+      expect(res.status).toBe(201);
+    });
+
+    it('2. Content-Length > limite → 413, rejeitado antes de ler o corpo', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': '999999',
+          host: 'toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(validPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(413);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('3. corpo real acima do limite SEM Content-Length → 413', async () => {
+      // `new Request()` do Node não popula Content-Length sozinho — este
+      // teste prova que a proteção real não depende desse header existir.
+      const oversizedPayload = {
+        ...validPayload,
+        customer: { ...validPayload.customer, name: 'A'.repeat(20_000) },
+      };
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(oversizedPayload),
+      });
+      expect(request.headers.get('content-length')).toBeNull();
+      const res = await POST(request);
+      expect(res.status).toBe(413);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('4. Content-Length falso/menor que o corpo real acima do limite → 413', async () => {
+      const oversizedPayload = {
+        ...validPayload,
+        customer: { ...validPayload.customer, name: 'A'.repeat(20_000) },
+      };
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'content-length': '10', // mentira: corpo real tem ~20KB
+          host: 'toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: JSON.stringify(oversizedPayload),
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(413);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('5. JSON malformado (sintaxe inválida) → 400, sem stack trace, sem chamar o NauticFlow', async () => {
+      const request = new Request('https://toursflow.com.br/api/bookings', {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          host: 'toursflow.com.br',
+          'x-forwarded-for': TEST_IP,
+          'idempotency-key': IDEMPOTENCY_KEY,
+        },
+        body: '{ "departureId": "abc", quantity: }', // JSON quebrado de propósito
+      });
+      const res = await POST(request);
+      expect(res.status).toBe(400);
+      const body = await res.json();
+      expect(body.error.code).toBe('INVALID_REQUEST');
+      expect(JSON.stringify(body)).not.toMatch(/at Object|at JSON\.parse|\.ts:\d+/);
+      expect(createNauticFlowBooking).not.toHaveBeenCalled();
+    });
+
+    it('6. maior payload legítimo possível (todos os campos no teto de validação) ainda está bem abaixo de 10KB e processa normalmente', async () => {
+      vi.mocked(createNauticFlowBooking).mockResolvedValue({
+        status: 201,
+        replayed: false,
+        data: {
+          bookingId: 'b1',
+          status: 'pendente',
+          holdExpiresAt: '2026-09-01T12:15:00Z',
+          tour: { slug: 't', name: 'T' },
+          departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+          quantity: 2,
+          priceType: 'por_pessoa',
+          priceCents: 15000,
+          totalCents: 30000,
+          currency: 'BRL',
+        },
+      });
+      // Cada campo no teto que booking-validation.ts aceita (name≤200,
+      // phone≤40, cpf≤20) — não é possível montar um payload válido
+      // próximo de 10KB de verdade, porque os limites de campo já
+      // impedem isso bem antes. Este teste prova exatamente essa margem:
+      // o maior corpo legítimo possível fica muito abaixo do limite de 10KB.
+      const maxValidPayload = {
+        ...validPayload,
+        customer: {
+          name: 'A'.repeat(200),
+          email: `${'a'.repeat(190)}@b.com`,
+          phone: '1'.repeat(40),
+          cpf: '1'.repeat(20),
+        },
+      };
+      const bodyBytes = new TextEncoder().encode(JSON.stringify(maxValidPayload)).byteLength;
+      expect(bodyBytes).toBeLessThan(10_000);
+
+      const res = await POST(makeRequest(maxValidPayload, { 'idempotency-key': IDEMPOTENCY_KEY }));
+      expect(res.status).toBe(201);
+    });
   });
 });

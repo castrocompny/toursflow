@@ -84,6 +84,24 @@ describe('validateBookingInput', () => {
     if (result.ok) expect(result.data.customer.cpf).toBe('12345678900');
   });
 
+  it('rejeita customer.name/email/phone/cpf além do tamanho máximo', () => {
+    expect(
+      validateBookingInput({ ...validPayload, customer: { ...validPayload.customer, name: 'A'.repeat(201) } }).ok,
+    ).toBe(false);
+    expect(
+      validateBookingInput({
+        ...validPayload,
+        customer: { ...validPayload.customer, email: `${'a'.repeat(195)}@b.com` },
+      }).ok,
+    ).toBe(false);
+    expect(
+      validateBookingInput({ ...validPayload, customer: { ...validPayload.customer, phone: '1'.repeat(41) } }).ok,
+    ).toBe(false);
+    expect(
+      validateBookingInput({ ...validPayload, customer: { ...validPayload.customer, cpf: '1'.repeat(21) } }).ok,
+    ).toBe(false);
+  });
+
   it('NUNCA repassa campos extras/maliciosos mesmo que venham no JSON', () => {
     const malicious = {
       ...validPayload,

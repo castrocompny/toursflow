@@ -105,7 +105,7 @@ describe('BookingSelector', () => {
     expect(screen.getByText('R$ 300,00')).toBeTruthy();
   });
 
-  it('"Continuar reserva" avança para o resumo/placeholder, sem chamar /api/bookings', () => {
+  it('"Continuar reserva" avança para o formulário do comprador, sem chamar /api/bookings', () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
 
@@ -115,20 +115,95 @@ describe('BookingSelector', () => {
     fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
 
     expect(screen.getByText(/dados do comprador/i)).toBeTruthy();
-    expect(screen.getByText(/reserva online chega em breve/i)).toBeTruthy();
+    expect(screen.getByLabelText(/nome completo/i)).toBeTruthy();
     expect(fetchSpy).not.toHaveBeenCalled();
 
     vi.unstubAllGlobals();
   });
 
-  it('"Voltar" no placeholder retorna para a seleção', () => {
+  it('"Voltar" no formulário do comprador retorna para a seleção, preservando departure/quantidade', () => {
     render(<BookingSelector departures={[available]} />);
     const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
+    fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i })); // quantidade = 2
     fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
 
-    fireEvent.click(screen.getByRole('button', { name: /voltar/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^voltar$/i }));
+
     expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
+    expect(departureButton.getAttribute('aria-pressed')).toBe('true');
+    expect((screen.getByLabelText(/quantidade de pessoas/i) as HTMLInputElement).value).toBe('2');
+  });
+
+  describe('formulário do comprador -> revisão', () => {
+    function fillValidForm() {
+      fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });
+      fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: 'turista@example.com' } });
+      fireEvent.change(screen.getByLabelText(/telefone/i), { target: { value: '11912345678' } });
+    }
+
+    function goToCustomerForm() {
+      render(<BookingSelector departures={[available]} />);
+      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      fireEvent.click(departureButton);
+      fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
+    }
+
+    it('dados inválidos não avançam para a revisão e mostram erro específico', () => {
+      goToCustomerForm();
+      fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+
+      expect(screen.getByText(/informe o nome completo/i)).toBeTruthy();
+      expect(screen.getByText(/informe o e-mail/i)).toBeTruthy();
+      expect(screen.getByText(/informe o telefone/i)).toBeTruthy();
+      expect(screen.queryByText(/revisão da reserva/i)).toBeNull();
+    });
+
+    it('dados válidos (CPF opcional em branco) avançam para a revisão', () => {
+      goToCustomerForm();
+      fillValidForm();
+      fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+
+      expect(screen.getByText(/revisão da reserva/i)).toBeTruthy();
+    });
+
+    it('revisão mascara e-mail e telefone, e nunca chama fetch em nenhum momento do fluxo', () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+
+      goToCustomerForm();
+      fillValidForm();
+      fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+
+      expect(screen.getByText('t***@example.com')).toBeTruthy();
+      expect(screen.getByText('(11) *****-5678')).toBeTruthy();
+      expect(screen.queryByText('turista@example.com')).toBeNull();
+      expect(screen.queryByText('11912345678')).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+
+      vi.unstubAllGlobals();
+    });
+
+    it('"Editar dados" na revisão volta ao formulário com os dados preenchidos preservados', () => {
+      goToCustomerForm();
+      fillValidForm();
+      fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+
+      fireEvent.click(screen.getByRole('button', { name: /editar dados/i }));
+
+      expect((screen.getByLabelText(/nome completo/i) as HTMLInputElement).value).toBe('Turista Teste');
+      expect((screen.getByLabelText(/e-mail/i) as HTMLInputElement).value).toBe('turista@example.com');
+    });
+
+    it('PII não aparece na URL em nenhum momento do fluxo', () => {
+      const initialHref = window.location.href;
+      goToCustomerForm();
+      fillValidForm();
+      fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+
+      expect(window.location.href).toBe(initialHref);
+      expect(window.location.search).toBe('');
+    });
   });
 
   it('per_group: total fixo, não muda com a quantidade', () => {

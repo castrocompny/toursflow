@@ -1,30 +1,34 @@
 # Arquitetura do ToursFlow
 
-Documentação técnica de como o projeto é organizado hoje (atualizado até o
-commit `a11424a`). Para visão de produto e passo a passo de instalação, ver
-o [README](../README.md). Para o backend de reservas em detalhe, ver
+Documentação técnica de como o projeto é organizado hoje (atualizado até a
+Fase 2 do fluxo de reserva, 2026-08-28). Para visão de produto e passo a
+passo de instalação, ver o [README](../README.md). Para o backend de
+reservas em detalhe, ver
 [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md); para o
 contrato de preço, [PRICE-TYPES.md](PRICE-TYPES.md).
 
 ## 1. Visão geral
 
-ToursFlow é a vitrine pública (descoberta, comparação, escolha, e — a
-partir da Fase 1 do fluxo de reserva — seleção de saída/quantidade) de um
-marketplace de passeios náuticos. É a contraparte de turista do
-**NauticFlow**, sistema do operador (embarcações, saídas, reservas,
-manifesto). Os dois são repositórios, deploys e domínios independentes.
+ToursFlow é a vitrine pública (descoberta, comparação, escolha, seleção de
+saída/quantidade e — a partir da Fase 2 — preenchimento e revisão dos
+dados do comprador) de um marketplace de passeios náuticos. É a
+contraparte de turista do **NauticFlow**, sistema do operador
+(embarcações, saídas, reservas, manifesto). Os dois são repositórios,
+deploys e domínios independentes.
 
 O catálogo (passeios, destinos, categorias, saídas) já consome dados reais
 do NauticFlow em produção — o mock só existe como fallback de
 desenvolvimento local (ver seção 6). Existe também um backend de criação
 de reserva (`POST /api/bookings` → NauticFlow), testado e validado em E2E
-real, mas **ainda não conectado a nenhum botão da interface pública** — a
-seleção de saída/quantidade na página do passeio (`BookingSelector`)
-termina num placeholder, não numa reserva de verdade.
+real, mas **ainda não conectado a nenhum botão da interface pública** — o
+fluxo em `BookingSelector` (seleção → `CustomerForm` → `BookingReview`)
+termina numa tela de revisão, não numa reserva de verdade. Nenhum `fetch`
+acontece em nenhum step.
 
-**PLANEJADO / NÃO IMPLEMENTADO ainda:** formulário de dados do comprador,
-checkout, pagamento, Asaas, split, webhook de confirmação, voucher, QR
-Code, avaliações, login e área do turista, comissão e repasse financeiro.
+**PLANEJADO / NÃO IMPLEMENTADO ainda:** conexão do formulário à
+`POST /api/bookings`, checkout, pagamento, Asaas, split, webhook de
+confirmação, voucher, QR Code, avaliações, login e área do turista,
+comissão e repasse financeiro.
 
 ## 2. Stack
 
@@ -173,10 +177,10 @@ Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'publish
 
 | Pasta | Componentes | Responsabilidade |
 |---|---|---|
-| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`** | `BookingSelector` (`'use client'`) é a seleção de reserva: saída → quantidade → total estimado → "Continuar" (placeholder, sem backend ainda — ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md)) |
+| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`** | `BookingSelector` (`'use client'`) orquestra 3 steps: seleção (saída → quantidade → total estimado) → `CustomerForm` (dados do comprador, validado por `src/lib/customer-form.ts`) → `BookingReview` (resumo com e-mail/telefone/CPF mascarados). Nenhum dos 3 steps chama `/api/bookings` ainda — ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) |
 | `layout/`, `search/`, `destinations/`, `categories/`, `ui/`, `brand/` | — | Inalterados desde a fase de catálogo |
 
-Só 4 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector` — todo o resto é Server Component.
+6 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview` — todo o resto é Server Component.
 
 ## 9. Camada de reservas (server-only)
 
@@ -186,7 +190,9 @@ Resumo — detalhe completo em [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO
 navegador -> POST /api/bookings (ToursFlow) -> POST /api/marketplace/bookings (NauticFlow)
 ```
 
-`src/lib/nauticflow-bookings.ts` é o único módulo que lê `TOURSFLOW_API_SECRET`; `src/lib/client-ip.ts`/`toursflow-client-key.ts` calculam a identidade pseudônima do rate limit (HMAC do IP, nunca o IP em claro). Todos marcados `import 'server-only'`. Whitelist explícita do payload em `booking-validation.ts` — nunca repassa campo além de `departureId`/`quantity`/`customer.{name,email,phone,cpf}`.
+`src/lib/nauticflow-bookings.ts` é o único módulo que lê `TOURSFLOW_API_SECRET`; `src/lib/client-ip.ts`/`toursflow-client-key.ts` calculam a identidade pseudônima do rate limit (HMAC do IP, nunca o IP em claro). Todos marcados `import 'server-only'`. Whitelist explícita do payload em `booking-validation.ts` — nunca repassa campo além de `departureId`/`quantity`/`customer.{name,email,phone,cpf}`. Hardening da Fase 2: Content-Type restrito, limite de corpo, Origin reforçado com `Sec-Fetch-Site` (ver [SECURITY.md](SECURITY.md)).
+
+Do lado do navegador, `src/lib/idempotency-key.ts` gera e mantém uma `Idempotency-Key` (`crypto.randomUUID()`) por tentativa lógica de reserva — regenerada só quando `departureId`/`quantity`/dados do comprador mudam — mas **nunca a envia**: nenhum `fetch` acontece antes da Fase 3. `src/lib/booking-error-messages.ts` já mapeia cada `BookingErrorCode` para uma mensagem segura em português, pronta para a Fase 3, também não usada ainda.
 
 ## 10. Regras de conteúdo já aplicadas
 
@@ -208,10 +214,10 @@ navegador -> POST /api/bookings (ToursFlow) -> POST /api/marketplace/bookings (N
 
 Inalterado desde a fase de catálogo — `tailwind.config.ts`: cores `ink`/`sea`/`foam`/`sand`/`sun`, `font-display`/`font-sans`, `rounded-card` (20px), `shadow-card`/`shadow-lift`, `max-w-shell` (1240px).
 
-## 13. Imagens
+## 13. Imagens e headers HTTP
 
-`next.config.mjs` libera **só** o host específico do Storage do NauticFlow (`gggpihphjjxndpfntnvm.supabase.co`, path `/storage/v1/object/**`) — nunca wildcard. Fallback visual (`ImageOff`) em `TourCard`/`TourGallery` quando não há foto.
+`next.config.mjs` libera **só** o host específico do Storage do NauticFlow (`gggpihphjjxndpfntnvm.supabase.co`, path `/storage/v1/object/**`) — nunca wildcard. Fallback visual (`ImageOff`) em `TourCard`/`TourGallery` quando não há foto. O mesmo arquivo define `headers()` para todas as rotas com um conjunto de headers de segurança de baixo risco (`X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options`, `Permissions-Policy`) — detalhe e o que fica de fora (CSP) em [SECURITY.md](SECURITY.md#10-headers-de-segurança-de-resposta-novo-fase-2).
 
 ## 14. Testes
 
-Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, seleção de reserva (componente, via `@testing-library/react`). `npm test` roda tudo.
+Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, seleção de reserva e formulário do comprador (componente, via `@testing-library/react`), validação/máscara/checksum de CPF, Idempotency-Key. `npm test` roda tudo — 145 testes.

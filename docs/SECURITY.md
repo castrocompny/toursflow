@@ -48,6 +48,28 @@ X-ToursFlow-Client-Key = HMAC-SHA256(TOURSFLOW_API_SECRET, "rate-limit:v1:" + ip
   nunca pode ser reaproveitado como o Bearer de autenticação, mesmo
   reusando o mesmo segredo.
 
+**O que está comprovado hoje, e como:** toda a implementação do lado
+ToursFlow — fonte de IP confiável em produção (`client-ip.test.ts`),
+cálculo do HMAC (`toursflow-client-key.test.ts`), rota sempre recalculando
+a key a partir do IP real e nunca lendo um header vindo do navegador
+(`route.test.ts`, testes "envia X-ToursFlow-Client-Key calculada
+server-side" e "IGNORA X-ToursFlow-Client-Key enviado pelo navegador" —
+este último manda um header forjado de 64 hex e prova que a key enviada
+ao NauticFlow é sempre a recalculada, nunca a forjada) — está coberta por
+teste automatizado real (HMAC calculado de verdade nos testes, não
+mockado).
+
+**O que NÃO está comprovado:** nenhum E2E cross-serviço confirma que o
+NauticFlow, do lado dele, de fato aplica o rate limit usando esta key ou
+ignora um header equivalente forjado na chamada dele. A documentação
+histórica (`RESERVAS-SERVER-TO-SERVER.md`, `CHANGELOG.md`, entrada de
+2026-08-27) registra isso como pendente desde a implementação original —
+"o NauticFlow só tem a validação... no ambiente local dele... o E2E desta
+parte específica está pendente" — e não há nenhum commit, teste ou
+entrada de changelog posterior que feche essa lacuna. Revisado nesta
+entrada (2026-08-28): a lacuna continua real, não foi fechada por engano
+nem por omissão de registro.
+
 Detalhe completo: [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#rate-limit-por-visitante-identidade-pseudônima).
 
 ## 3. Whitelist de payload (nunca confiar em campo do cliente)
@@ -67,15 +89,41 @@ cliente. Isso é o que permite ao NauticFlow tratar um duplo-clique ou
 retry de timeout como a mesma operação, sem duplicar reserva. Detalhe:
 [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#idempotency-key--ponta-a-ponta).
 
-## 5. Proteção de origem (best-effort, documentada como tal)
+## 5. Proteção de origem (best-effort, documentada como tal) — reforçada na Fase 2
 
-`isTrustedOrigin()` em `src/app/api/bookings/route.ts` compara o host do
-header `Origin` (quando o navegador o envia) com o host da própria
-requisição, rejeitando com `403 INVALID_REQUEST` se divergir. **Isto não é
-autenticação nem proteção CSRF completa** — não há sessão de usuário nesta
-etapa para algo mais forte, e nem todo navegador envia `Origin` em todo
-cenário (nesse caso a checagem deixa passar). É uma camada independente do
-rate limit por `X-ToursFlow-Client-Key` — uma não substitui a outra.
+`isTrustedOrigin()` em `src/app/api/bookings/route.ts` usa dois sinais, nessa ordem:
+
+1. **`Sec-Fetch-Site`** — header enviado automaticamente por navegadores
+   modernos em toda requisição `fetch`, não pode ser forjado por JS de
+   página nenhuma. Se o valor for `cross-site`, a requisição é rejeitada
+   sempre, mesmo que o `Origin` bata com o `Host` por algum outro motivo.
+2. **`Origin` vs. `Host`/allowlist** — sem sinal decisivo de
+   `Sec-Fetch-Site` (ausente, ou navegador antigo/cliente não-browser),
+   cai para a checagem anterior: host do `Origin` precisa bater com o
+   `Host` da própria requisição (cobre produção, cada preview deploy e dev
+   local automaticamente) **ou** estar em `ALLOWED_ORIGIN_HOSTS`
+   (`toursflow.com.br`, `toursflow.vercel.app` — nomes de domínio
+   públicos, não segredo, hardcoded em vez de env var por não terem
+   necessidade real de configuração).
+
+**Isto não é autenticação nem proteção CSRF completa** — não há sessão de
+usuário nesta etapa para algo mais forte, e `Origin` continua ausente em
+alguns cenários legítimos (nesse caso a checagem deixa passar, na falta de
+um sinal melhor — testado explicitamente, comportamento atual mantido de
+propósito). É uma camada independente do rate limit por
+`X-ToursFlow-Client-Key` — uma não substitui a outra.
+
+**Casos testados explicitamente** (`route.test.ts`, describe "política de
+Origin"): aceita `https://toursflow.com.br` e `https://toursflow.vercel.app`
+(em qualquer combinação de Host/Origin entre os dois); rejeita
+`https://toursflow.com.br.attacker.example` (prova que a comparação é por
+host **exato**, não por `includes`/substring — um domínio que só contém o
+nome oficial como prefixo não passa); rejeita `https://attacker.example`;
+rejeita `Sec-Fetch-Site: cross-site` mesmo com `Origin` batendo; em
+produção (Host de produção), `Origin: http://localhost:3000` é **rejeitado**
+— `localhost` nunca está na allowlist estática, só passa via a regra
+"mesmo host da própria requisição" quando o `Host` da requisição também é
+`localhost` (cenário de dev local, testado à parte).
 
 ## 6. Erros nunca vazam detalhe interno
 
@@ -112,7 +160,107 @@ XSS armazenado, mediado por dado de catálogo. Corrigido nesta auditoria
 '\\u003c')`) antes de embutir — mitigação padrão recomendada
 para este padrão exato (JSON-LD/scripts inline com dado dinâmico).
 
-## 9. Dependências
+## 9. Content-Type e tamanho do corpo (novo, Fase 2)
+
+`/api/bookings` rejeita, antes de aceitar o payload:
+
+- **Content-Type diferente de `application/json`** (com ou sem `charset`)
+  → `415 INVALID_REQUEST`, verificado pelo header antes de tocar no corpo.
+- **Corpo acima de 10KB** (`MAX_BODY_BYTES`, generoso para um payload de
+  reserva — nome/e-mail/telefone/CPF/departureId/quantity) → `413
+  INVALID_REQUEST`.
+
+**A proteção de tamanho é sobre os bytes REALMENTE recebidos, não só
+sobre o header `Content-Length`** (`readBodyWithLimit()` em `route.ts`):
+o corpo é lido em streaming, contando bytes chunk a chunk, e a leitura é
+abortada assim que o total ultrapassa o limite — antes de `JSON.parse`
+rodar. Isso cobre os quatro cenários reais:
+
+| Cenário | Resultado |
+|---|---|
+| Corpo normal, dentro do limite | Processa normalmente |
+| `Content-Length` declarado acima do limite | `413`, rejeitado sem ler nenhum byte do corpo (fast path) |
+| Corpo real acima do limite, **sem** `Content-Length` | `413` — a contagem real de bytes recebidos pega isso |
+| `Content-Length` mentiroso/menor que o corpo real, corpo real acima do limite | `413` — o header nunca é usado para *permitir* passagem, só para a rejeição antecipada quando ele mesmo já admite ser grande demais |
+
+`Content-Length` continua útil só como *fast path* (rejeita sem gastar
+ciclo lendo nada, quando o próprio cliente já declara um valor grande) —
+nunca é a fonte de verdade sobre se um corpo pode ser aceito. Testes:
+`route.test.ts`, describe "limite real de tamanho do corpo".
+
+**Limitação que permanece, documentada:** o limite de 10KB é sobre o
+corpo desta requisição especificamente; não existe (nem faz sentido
+existir aqui) proteção contra volume de requisições simultâneas — isso é
+rate limiting (seção 2 acima + [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador)), uma preocupação diferente.
+
+## 10. Headers de segurança de resposta (novo, Fase 2)
+
+`next.config.mjs` define, para todas as rotas: `X-Content-Type-Options:
+nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`,
+`X-Frame-Options: DENY`, `Permissions-Policy: camera=(), microphone=(),
+geolocation=(), interest-cohort=()`. Todos de baixo risco — não dependem
+do fluxo de reserva e não têm como quebrar imagem/hidratação/fonte.
+
+**Deliberadamente fora desta etapa: Content-Security-Policy.** O site usa
+hidratação padrão do Next (scripts inline gerados pelo framework), JSON-LD
+inline via `dangerouslySetInnerHTML` (seção 8) e Google Fonts — uma CSP
+correta exigiria nonce/hash por request e investigação própria para não
+quebrar nada disso. Colocar uma policy incorreta seria pior que não ter
+nenhuma (falsa sensação de proteção ou site quebrado); fica para uma etapa
+dedicada.
+
+## 11. PII do formulário do comprador (novo, Fase 2)
+
+A partir do `CustomerForm`/`BookingReview`
+(`src/components/tours/`, lógica em `src/lib/customer-form.ts`), o
+navegador manipula dado pessoal (nome, e-mail, telefone, CPF opcional)
+pela primeira vez no projeto — mesmo sem nenhuma reserva real acontecer
+ainda (não há `fetch` nesta fase).
+
+- **Nunca persistido.** Estado só em memória do componente React
+  (`useState` em `BookingSelector`) — nunca `localStorage`,
+  `sessionStorage`, cookie, ou query string/URL. Recarregar a página perde
+  os dados (aceito: não existe reserva "salva" antes da Fase 3).
+- **Nunca logado.** Nenhum `console.log`/`console.error` do formulário ou
+  do step de revisão manipula o objeto `customer` inteiro nem campo
+  individual.
+- **Mascarado na revisão.** `maskEmail`/`maskPhone`/`maskCpf`
+  (`customer-form.ts`) — e-mail mostra só a primeira letra do usuário,
+  telefone só DDD + 4 últimos dígitos, CPF só os 2 dígitos verificadores.
+  O nome não é mascarado (não há razão de segurança para isso — é o único
+  campo que o próprio turista já vê por completo em qualquer formulário
+  de reserva real).
+- **CPF: normalizado + checksum validado no cliente**
+  (`isCpfChecksumValid` em `customer-form.ts` — algoritmo padrão dos 2
+  dígitos verificadores, mais rejeição de sequência repetida tipo
+  `111.111.111-11`). Continua opcional — o contrato do NauticFlow
+  (`BookingCustomerInput.cpf?`) não exige, então a UI também não torna
+  obrigatório.
+- **Nada enviado ainda.** Nenhum `fetch` acontece em nenhum step desta
+  fase — confirmado por teste (spy em `global.fetch`, zero chamadas do
+  clique em "Continuar reserva" até a revisão) e por revisão manual em
+  browser real.
+
+## 12. Ciclo de vida da Idempotency-Key (definido, não enviada — Fase 2)
+
+`resolveIdempotencyKey()` (`src/lib/idempotency-key.ts`) decide reaproveitar
+ou gerar uma key nova, comparando o fingerprint da tentativa atual
+(`departureId`+`quantity`+dados do comprador) com o da última vez. Regras,
+todas cobertas por teste unitário puro (`idempotency-key.test.ts`):
+
+- Sem key existente → sempre gera uma nova (primeira tentativa).
+- Fingerprint igual ao armazenado (re-render, retry da mesma tentativa) →
+  reaproveita a key existente, **nunca** chama o gerador de novo.
+- Fingerprint diferente (qualquer dado relevante mudou) → gera key nova.
+- **Depois de um sucesso definitivo:** regra para a Fase 3 (quando existir
+  um step de sucesso) — o estado precisa ser resetado para
+  `{ key: null, fingerprint: null }` depois de criar a reserva de verdade,
+  para que uma nova tentativa de reserva (mesmo com dados idênticos aos da
+  reserva já concluída) sempre receba key nova. Com `key: null`, a função
+  sempre gera — isso já está testado (`idempotency-key.test.ts`, "depois de
+  um sucesso definitivo...").
+
+## 13. Dependências
 
 `npm audit` acusou vulnerabilidades conhecidas do Next.js 14.2.5 na
 auditoria pré-integração de 2026-08-25 (ver
@@ -130,8 +278,24 @@ resolvido.
   nunca usa o IP em claro no output.
 - `nauticflow-bookings.test.ts` (ou equivalente) — segredo nunca aparece em
   resposta de erro; sem fallback simulado em falha de rede/timeout.
+- `route.test.ts` (Fase 2) — Content-Type inválido (415); limite real de
+  corpo nos 4 cenários (normal, `Content-Length` grande, corpo grande sem
+  `Content-Length`, `Content-Length` mentiroso); JSON malformado sem
+  vazar stack trace; Origin de host oficial aceito e host
+  parecido/atacante rejeitado (comparação por host exato, não substring);
+  `Sec-Fetch-Site: cross-site` rejeitado mesmo com Origin batendo;
+  `localhost` rejeitado em produção, aceito só quando Host também é
+  `localhost`; strings acima do limite.
+- `customer-form.test.ts` (Fase 2) — validação de nome/e-mail/telefone/CPF,
+  checksum de CPF, máscaras de exibição nunca revelam o dado completo.
+- `idempotency-key.test.ts` (Fase 2) — ciclo de vida completo de
+  `resolveIdempotencyKey()`: reaproveita em re-render/retry, regenera em
+  mudança relevante, sempre regenera depois de um reset pós-sucesso.
+- `BookingSelector.test.tsx` (Fase 2) — dados inválidos não avançam,
+  válidos avançam, estado preservado ao voltar, zero `fetch` em todo o
+  fluxo, PII nunca aparece na URL.
 
-`npm test` roda todos (86 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (145 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
 
 ## Achados desta auditoria (2026-08-28)
@@ -158,23 +322,47 @@ catálogo/UI, não só segurança).
 
 ## Limitações conhecidas (aceitas, não resolvidas nesta etapa)
 
-- Sem rate limit próprio na rota `/api/bookings` do lado do ToursFlow (o
-  limite real mora no NauticFlow via `X-ToursFlow-Client-Key`); antes de
-  conectar a UI publicamente vale reavaliar se uma camada própria é
-  necessária — com estado compartilhado entre execuções serverless (ex.:
-  Upstash Redis), nunca um limiter em memória (não protege nada na Vercel,
-  onde cada invocação pode rodar numa instância diferente).
+- **Sem rate limit próprio na rota `/api/bookings` do lado do ToursFlow —
+  classificado como HARDENING/defesa em profundidade, não bloqueador,
+  em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador)
+  (revisado em 2026-08-28).** O NauticFlow já é a autoridade real de
+  proteção: rate limit global + por visitante (contrato documentado),
+  hold de capacidade e idempotência — estes dois últimos **comprovados em
+  E2E real contra produção** (criação, replay, conflito de idempotência,
+  `soldOut` refletido). Implementar uma camada própria no ToursFlow
+  exigiria armazenamento compartilhado entre execuções serverless (ex.:
+  Upstash Redis) — uma dependência SaaS nova, fora de escopo sem
+  autorização explícita — para proteger contra um risco que já tem
+  cobertura real a jusante. Não bloqueia o início da Fase 3; vale
+  reavaliar a decisão se o volume de tráfego real justificar depois.
 - Sem CAPTCHA.
-- Proteção CSRF é best-effort (seção 5), não sessão-based.
+- Proteção CSRF é best-effort (seção 5) — reforçada na Fase 2 com
+  `Sec-Fetch-Site` e testada explicitamente contra hosts oficiais/hosts
+  atacantes, mas continua não sessão-based.
 - Next.js 14.2.5 com CVEs conhecidos, upgrade pendente.
-- `X-ToursFlow-Client-Key` só validado localmente do lado do NauticFlow até
-  o momento — deploy coordenado dos dois lados ainda não aconteceu, então
-  o E2E real desta proteção específica está pendente (ver
+- **`X-ToursFlow-Client-Key`: implementação e comportamento do lado
+  ToursFlow comprovados por teste automatizado real (seção 2 acima); o
+  que continua sem comprovação é o lado NauticFlow — nenhum E2E
+  cross-serviço confirma que o NauticFlow aplica o limite usando esta key
+  ou ignora um header forjado do lado dele.** Documentado como pendente
+  desde a implementação original (2026-08-27); revisado nesta entrada
+  (2026-08-28) e confirmado que a lacuna continua real — nenhum commit
+  ou teste posterior fechou isso (ver
   [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#o-que-ainda-não-existe)).
+- Sem Content-Security-Policy (seção 10) — deferida para etapa própria.
 
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Autenticação de usuário/sessão (turista) — inexistente hoje.
-- Rate limit próprio no ToursFlow.
+- Rate limit próprio no ToursFlow — classificado como hardening
+  (ADR-007), não implementado; pode ser revisitado se o volume de
+  tráfego justificar.
+- E2E cross-serviço específico do rate limit por `X-ToursFlow-Client-Key`
+  contra o NauticFlow em produção (deploy coordenado dos dois lados ainda
+  não aconteceu).
 - CAPTCHA no fluxo de reserva.
 - Upgrade do Next.js para resolver os CVEs da auditoria pré-integração.
+- Content-Security-Policy.
+- Conexão do formulário do comprador a `POST /api/bookings` (Fase 3) —
+  formulário, validação, máscara, revisão e Idempotency-Key já existem,
+  mas nenhuma chamada de rede acontece ainda.
