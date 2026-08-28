@@ -8,7 +8,7 @@ import { TourGallery } from '@/components/tours/TourGallery';
 import { TourItinerary } from '@/components/tours/TourItinerary';
 import { TourChecklist } from '@/components/tours/TourChecklist';
 import { BoardingLocation } from '@/components/tours/BoardingLocation';
-import { DeparturesList } from '@/components/tours/DeparturesList';
+import { BookingSelector } from '@/components/tours/BookingSelector';
 import { TourCard } from '@/components/tours/TourCard';
 import { Rating } from '@/components/ui/Rating';
 import { Price } from '@/components/ui/Price';
@@ -148,7 +148,7 @@ export default async function TourPage({ params }: PageProps) {
               Datas e horários disponíveis
             </h2>
             <div className="mt-6">
-              <DeparturesList departures={departures} />
+              <BookingSelector departures={departures} />
             </div>
           </section>
 

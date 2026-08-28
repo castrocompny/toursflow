@@ -189,7 +189,16 @@ interface ListEnvelope<T> {
 // Mapeamento DTO -> tipos internos do ToursFlow
 // ---------------------------------------------------------------------------
 
-function mapPriceType(raw: string): PriceType {
+/**
+ * Contrato confirmado do NauticFlow: `por_pessoa`, `por_grupo` (vendáveis) e
+ * `a_partir_de` (só catálogo, o NauticFlow rejeita reserva desse tipo com
+ * `PRICE_TYPE_NOT_SELLABLE`). `per_boat`/`por_embarcacao` **não têm
+ * equivalente confirmado** — removido do mapeamento de propósito, não é
+ * mais uma suposição. Qualquer valor não reconhecido (incluindo um futuro
+ * `por_embarcacao` real, se um dia existir) cai em `starting_from`: o
+ * padrão seguro é "não vendável", nunca "vendável por engano".
+ */
+export function mapPriceType(raw: string): PriceType {
   switch (raw) {
     case 'por_pessoa':
     case 'per_person':
@@ -197,15 +206,12 @@ function mapPriceType(raw: string): PriceType {
     case 'por_grupo':
     case 'per_group':
       return 'per_group';
-    case 'por_embarcacao':
-    case 'per_boat':
-      return 'per_boat';
+    case 'a_partir_de':
+    case 'starting_from':
+      return 'starting_from';
     default:
-      // Só o valor "por_pessoa" foi confirmado em produção até agora.
-      // Um valor novo/desconhecido não pode quebrar a página — cai para
-      // o tipo mais comum e fica registrado no log do servidor.
-      console.warn(`[nauticflow-source] priceType desconhecido: "${raw}" — usando "per_person".`);
-      return 'per_person';
+      console.warn(`[nauticflow-source] priceType desconhecido: "${raw}" — tratando como não vendável.`);
+      return 'starting_from';
   }
 }
 

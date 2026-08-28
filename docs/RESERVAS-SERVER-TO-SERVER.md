@@ -65,6 +65,17 @@ A rota `/api/bookings` **exige** o header `Idempotency-Key` (formato UUID) e o r
 
 `validateBookingInput()` extrai **só** `departureId`, `quantity`, `customer.{name,email,phone,cpf}` — mesmo que o JSON recebido contenha `companyId`, `tourId`, `price`, `total`, `status`, `source` ou qualquer outro campo, eles nunca chegam ao objeto validado nem são repassados ao NauticFlow. Preço e operador são sempre resolvidos pelo NauticFlow a partir do `departureId`.
 
+## Contrato de price types (confirmado)
+
+| NauticFlow (`price_type`) | ToursFlow (`PriceType`) | Vendável? | Total |
+|---|---|---|---|
+| `por_pessoa` | `per_person` | Sim | `price × quantity` — confirmado em E2E real (`teste-e2e-producao-toursflow-78a909`: 15000 × 2 = 30000) |
+| `por_grupo` | `per_group` | Sim | `price` fixo — `quantity` não multiplica, confirmado contra o contrato real |
+| `a_partir_de` | `starting_from` | **Não** | Preço de catálogo apenas — o NauticFlow rejeita reserva desse tipo com `PRICE_TYPE_NOT_SELLABLE` |
+| — | `per_boat` | **Não** | Sem equivalente confirmado no NauticFlow hoje. Existe no tipo do ToursFlow só por compatibilidade com dado mock/legado; `mapPriceType()` nunca produz esse valor a partir de dado real — qualquer `price_type` desconhecido cai em `starting_from` (padrão seguro: nunca "vendável por engano") |
+
+Qualquer saída com `priceType` não vendável (`starting_from` ou `per_boat`) aparece na lista de saídas mas fica desabilitada para seleção (`isSellablePriceType()` em `src/lib/booking-selection.ts`) — nunca é possível chegar a "Continuar reserva" com uma delas.
+
 ## Erros
 
 Os 12 códigos do NauticFlow (`INVALID_REQUEST`, `INVALID_IDEMPOTENCY_KEY`, `UNAUTHORIZED`, `DEPARTURE_NOT_FOUND`, `DEPARTURE_IN_PAST`, `DEPARTURE_NOT_SELLABLE`, `PRICE_NOT_CONFIGURED`, `PRICE_TYPE_NOT_SELLABLE`, `INSUFFICIENT_CAPACITY`, `RATE_LIMITED`, `IDEMPOTENCY_CONFLICT`, `INTERNAL_ERROR`) são preservados como estão — mesmo `status` HTTP, mesmo `code`. Falha de comunicação (timeout, rede, resposta inválida) vira `BOOKING_SERVICE_UNAVAILABLE` (503); impossibilidade de determinar um IP confiável vira `CLIENT_IP_UNAVAILABLE` (503, mensagem genérica ao navegador, sem mencionar IP/Vercel/header) — ambos códigos próprios do ToursFlow, para nunca serem confundidos com um erro de negócio do NauticFlow. Nenhuma resposta de erro inclui stack trace, detalhe interno, nome de variável de ambiente ou o segredo.

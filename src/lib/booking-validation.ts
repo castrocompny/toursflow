@@ -52,9 +52,16 @@ export function validateBookingInput(raw: unknown): ValidationResult<BookingRequ
     return fail('departureId precisa ser um UUID válido.');
   }
 
+  // Sem limite máximo aqui de propósito: o contrato do NauticFlow
+  // (docs/RESERVAS-SERVER-TO-SERVER.md) não define nenhum teto oficial de
+  // quantity, e o NauticFlow é quem decide se uma quantidade é aceitável
+  // (capacidade real, INSUFFICIENT_CAPACITY etc.) — inventar um teto aqui
+  // seria uma regra de negócio que o ToursFlow não tem autoridade para
+  // criar. Só rejeitamos o que é inequivocamente inválido: não-número,
+  // fracionário, zero ou negativo.
   const quantity = body.quantity;
-  if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 1 || quantity > 50) {
-    return fail('quantity precisa ser um inteiro entre 1 e 50.');
+  if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 1) {
+    return fail('quantity precisa ser um inteiro positivo.');
   }
 
   if (typeof body.customer !== 'object' || body.customer === null || Array.isArray(body.customer)) {

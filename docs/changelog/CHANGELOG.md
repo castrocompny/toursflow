@@ -14,6 +14,18 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-28 — Fase 1 do fluxo de reserva: seleção real + contrato de price types fechado
+
+Substituído `DeparturesList` (só exibia saídas) por `BookingSelector` (`src/components/tours/BookingSelector.tsx`): seleção de saída → quantidade de pessoas (stepper acessível, sem teto inventado) → preço/total estimado → "Continuar reserva". O clique em "Continuar" só avança para um placeholder de "Dados do comprador" — **nenhuma chamada a `/api/bookings` nesta fase**. Lógica pura extraída para `src/lib/booking-selection.ts` (testável sem DOM).
+
+Duas correções de honestidade de regra de negócio, feitas antes de fechar a fase:
+- **Removido o limite fictício de `quantity <= 50`** (existia em `booking-validation.ts` desde a fase anterior e foi copiado sem verificar para a UI nova) — não há teto oficial no contrato do NauticFlow; só `quantity >= 1` inteiro é uma regra real.
+- **Contrato de price types alinhado ao real, confirmado por quem opera o NauticFlow**: `per_person`/`per_group` são vendáveis (`per_group` com preço fixo, quantidade não multiplica — antes era suposição, agora confirmado); `starting_from` (`a_partir_de`, catálogo) e `per_boat` (sem equivalente no NauticFlow hoje) são bloqueados na UI antes de chegar em "Continuar" — nunca calculam total, nunca chamam o backend. `mapPriceType()` em `nauticflow-source.ts` também passou a tratar `price_type` desconhecido como não vendável por padrão (antes caía em "por pessoa", o lado errado para errar).
+
+Primeiro uso de teste de componente React no projeto: `@testing-library/react` + `jsdom` instalados, ambiente configurado por arquivo (`// @vitest-environment jsdom`) sem afetar os testes de lógica pura existentes. 86 testes no total.
+
+Documentado em [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md) (nova seção "Contrato de price types").
+
 ## 2026-08-27 — Rate limit por visitante (X-ToursFlow-Client-Key)
 
 Implementada a identidade pseudônima do visitante exigida pelo rate limit do NauticFlow: `src/lib/client-ip.ts` (IP confiável — `x-vercel-forwarded-for` em produção Vercel, fallback controlado para `x-forwarded-for` fora dela, falha fechada com `CLIENT_IP_UNAVAILABLE` se nenhum IP confiável existir) e `src/lib/toursflow-client-key.ts` (HMAC-SHA256 do IP com o mesmo `TOURSFLOW_API_SECRET`, domain-separated com `rate-limit:v1:`). `nauticflow-bookings.ts` passou a enviar `X-ToursFlow-Client-Key` no header; a rota nunca lê esse header vindo do navegador — sempre recalcula. Novo código de erro `CLIENT_IP_UNAVAILABLE`. +26 testes (client-ip, toursflow-client-key, e casos novos na rota), total 57.

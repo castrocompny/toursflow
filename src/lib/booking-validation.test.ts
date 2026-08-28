@@ -45,10 +45,17 @@ describe('validateBookingInput', () => {
     if (!result.ok) expect(result.error.code).toBe('INVALID_REQUEST');
   });
 
-  it('rejeita quantity fora do intervalo permitido (1 a 50)', () => {
+  it('rejeita quantity inválida: zero, negativo ou fracionário', () => {
     expect(validateBookingInput({ ...validPayload, quantity: 0 }).ok).toBe(false);
-    expect(validateBookingInput({ ...validPayload, quantity: 51 }).ok).toBe(false);
+    expect(validateBookingInput({ ...validPayload, quantity: -1 }).ok).toBe(false);
     expect(validateBookingInput({ ...validPayload, quantity: 2.5 }).ok).toBe(false);
+  });
+
+  it('NÃO rejeita quantity alta — não existe teto oficial no contrato do NauticFlow', () => {
+    // O NauticFlow é quem decide se a quantidade é aceitável (capacidade
+    // real). O ToursFlow não inventa um limite de negócio aqui.
+    expect(validateBookingInput({ ...validPayload, quantity: 51 }).ok).toBe(true);
+    expect(validateBookingInput({ ...validPayload, quantity: 1000 }).ok).toBe(true);
   });
 
   it('rejeita customer.email inválido', () => {

@@ -6,7 +6,17 @@
  * dos dados: todos consomem apenas estes tipos.
  */
 
-export type PriceType = 'per_person' | 'per_group' | 'per_boat';
+/**
+ * Contrato real do NauticFlow (confirmado — ver docs/RESERVAS-SERVER-TO-SERVER.md):
+ * - `per_person` (NauticFlow: `por_pessoa`) — vendável, total = price × quantity.
+ * - `per_group` (NauticFlow: `por_grupo`) — vendável, total = price fixo, quantity não multiplica.
+ * - `starting_from` (NauticFlow: `a_partir_de`) — só catálogo, NÃO vendável; o NauticFlow
+ *   rejeita reserva desse tipo (`PRICE_TYPE_NOT_SELLABLE`).
+ * - `per_boat` — existe no tipo do ToursFlow (mock/legado), mas **não tem
+ *   equivalente confirmado no NauticFlow hoje**. Nunca produzido pelo
+ *   mapeamento de dados reais; tratado como não vendável por segurança.
+ */
+export type PriceType = 'per_person' | 'per_group' | 'per_boat' | 'starting_from';
 
 export type TourStatus = 'published' | 'draft' | 'paused';
 

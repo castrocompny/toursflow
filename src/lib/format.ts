@@ -25,6 +25,9 @@ export function priceTypeLabel(type: PriceType): string {
       return 'por grupo';
     case 'per_boat':
       return 'por embarcação';
+    case 'starting_from':
+      // Preço de catálogo, não de uma saída vendável — sem rótulo de "por X".
+      return '';
   }
 }
 
