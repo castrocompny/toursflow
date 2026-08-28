@@ -14,6 +14,24 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-28 — Fase 3: UI conectada a POST /api/bookings de verdade (não commitado)
+
+Substituído o botão "Confirmar reserva" sem função (Fase 2) por submissão real: `BookingReview` agora chama `POST /api/bookings` via `src/lib/booking-submission.ts` (novo — único ponto do navegador que faz essa chamada). Novo step `BookingConfirmation` (`src/components/tours/BookingConfirmation.tsx`) mostra o hold criado: código da reserva, countdown até `holdExpiresAt` (`src/lib/hold-countdown.ts`, sempre derivado do timestamp do servidor, nunca 15:00 fixo no cliente), e o total REAL devolvido pelo NauticFlow (`priceCents`/`totalCents`) — nunca mais o total estimado calculado no cliente depois do sucesso. Aviso explícito: "Pagamento será disponibilizado na próxima etapa." — Asaas/PIX/cartão/split/webhook/voucher continuam fora do escopo.
+
+Payload sempre por whitelist e normalizado antes de enviar (`buildBookingPayload()`): `name`/`email` com trim, `phone`/`cpf` só dígitos (nunca a máscara visual), `cpf` vazio nem aparece como chave — nunca `price`/`total`/`priceType`/`companyId`/`operatorId`/`status`/`clientKey`, mesmo que existissem em algum estado.
+
+`Idempotency-Key` enviada pela primeira vez, com o ciclo de vida completo já preparado na Fase 2 (`resolveIdempotencyKey()`): reaproveitada em retry do mesmo erro transitório, regenerada quando o turista muda um dado antes de reenviar, e resetada para forçar key nova depois de um sucesso definitivo ou de um `IDEMPOTENCY_CONFLICT`.
+
+Double-submit impedido por um `useRef` síncrono além do state de submissão — 3 cliques seguidos no botão resultam em exatamente 1 chamada de rede (testado).
+
+Todos os 14 `BookingErrorCode` + `NETWORK_ERROR` (quando o `fetch` rejeita sem resposta — nunca tratado como "reserva não criada", já que o servidor pode ter processado antes da conexão cair) mapeados para mensagem segura em `booking-error-messages.ts` (duas mensagens ajustadas nesta entrada: `INSUFFICIENT_CAPACITY` e `RATE_LIMITED`, com o texto exato pedido). Em `INSUFFICIENT_CAPACITY` especificamente, a UI também chama `router.refresh()` para atualizar a disponibilidade real sem inventar um novo endpoint (ADR-008) — sem selecionar outra saída sozinha.
+
+**Achado sério de integridade dos testes, corrigido nesta entrada:** `vitest.config.ts` só incluía `src/**/*.test.ts`, nunca `*.test.tsx` — isso significa que `BookingSelector.test.tsx` (existente desde a Fase 1) **nunca rodou de fato** via `npm test`, apesar de todo relatório de fase anterior (incluindo desta sessão) ter reportado contagens de teste "tudo verde" que presumiam essa suíte incluída. Corrigido o include glob + `oxc: { jsx: { runtime: 'automatic' } }` (necessário para o parser JSX da Vite 8/rolldown). Ao rodar de verdade, apareceram 3 bugs reais nos próprios testes (nenhum no código de produção): duas queries ambíguas de `@testing-library/react` (`getByLabelText`/`getByText` casando mais de um elemento) e uma asserção de máscara de e-mail com contagem de asteriscos errada — todos corrigidos. Detalhe: [docs/SECURITY.md](../SECURITY.md), [docs/ARCHITECTURE.md](../ARCHITECTURE.md).
+
+**Nenhum E2E controlado contra produção foi executado** — decisão registrada em [ADR-009](../DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup): este repositório não tem mecanismo de cleanup/cancelamento de reserva, e criar um hold real de teste sem jeito de desfazê-lo violaria a própria condição que autorizava o E2E. Validado em vez disso por 209 testes automatizados (`fetch` mockado, cobrindo 201/replay/todos os erros relevantes/rede/double-submit/ciclo de idempotência/preço do backend/PII) e verificação em browser real (Playwright) até o step de revisão — sem clicar em "Confirmar reserva" contra o NauticFlow de produção.
+
+`npm run typecheck`, `lint`, `test` (209 testes) e `build` verdes. Documentado em [docs/ARCHITECTURE.md](../ARCHITECTURE.md), [docs/SECURITY.md](../SECURITY.md), [docs/DECISIONS.md](../DECISIONS.md) (ADR-008, ADR-009), [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md). **Ainda não commitado** — código pronto tecnicamente, mas não publicado em produção nesta etapa (sem pagamento implementado).
+
 ## 2026-08-28 — Correções na Fase 2 antes do commit: limite de corpo real, reconciliação do histórico do rate limit, testes de Origin/idempotência
 
 Revisão do relatório da Fase 2 encontrou dois pontos a corrigir antes de commitar, nenhum deles um problema de segurança novo — os dois eram sobre a rota já estar mais forte ou mais bem documentada do que o relatório anterior deixava claro.

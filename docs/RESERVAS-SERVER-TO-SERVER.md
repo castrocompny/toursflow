@@ -1,7 +1,7 @@
 # Reservas: ToursFlow → NauticFlow (server-to-server)
 
-Data: 2026-08-27 (última atualização: 2026-08-28, Fase 2)
-Status: **infraestrutura pronta e validada em E2E real (caminho de sucesso, replay e conflito de idempotência confirmados contra produção); rate limit por visitante implementado e testado localmente, aguardando deploy coordenado dos dois lados. Rota reforçada (Content-Type, limite de corpo, Origin/Sec-Fetch-Site). Formulário do comprador e revisão prontos na UI (Fase 2). Não conectada à interface pública — nenhum `fetch` para esta rota acontece ainda.**
+Data: 2026-08-27 (última atualização: 2026-08-28, Fase 3)
+Status: **conectada à interface pública — o botão "Confirmar reserva" no step de revisão chama `POST /api/bookings` de verdade (`src/lib/booking-submission.ts`), cria hold real no NauticFlow.** Infraestrutura validada em E2E real anterior (caminho de sucesso, replay e conflito de idempotência confirmados contra produção, antes desta fase); rate limit por visitante implementado e testado localmente, aguardando deploy coordenado dos dois lados; rota reforçada (Content-Type, limite de corpo real, Origin/Sec-Fetch-Site). **Este código ainda NÃO foi commitado/publicado em produção nesta etapa** — decisão deliberada, sem pagamento implementado ainda. Nenhum E2E controlado do fluxo completo pela UI foi executado contra produção (sem mecanismo de cleanup — ver [DECISIONS.md](DECISIONS.md), ADR-009); validação desta fase é 209 testes automatizados + verificação em browser real até o step de revisão.
 
 Este documento descreve a integração de escrita (criação de reserva) entre o ToursFlow e o NauticFlow, complementar a [PLANO-INTEGRACAO-NAUTICFLOW.md](PLANO-INTEGRACAO-NAUTICFLOW.md) (que cobre só leitura de catálogo).
 
@@ -89,13 +89,18 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 - `soldOut` refletido corretamente no catálogo público após o hold.
 - Autenticação real (Bearer) contra produção, sem o segredo aparecer em nenhum log ou resposta.
 
+Tudo isso foi validado **antes** da Fase 3 (via chamada direta à rota, não pela UI). A Fase 3 conecta a UI ao mesmo caminho, mas **não repetiu esse E2E pela UI** — ver "Limitações" abaixo (ADR-009).
+
+## O que já existe mas ainda NÃO foi publicado
+
+- **A UI chama `/api/bookings` de verdade.** `BookingSelector` (seleção → `CustomerForm` → `BookingReview` → `BookingConfirmation`) cria uma reserva/hold real ao clicar "Confirmar reserva" — payload whitelisted e normalizado (`src/lib/booking-submission.ts`), `Idempotency-Key` enviada com ciclo de vida completo (`resolveIdempotencyKey()`), todos os `BookingErrorCode` tratados com mensagem segura, double-submit impedido, countdown do hold baseado em `holdExpiresAt` do servidor. Validado por 209 testes automatizados (`fetch` mockado) e verificação em browser real até o step de revisão (sem confirmar de verdade). **Não commitado/publicado em produção nesta etapa** — decisão deliberada, sem pagamento implementado.
+
 ## O que ainda NÃO existe
 
-- Nenhum botão da interface pública chama `/api/bookings`. O fluxo em `BookingSelector` (seleção → `CustomerForm` → `BookingReview`, Fase 2) termina numa tela de revisão — confirmado por teste (spy em `fetch`, zero chamadas) e por verificação manual em browser real.
-- Checkout, pagamento, Asaas, Split, voucher, QR Code, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros.
-- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado); o lado NauticFlow só tem a validação correspondente no ambiente local dele — não deployado nos dois lados de forma coordenada ainda.** Por isso o E2E cross-serviço desta parte específica continua pendente (o E2E validado acima, contra produção, é anterior a esta mudança e não a cobre). Revisado em 2026-08-28: nenhuma evidência posterior (commit, teste, changelog) fecha essa lacuna — continua real, não é suposição.
-- Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador) (ver "Limitações" abaixo).
-- Envio da `Idempotency-Key` gerada no navegador (`src/lib/idempotency-key.ts` já existe, com ciclo de vida completo via `resolveIdempotencyKey()` — reaproveita em retry, regenera em mudança relevante — mas nenhum `fetch` a envia ainda).
+- Checkout, pagamento, Asaas, Split, PIX, cartão, voucher, QR Code, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros. `BookingConfirmation` deixa isso explícito ("Pagamento será disponibilizado na próxima etapa").
+- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado); o lado NauticFlow só tem a validação correspondente no ambiente local dele — não deployado nos dois lados de forma coordenada ainda.** Por isso o E2E cross-serviço desta parte específica continua pendente. Revisado em 2026-08-28: nenhuma evidência posterior (commit, teste, changelog) fecha essa lacuna — continua real, não é suposição.
+- Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador).
+- **E2E controlado do fluxo completo pela UI contra produção** — não executado nesta fase por falta de mecanismo de cleanup/cancelamento de reserva acessível neste repositório (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)). Não há confirmação real, em produção, de que clicar "Confirmar reserva" cria o hold corretamente ponta a ponta — só a garantia forte que 209 testes com `fetch` mockado + verificação até a revisão em browser real conseguem dar.
 
 ## Limitações conhecidas (documentadas, não resolvidas nesta etapa)
 
@@ -107,5 +112,6 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 ## Próximo passo (fora desta etapa)
 
 1. Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos (NauticFlow e ToursFlow) de forma coordenada.
-2. Fazer o E2E cross-serviço específico do rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele) — item de acompanhamento, não bloqueador para a Fase 3.
-3. Fase 3: conectar `BookingReview` a `POST /api/bookings` de verdade (enviar a `Idempotency-Key` já preparada — resetando o estado para `null` depois de um sucesso definitivo, ver [SECURITY.md](SECURITY.md#12-ciclo-de-vida-da-idempotency-key-definido-não-enviada--fase-2) —, tratar os 14 `BookingErrorCode` com as mensagens já preparadas em `booking-error-messages.ts`).
+2. Fazer o E2E cross-serviço específico do rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele) — item de acompanhamento, não bloqueador.
+3. Antes de publicar o fluxo da Fase 3 em produção: definir um mecanismo de cleanup/cancelamento de reserva (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)) e então rodar o E2E controlado do fluxo completo pela UI.
+4. Fase 4 (fora do escopo deste documento): checkout/pagamento (Asaas ou equivalente) — só depois disso o fluxo de reserva pode ser considerado pronto para tráfego público real.

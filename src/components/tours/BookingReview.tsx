@@ -12,25 +12,37 @@ interface BookingReviewProps {
   customer: CustomerFormValues;
   onEdit: () => void;
   onBack: () => void;
+  onConfirm: () => void;
+  submitting: boolean;
+  errorMessage: string | null;
 }
 
 /**
- * Step de revisão — Fase 2. Só exibe os dados já preenchidos, com
- * e-mail/telefone/CPF mascarados (nunca o valor completo no DOM). Não
- * existe botão de confirmação funcional aqui de propósito: essa etapa é a
- * ponte para a Fase 3 (`POST /api/bookings`), que ainda não existe nesta
- * fase — nenhuma reserva é criada, nenhuma chamada de rede acontece.
+ * Step de revisão — Fase 3. Exibe os dados já preenchidos, com
+ * e-mail/telefone/CPF mascarados (nunca o valor completo no DOM). O botão
+ * "Confirmar reserva" chama `onConfirm` (que dispara `POST /api/bookings`
+ * em `BookingSelector`) — nunca "Pagar": pagamento não existe ainda.
+ * Desabilitado enquanto `submitting` é true, para nunca permitir duplo
+ * clique/múltiplas submissões simultâneas.
  */
-export function BookingReview({ departure, quantity, estimatedTotal, customer, onEdit, onBack }: BookingReviewProps) {
+export function BookingReview({
+  departure,
+  quantity,
+  estimatedTotal,
+  customer,
+  onEdit,
+  onBack,
+  onConfirm,
+  submitting,
+  errorMessage,
+}: BookingReviewProps) {
   const { date, time } = formatDepartureDateTime(departure.departsAt);
 
   return (
     <div className="rounded-card border border-ink/10 bg-white p-6">
       <p className="eyebrow">Revisão da reserva</p>
       <h3 className="mt-2 font-display text-xl font-bold">Confira os dados</h3>
-      <p className="mt-2 text-sm text-ink-muted">
-        Reserva online chega em breve. Por enquanto, confira o resumo abaixo e fale com o operador para confirmar.
-      </p>
+      <p className="mt-2 text-sm text-ink-muted">Confira os dados antes de confirmar a reserva.</p>
 
       <dl className="mt-5 space-y-2 rounded-2xl bg-sand p-4 text-sm">
         <div className="flex justify-between gap-4">
@@ -80,14 +92,29 @@ export function BookingReview({ departure, quantity, estimatedTotal, customer, o
         Valor estimado. O preço final é sempre confirmado pelo operador no momento da reserva.
       </p>
 
+      {errorMessage ? (
+        <p role="alert" className="mt-4 rounded-2xl bg-red-50 px-4 py-3 text-sm text-red-700">
+          {errorMessage}
+        </p>
+      ) : null}
+
       <div className="mt-6 flex gap-3">
-        <button type="button" onClick={onBack} className="btn-secondary flex-1">
+        <button type="button" onClick={onBack} disabled={submitting} className="btn-secondary flex-1">
           Voltar
         </button>
-        <button type="button" onClick={onEdit} className="btn-secondary flex-1">
+        <button type="button" onClick={onEdit} disabled={submitting} className="btn-secondary flex-1">
           Editar dados
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={onConfirm}
+        disabled={submitting}
+        className="btn-primary mt-3 w-full disabled:cursor-not-allowed disabled:opacity-40"
+      >
+        {submitting ? 'Confirmando...' : 'Confirmar reserva'}
+      </button>
     </div>
   );
 }

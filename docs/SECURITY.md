@@ -209,21 +209,22 @@ quebrar nada disso. Colocar uma policy incorreta seria pior que não ter
 nenhuma (falsa sensação de proteção ou site quebrado); fica para uma etapa
 dedicada.
 
-## 11. PII do formulário do comprador (novo, Fase 2)
+## 11. PII do formulário do comprador (Fase 2, submissão real desde a Fase 3)
 
-A partir do `CustomerForm`/`BookingReview`
-(`src/components/tours/`, lógica em `src/lib/customer-form.ts`), o
-navegador manipula dado pessoal (nome, e-mail, telefone, CPF opcional)
-pela primeira vez no projeto — mesmo sem nenhuma reserva real acontecer
-ainda (não há `fetch` nesta fase).
+A partir do `CustomerForm`/`BookingReview`/`BookingConfirmation`
+(`src/components/tours/`, lógica em `src/lib/customer-form.ts` e
+`src/lib/booking-submission.ts`), o navegador manipula dado pessoal
+(nome, e-mail, telefone, CPF opcional) — e, desde a Fase 3, envia esse
+dado de verdade a `POST /api/bookings` ao clicar "Confirmar reserva".
 
-- **Nunca persistido.** Estado só em memória do componente React
-  (`useState` em `BookingSelector`) — nunca `localStorage`,
-  `sessionStorage`, cookie, ou query string/URL. Recarregar a página perde
-  os dados (aceito: não existe reserva "salva" antes da Fase 3).
-- **Nunca logado.** Nenhum `console.log`/`console.error` do formulário ou
-  do step de revisão manipula o objeto `customer` inteiro nem campo
-  individual.
+- **Nunca persistido no navegador.** Estado só em memória do componente
+  React (`useState` em `BookingSelector`) — nunca `localStorage`,
+  `sessionStorage`, cookie, ou query string/URL, em nenhum step, inclusive
+  depois de sucesso/erro. Recarregar a página perde os dados (aceito: não
+  existe rascunho "salvo" no navegador).
+- **Nunca logado no navegador.** Nenhum `console.log`/`console.error` do
+  formulário, revisão ou confirmação manipula o objeto `customer` inteiro
+  nem campo individual.
 - **Mascarado na revisão.** `maskEmail`/`maskPhone`/`maskCpf`
   (`customer-form.ts`) — e-mail mostra só a primeira letra do usuário,
   telefone só DDD + 4 últimos dígitos, CPF só os 2 dígitos verificadores.
@@ -236,31 +237,51 @@ ainda (não há `fetch` nesta fase).
   `111.111.111-11`). Continua opcional — o contrato do NauticFlow
   (`BookingCustomerInput.cpf?`) não exige, então a UI também não torna
   obrigatório.
-- **Nada enviado ainda.** Nenhum `fetch` acontece em nenhum step desta
-  fase — confirmado por teste (spy em `global.fetch`, zero chamadas do
-  clique em "Continuar reserva" até a revisão) e por revisão manual em
-  browser real.
+- **Normalizado antes de enviar** (`buildBookingPayload()` em
+  `booking-submission.ts`): `name`/`email` com trim, `phone`/`cpf` só
+  dígitos — nunca a máscara visual de digitação. `cpf` vazio nem aparece
+  como chave no payload.
+- **Depois de sucesso, só o subconjunto seguro fica em memória**
+  (`BookingConfirmationData`: `bookingId`, `status`, `holdExpiresAt`,
+  `priceCents`, `totalCents`, `quantity`) — a resposta bruta inteira do
+  NauticFlow (que inclui `tour`/`departure`) não é guardada além do
+  necessário para renderizar a tela.
+- **Testado de ponta a ponta:** payload é sempre a whitelist exata (nunca
+  campo extra), `Idempotency-Key` correta, nenhuma PII na URL depois de
+  sucesso ou erro, `localStorage`/`sessionStorage` vazios depois do fluxo
+  completo (`BookingSelector.test.tsx`, describe "confirmação de reserva").
 
-## 12. Ciclo de vida da Idempotency-Key (definido, não enviada — Fase 2)
+## 12. Ciclo de vida da Idempotency-Key (enviada desde a Fase 3)
 
 `resolveIdempotencyKey()` (`src/lib/idempotency-key.ts`) decide reaproveitar
 ou gerar uma key nova, comparando o fingerprint da tentativa atual
 (`departureId`+`quantity`+dados do comprador) com o da última vez. Regras,
-todas cobertas por teste unitário puro (`idempotency-key.test.ts`):
+cobertas por teste unitário puro (`idempotency-key.test.ts`) **e** por
+teste de integração do fluxo real (`BookingSelector.test.tsx`):
 
 - Sem key existente → sempre gera uma nova (primeira tentativa).
 - Fingerprint igual ao armazenado (re-render, retry da mesma tentativa) →
-  reaproveita a key existente, **nunca** chama o gerador de novo.
-- Fingerprint diferente (qualquer dado relevante mudou) → gera key nova.
-- **Depois de um sucesso definitivo:** regra para a Fase 3 (quando existir
-  um step de sucesso) — o estado precisa ser resetado para
-  `{ key: null, fingerprint: null }` depois de criar a reserva de verdade,
-  para que uma nova tentativa de reserva (mesmo com dados idênticos aos da
-  reserva já concluída) sempre receba key nova. Com `key: null`, a função
-  sempre gera — isso já está testado (`idempotency-key.test.ts`, "depois de
-  um sucesso definitivo...").
+  reaproveita a key existente, **nunca** chama o gerador de novo — testado
+  contra um erro transitório real (`503` seguido de retry: mesma key nos
+  dois `fetch`).
+- Fingerprint diferente (qualquer dado relevante mudou) → gera key nova —
+  testado (mudar o e-mail antes de reenviar gera key diferente).
+- **Depois de um sucesso definitivo:** `BookingSelector` reseta o estado
+  para `{ key: null, fingerprint: null }` assim que `submitBooking()`
+  retorna sucesso (201 ou 200 replay) — a próxima tentativa de reserva
+  (mesmo com dados idênticos) sempre recebe key nova.
+- **Depois de `IDEMPOTENCY_CONFLICT` (409):** mesmo reset — reusar uma key
+  que o servidor já rejeitou por conflito só repetiria o mesmo erro.
 
-## 13. Dependências
+## 13. Double-submit e estados de submissão (Fase 3)
+
+`BookingSelector` usa um `useRef` (`isSubmittingRef`), além do state
+`submissionStatus` (`idle`/`submitting`/`error`), como guarda síncrona
+contra clique duplo — o botão "Confirmar reserva" também fica desabilitado
+enquanto `submitting`. Testado com 3 cliques seguidos no mesmo botão:
+exatamente 1 chamada a `/api/bookings`.
+
+## 14. Dependências
 
 `npm audit` acusou vulnerabilidades conhecidas do Next.js 14.2.5 na
 auditoria pré-integração de 2026-08-25 (ver
@@ -288,15 +309,46 @@ resolvido.
   `localhost`; strings acima do limite.
 - `customer-form.test.ts` (Fase 2) — validação de nome/e-mail/telefone/CPF,
   checksum de CPF, máscaras de exibição nunca revelam o dado completo.
-- `idempotency-key.test.ts` (Fase 2) — ciclo de vida completo de
+- `idempotency-key.test.ts` (Fase 2/3) — ciclo de vida completo de
   `resolveIdempotencyKey()`: reaproveita em re-render/retry, regenera em
   mudança relevante, sempre regenera depois de um reset pós-sucesso.
-- `BookingSelector.test.tsx` (Fase 2) — dados inválidos não avançam,
-  válidos avançam, estado preservado ao voltar, zero `fetch` em todo o
-  fluxo, PII nunca aparece na URL.
+- `booking-submission.test.ts` (Fase 3) — payload whitelisted e
+  normalizado, todos os `BookingErrorCode` mapeados corretamente,
+  `NETWORK_ERROR` quando o `fetch` rejeita, corpo de resposta malformado
+  não lança.
+- `hold-countdown.test.ts` (Fase 3) — cálculo nunca fica negativo,
+  formatação do countdown, expiração.
+- `BookingSelector.test.tsx` (Fase 1–3) — fluxo completo: seleção, dados
+  inválidos não avançam, válidos avançam, estado preservado ao voltar;
+  desde a Fase 3, submissão real mockada cobrindo 201, 200 replay, os 6
+  códigos de erro relevantes (`IDEMPOTENCY_CONFLICT`,
+  `INSUFFICIENT_CAPACITY` com `router.refresh()`,
+  `PRICE_TYPE_NOT_SELLABLE`, `RATE_LIMITED`,
+  `BOOKING_SERVICE_UNAVAILABLE`, rede), double-submit (3 cliques = 1
+  chamada), retry com mesma key, mudança de dado gera key nova, preço
+  exibido sempre do backend, PII nunca em URL/`localStorage`/
+  `sessionStorage`.
+- `BookingConfirmation.test.tsx` (Fase 3) — countdown com fake timers,
+  preço real do backend, estado de expirado.
 
-`npm test` roda todos (145 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (209 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
+
+**Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**
+`vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Na
+prática, **nenhum teste de componente React (`BookingSelector.test.tsx`,
+existente desde a Fase 1) rodava de fato via `npm test`**, apesar de
+relatórios de fases anteriores terem reportado esses testes como parte de
+uma suíte "toda verde". `vitest run` saía com sucesso porque simplesmente
+não descobria esses arquivos — não porque eles passavam. Corrigido para
+`src/**/*.test.{ts,tsx}` (mais `oxc: { jsx: { runtime: 'automatic' } }`,
+necessário para o parser JSX do Vite 8/rolldown nos arquivos de teste). Ao
+rodar de verdade pela primeira vez, apareceram 3 bugs reais nos próprios
+testes (nunca no código de produção): duas queries ambíguas
+(`getByLabelText`/`getByText` casando mais de um elemento por engano) e
+uma asserção de máscara de e-mail com contagem de asteriscos errada —
+todos corrigidos, e a suíte inteira (209 testes) agora roda e passa de
+verdade.
 
 ## Achados desta auditoria (2026-08-28)
 
@@ -350,6 +402,15 @@ catálogo/UI, não só segurança).
   ou teste posterior fechou isso (ver
   [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#o-que-ainda-não-existe)).
 - Sem Content-Security-Policy (seção 10) — deferida para etapa própria.
+- **Nenhum E2E controlado contra produção foi executado na Fase 3**
+  (criação real de reserva pela UI, replay, conflito, `holdExpiresAt`,
+  `priceCents`/`totalCents` reais) — decisão deliberada: não existe
+  mecanismo de cancelamento/cleanup de reserva acessível neste
+  repositório, e a regra desta fase foi explícita em não criar hold real
+  sem um jeito seguro de desfazê-lo depois. Toda a validação desta fase
+  veio de testes automatizados (mock de `fetch`, 209 testes) e de
+  verificação em browser real **até o step de revisão**, sem clicar em
+  "Confirmar reserva" contra o NauticFlow de produção.
 
 ## PLANEJADO / NÃO IMPLEMENTADO
 
@@ -360,9 +421,13 @@ catálogo/UI, não só segurança).
 - E2E cross-serviço específico do rate limit por `X-ToursFlow-Client-Key`
   contra o NauticFlow em produção (deploy coordenado dos dois lados ainda
   não aconteceu).
+- E2E controlado da criação real de reserva pela UI (Fase 3) — bloqueado
+  por falta de mecanismo de cleanup; avaliar antes de publicar este
+  fluxo.
 - CAPTCHA no fluxo de reserva.
 - Upgrade do Next.js para resolver os CVEs da auditoria pré-integração.
 - Content-Security-Policy.
-- Conexão do formulário do comprador a `POST /api/bookings` (Fase 3) —
-  formulário, validação, máscara, revisão e Idempotency-Key já existem,
-  mas nenhuma chamada de rede acontece ainda.
+- Checkout, pagamento (Asaas/PIX/cartão), split, webhook de confirmação,
+  voucher, QR Code — a UI de reserva (Fase 3) já cria hold real, mas o
+  step de confirmação deixa explícito que pagamento vem depois; nada
+  disso existe no código ainda.

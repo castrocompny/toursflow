@@ -1,7 +1,7 @@
 # Arquitetura do ToursFlow
 
 Documentação técnica de como o projeto é organizado hoje (atualizado até a
-Fase 2 do fluxo de reserva, 2026-08-28). Para visão de produto e passo a
+Fase 3 do fluxo de reserva, 2026-08-28). Para visão de produto e passo a
 passo de instalação, ver o [README](../README.md). Para o backend de
 reservas em detalhe, ver
 [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md); para o
@@ -10,25 +10,30 @@ contrato de preço, [PRICE-TYPES.md](PRICE-TYPES.md).
 ## 1. Visão geral
 
 ToursFlow é a vitrine pública (descoberta, comparação, escolha, seleção de
-saída/quantidade e — a partir da Fase 2 — preenchimento e revisão dos
-dados do comprador) de um marketplace de passeios náuticos. É a
-contraparte de turista do **NauticFlow**, sistema do operador
-(embarcações, saídas, reservas, manifesto). Os dois são repositórios,
-deploys e domínios independentes.
+saída/quantidade, preenchimento e revisão dos dados do comprador e —
+a partir da Fase 3 — criação real de reserva/hold) de um marketplace de
+passeios náuticos. É a contraparte de turista do **NauticFlow**, sistema
+do operador (embarcações, saídas, reservas, manifesto). Os dois são
+repositórios, deploys e domínios independentes.
 
 O catálogo (passeios, destinos, categorias, saídas) já consome dados reais
 do NauticFlow em produção — o mock só existe como fallback de
-desenvolvimento local (ver seção 6). Existe também um backend de criação
-de reserva (`POST /api/bookings` → NauticFlow), testado e validado em E2E
-real, mas **ainda não conectado a nenhum botão da interface pública** — o
-fluxo em `BookingSelector` (seleção → `CustomerForm` → `BookingReview`)
-termina numa tela de revisão, não numa reserva de verdade. Nenhum `fetch`
-acontece em nenhum step.
+desenvolvimento local (ver seção 6). **A partir da Fase 3, o botão
+"Confirmar reserva" no step de revisão chama `POST /api/bookings` de
+verdade** — o fluxo completo (`BookingSelector`: seleção → `CustomerForm`
+→ `BookingReview` → `BookingConfirmation`) cria uma reserva/hold real no
+NauticFlow. Este código existe no repositório e passa em todos os testes
+(incluindo verificação em browser real até o step de revisão — ver
+[RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md)), mas
+**ainda não foi commitado/publicado em produção** nesta etapa — decisão
+deliberada, porque não existe pagamento ainda (ver seção "NÃO
+IMPLEMENTADO" abaixo).
 
-**PLANEJADO / NÃO IMPLEMENTADO ainda:** conexão do formulário à
-`POST /api/bookings`, checkout, pagamento, Asaas, split, webhook de
-confirmação, voucher, QR Code, avaliações, login e área do turista,
-comissão e repasse financeiro.
+**PLANEJADO / NÃO IMPLEMENTADO ainda:** checkout, pagamento, Asaas, PIX,
+cartão, split, webhook de confirmação, voucher, QR Code, avaliações, login
+e área do turista, comissão e repasse financeiro. O step de confirmação
+(`BookingConfirmation`) deixa isso explícito para o turista ("Pagamento
+será disponibilizado na próxima etapa").
 
 ## 2. Stack
 
@@ -177,12 +182,12 @@ Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'publish
 
 | Pasta | Componentes | Responsabilidade |
 |---|---|---|
-| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`** | `BookingSelector` (`'use client'`) orquestra 3 steps: seleção (saída → quantidade → total estimado) → `CustomerForm` (dados do comprador, validado por `src/lib/customer-form.ts`) → `BookingReview` (resumo com e-mail/telefone/CPF mascarados). Nenhum dos 3 steps chama `/api/bookings` ainda — ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) |
+| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`**, **`BookingConfirmation`** | `BookingSelector` (`'use client'`) orquestra 4 steps: seleção (saída → quantidade → total estimado) → `CustomerForm` (dados do comprador) → `BookingReview` (resumo mascarado + botão "Confirmar reserva", que chama `POST /api/bookings` de verdade) → `BookingConfirmation` (hold criado, countdown até `holdExpiresAt`, preço REAL do backend). Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) |
 | `layout/`, `search/`, `destinations/`, `categories/`, `ui/`, `brand/` | — | Inalterados desde a fase de catálogo |
 
-6 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview` — todo o resto é Server Component.
+7 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview`, `BookingConfirmation` — todo o resto é Server Component.
 
-## 9. Camada de reservas (server-only)
+## 9. Camada de reservas (server-only) — conectada na Fase 3
 
 Resumo — detalhe completo em [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md):
 
@@ -190,9 +195,17 @@ Resumo — detalhe completo em [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO
 navegador -> POST /api/bookings (ToursFlow) -> POST /api/marketplace/bookings (NauticFlow)
 ```
 
-`src/lib/nauticflow-bookings.ts` é o único módulo que lê `TOURSFLOW_API_SECRET`; `src/lib/client-ip.ts`/`toursflow-client-key.ts` calculam a identidade pseudônima do rate limit (HMAC do IP, nunca o IP em claro). Todos marcados `import 'server-only'`. Whitelist explícita do payload em `booking-validation.ts` — nunca repassa campo além de `departureId`/`quantity`/`customer.{name,email,phone,cpf}`. Hardening da Fase 2: Content-Type restrito, limite de corpo, Origin reforçado com `Sec-Fetch-Site` (ver [SECURITY.md](SECURITY.md)).
+`src/lib/nauticflow-bookings.ts` é o único módulo que lê `TOURSFLOW_API_SECRET`; `src/lib/client-ip.ts`/`toursflow-client-key.ts` calculam a identidade pseudônima do rate limit (HMAC do IP, nunca o IP em claro). Todos marcados `import 'server-only'`. Whitelist explícita do payload em `booking-validation.ts` — nunca repassa campo além de `departureId`/`quantity`/`customer.{name,email,phone,cpf}`. Hardening da Fase 2: Content-Type restrito, limite de corpo real (bytes recebidos, não só `Content-Length`), Origin reforçado com `Sec-Fetch-Site` (ver [SECURITY.md](SECURITY.md)).
 
-Do lado do navegador, `src/lib/idempotency-key.ts` gera e mantém uma `Idempotency-Key` (`crypto.randomUUID()`) por tentativa lógica de reserva — regenerada só quando `departureId`/`quantity`/dados do comprador mudam — mas **nunca a envia**: nenhum `fetch` acontece antes da Fase 3. `src/lib/booking-error-messages.ts` já mapeia cada `BookingErrorCode` para uma mensagem segura em português, pronta para a Fase 3, também não usada ainda.
+**Fase 3 — lado do navegador (`src/lib/booking-submission.ts`):** `buildBookingPayload()` monta o payload por whitelist (nunca `price`/`total`/`priceType`/`companyId`/`operatorId`/`status`/`clientKey`) e normaliza `phone`/`cpf` para só dígitos antes de enviar (a máscara visual nunca é o que vai no `fetch`). `submitBooking()` é o único ponto do navegador que chama `/api/bookings` — trata 201, 200 (replay, tratado como sucesso da mesma reserva), todo `BookingErrorCode` conhecido, e falha de rede (`NETWORK_ERROR`, quando o `fetch` rejeita sem resposta — nunca assumido como "reserva não criada", já que o servidor pode ter processado antes da conexão cair).
+
+`src/lib/idempotency-key.ts`: `resolveIdempotencyKey()` decide reaproveitar ou regenerar a key a cada envio do formulário do comprador — mesmo fingerprint (retry/re-render) reaproveita, fingerprint diferente regenera. Depois de um sucesso definitivo, ou de um erro `IDEMPOTENCY_CONFLICT`, `BookingSelector` reseta o estado para forçar key nova na próxima tentativa. `src/lib/booking-error-messages.ts` mapeia cada `BookingErrorCode` (+ `NETWORK_ERROR`, código só do cliente) para uma mensagem segura em português — única fonte usada pela UI.
+
+**Double-submit:** `BookingSelector` usa um `useRef` síncrono (`isSubmittingRef`) além do state `submissionStatus`, e o botão fica desabilitado enquanto `submitting` — clique duplo nunca dispara uma segunda chamada (testado).
+
+**Hold e countdown (`src/lib/hold-countdown.ts` + `BookingConfirmation`):** o timer é sempre derivado de `holdExpiresAt` (timestamp do NauticFlow) menos `Date.now()`, recalculado a cada segundo — nunca uma contagem fixa de 15:00 assumida no cliente. Ao chegar a zero, mostra "O tempo da sua reserva expirou." em vez de fingir que a vaga continua garantida.
+
+**`INSUFFICIENT_CAPACITY`:** além de mostrar a mensagem específica, `BookingSelector` chama `router.refresh()` (`next/navigation`) para que o Server Component da página busque `listDepartures` de novo (`cache: 'no-store'`) — sem precisar de um novo endpoint. O turista decide, ao voltar para a seleção, com dado fresco; nada é auto-selecionado.
 
 ## 10. Regras de conteúdo já aplicadas
 
@@ -220,4 +233,7 @@ Inalterado desde a fase de catálogo — `tailwind.config.ts`: cores `ink`/`sea`
 
 ## 14. Testes
 
-Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, seleção de reserva e formulário do comprador (componente, via `@testing-library/react`), validação/máscara/checksum de CPF, Idempotency-Key. `npm test` roda tudo — 145 testes.
+Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, fluxo completo de reserva (componente, via `@testing-library/react`), validação/máscara/checksum de CPF, Idempotency-Key, submissão real (`booking-submission.ts`), countdown de hold. `npm test` roda tudo — 209 testes.
+
+**Achado corrigido nesta fase:** `vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Isso significa que **todo componente React testado com `@testing-library/react`
+(`BookingSelector.test.tsx` desde a Fase 1) nunca rodou de fato via `npm test`** em nenhuma fase anterior, apesar de relatórios anteriores terem reportado "todos os testes passando" — o comando saía com sucesso porque simplesmente não encontrava esses arquivos, não porque eles passavam. Corrigido para `src/**/*.test.{ts,tsx}` (mais `oxc: { jsx: { runtime: 'automatic' } }`, necessário para o parser da Vite 8/rolldown reconhecer JSX em teste). Ao rodar de verdade pela primeira vez, 3 bugs reais (e até então invisíveis) apareceram nos próprios testes — nenhum no código de produção — e foram corrigidos: duas queries ambíguas (`getByLabelText`/`getByText` casando mais de um elemento) e uma máscara de e-mail com contagem de asteriscos errada na asserção. Detalhe completo: [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes).

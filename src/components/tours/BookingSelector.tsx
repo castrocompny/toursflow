@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Calendar, Clock, Minus, Plus } from 'lucide-react';
 import type { Departure } from '@/types';
 import { formatDepartureDateTime, formatPrice, priceTypeLabel } from '@/lib/format';
@@ -14,8 +15,11 @@ import {
 } from '@/lib/booking-selection';
 import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
 import { idempotencyFingerprint, resolveIdempotencyKey, type IdempotencyKeyState } from '@/lib/idempotency-key';
+import { buildBookingPayload, submitBooking } from '@/lib/booking-submission';
+import type { ClientBookingErrorCode } from '@/lib/booking-error-messages';
 import { CustomerForm } from './CustomerForm';
 import { BookingReview } from './BookingReview';
+import { BookingConfirmation, type BookingConfirmationData } from './BookingConfirmation';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
 
@@ -23,19 +27,19 @@ interface BookingSelectorProps {
   departures: Departure[];
 }
 
-type Step = 'selection' | 'customer-form' | 'review';
+type Step = 'selection' | 'customer-form' | 'review' | 'confirmation';
+type SubmissionStatus = 'idle' | 'submitting' | 'error';
 
 /**
  * Interface real de reserva: saída -> quantidade -> total estimado ->
- * dados do comprador -> revisão. Fase 2 do fluxo — ainda NÃO chama
- * `POST /api/bookings` em nenhum step; a Fase 3 conecta o step de revisão
- * ao backend.
+ * dados do comprador -> revisão -> confirmação (hold). Fase 3: o step de
+ * revisão chama `POST /api/bookings` de verdade — único ponto do projeto
+ * que cria uma reserva real no NauticFlow (via `submitBooking()`).
  *
- * O total mostrado aqui é só para o turista decidir — nunca é a fonte de
- * verdade do preço. Quando o checkout existir, o valor cobrado será
- * sempre recalculado no servidor a partir do `departureId` (ver
- * docs/RESERVAS-SERVER-TO-SERVER.md), nunca este número calculado no
- * cliente.
+ * O total mostrado antes da confirmação é só para o turista decidir —
+ * nunca é a fonte de verdade do preço. Depois do sucesso, o step de
+ * confirmação mostra `priceCents`/`totalCents` REAIS devolvidos pelo
+ * NauticFlow, nunca o total estimado calculado no cliente.
  *
  * A API pública não envia capacidade numérica restante — só `soldOut`
  * binário. Por isso não existe "restam N vagas". Também não há teto
@@ -48,26 +52,42 @@ type Step = 'selection' | 'customer-form' | 'review';
  * equivalente confirmado no NauticFlow hoje) aparecem na lista mas não
  * podem ser selecionadas — o card fica desabilitado e a mensagem de
  * indisponibilidade é exibida, nunca é possível chegar em "Continuar".
+ * Mesmo assim, o NauticFlow continua a autoridade final: se responder
+ * `PRICE_TYPE_NOT_SELLABLE` (dado mudou entre o carregamento da página e a
+ * submissão), o erro é tratado como qualquer outro.
  *
  * Estado (departure/quantidade/dados do comprador) vive todo aqui, em
  * memória — nunca em localStorage/sessionStorage/URL — para sobreviver à
- * navegação entre steps sem se perder, e para nunca deixar PII em nenhum
- * lugar persistente antes de existir uma reserva de verdade.
+ * navegação entre steps sem se perder. Depois de um sucesso, só o
+ * subconjunto seguro da resposta (`BookingConfirmationData`) é guardado —
+ * nunca a resposta bruta inteira, nunca PII em nenhum lugar persistente.
+ *
+ * NÃO IMPLEMENTADO: pagamento (Asaas/PIX/cartão/split/webhook/voucher) —
+ * o step de confirmação deixa isso explícito para o turista.
  */
 export function BookingSelector({ departures }: BookingSelectorProps) {
+  const router = useRouter();
   const [selectedDepartureId, setSelectedDepartureId] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(MIN_BOOKING_QUANTITY);
   const [customer, setCustomer] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM_VALUES);
   const [step, setStep] = useState<Step>('selection');
   // Estado bruto ({key, fingerprint}) para resolveIdempotencyKey() decidir
-  // reaproveitar ou regenerar — nunca enviada nesta fase (sem fetch algum).
-  // Depois de um sucesso definitivo (Fase 3), resetar para {key: null,
-  // fingerprint: null} garante que a próxima reserva NUNCA reaproveita a
-  // key de uma reserva já concluída, mesmo com os mesmos dados.
+  // reaproveitar ou regenerar. Reaproveitada em retry/re-render (mesmo
+  // pedido lógico); resetada para {key: null, fingerprint: null} depois
+  // de um sucesso definitivo OU de um IDEMPOTENCY_CONFLICT (nunca faz
+  // sentido reusar uma key que o servidor já rejeitou por conflito).
   const [idempotencyKeyState, setIdempotencyKeyState] = useState<IdempotencyKeyState>({
     key: null,
     fingerprint: null,
   });
+  const [submissionStatus, setSubmissionStatus] = useState<SubmissionStatus>('idle');
+  const [submissionError, setSubmissionError] = useState<{ code: ClientBookingErrorCode; message: string } | null>(
+    null,
+  );
+  const [bookingResult, setBookingResult] = useState<BookingConfirmationData | null>(null);
+  // Guarda síncrona contra duplo-clique/duplo-submit — não depende do
+  // re-render de `submissionStatus` (state) ter acontecido a tempo.
+  const isSubmittingRef = useRef(false);
 
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
@@ -92,13 +112,60 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
     setCustomer(values);
 
     // Reaproveita a Idempotency-Key existente se os dados relevantes não
-    // mudaram desde a última vez, ou gera uma nova — nunca enviada nesta
-    // fase, só preparada para a Fase 3 (ver src/lib/idempotency-key.ts).
+    // mudaram desde a última vez, ou gera uma nova.
     const fingerprint = idempotencyFingerprint({ departureId: selectedDepartureId, quantity, ...values });
     const resolved = resolveIdempotencyKey(idempotencyKeyState, fingerprint);
     setIdempotencyKeyState({ key: resolved.key, fingerprint: resolved.fingerprint });
+    setSubmissionError(null);
 
     setStep('review');
+  }
+
+  async function handleConfirmBooking() {
+    if (isSubmittingRef.current || !selectedDeparture || !idempotencyKeyState.key) return;
+    isSubmittingRef.current = true;
+    setSubmissionStatus('submitting');
+    setSubmissionError(null);
+
+    const payload = buildBookingPayload(selectedDeparture.id, quantity, customer);
+    const result = await submitBooking(payload, idempotencyKeyState.key);
+
+    if (result.ok) {
+      // Só o subconjunto seguro em memória — nunca a resposta bruta inteira.
+      setBookingResult({
+        bookingId: result.data.bookingId,
+        status: result.data.status,
+        holdExpiresAt: result.data.holdExpiresAt,
+        priceCents: result.data.priceCents,
+        totalCents: result.data.totalCents,
+        quantity: result.data.quantity,
+      });
+      // Sucesso definitivo (criação real ou replay da mesma reserva): a
+      // próxima tentativa de reserva (mesmo com dados idênticos) precisa
+      // de uma key nova — nunca reaproveitar a de uma reserva concluída.
+      setIdempotencyKeyState({ key: null, fingerprint: null });
+      setSubmissionStatus('idle');
+      isSubmittingRef.current = false;
+      setStep('confirmation');
+      return;
+    }
+
+    setSubmissionError({ code: result.code, message: result.message });
+    setSubmissionStatus('error');
+    isSubmittingRef.current = false;
+
+    if (result.code === 'IDEMPOTENCY_CONFLICT') {
+      // O servidor já rejeitou esta key por conflito — reusá-la de novo
+      // só repetiria o mesmo 409. Força uma key nova na próxima tentativa.
+      setIdempotencyKeyState({ key: null, fingerprint: null });
+    }
+
+    if (result.code === 'INSUFFICIENT_CAPACITY') {
+      // Atualiza a disponibilidade real (soldOut) sem tentar outra saída
+      // automaticamente — o turista decide, ao voltar para a seleção, com
+      // dado fresco (Server Component reexecuta `listDepartures`).
+      router.refresh();
+    }
   }
 
   if (departures.length === 0) {
@@ -129,8 +196,15 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
         customer={customer}
         onEdit={() => setStep('customer-form')}
         onBack={() => setStep('selection')}
+        onConfirm={handleConfirmBooking}
+        submitting={submissionStatus === 'submitting'}
+        errorMessage={submissionError?.message ?? null}
       />
     );
+  }
+
+  if (step === 'confirmation' && selectedDeparture && bookingResult) {
+    return <BookingConfirmation departure={selectedDeparture} booking={bookingResult} />;
   }
 
   const allSoldOut = sorted.every((departure) => departure.soldOut);

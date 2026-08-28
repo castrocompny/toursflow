@@ -235,6 +235,83 @@ de proteção; o motivo acima reflete essa análise mais precisa.
 
 ---
 
+## ADR-008 — `router.refresh()` em vez de novo endpoint para atualizar disponibilidade após `INSUFFICIENT_CAPACITY`
+
+**Contexto:** ao receber `409 INSUFFICIENT_CAPACITY` na Fase 3, a UI
+precisa refletir a disponibilidade real (`soldOut`) sem inventar um
+comportamento (ex.: selecionar outra saída sozinha, que a instrução
+explícita da fase proibiu).
+
+**Decisão:** chamar `router.refresh()` (`next/navigation`) depois desse
+erro específico, em vez de criar uma nova rota pública de leitura de
+disponibilidade.
+
+**Motivo:** a página do passeio (`src/app/passeios/[destino]/[slug]/page.tsx`)
+já é um Server Component que busca `listDepartures` com `cache: 'no-store'`
+(ADR-002/003) toda vez que renderiza. `router.refresh()` reexecuta esse
+Server Component sem perder o estado do Client Component
+(`BookingSelector` mantém `useState` intacto — só a prop `departures`
+chega atualizada), sem precisar duplicar a lógica de busca de
+disponibilidade num novo endpoint `GET` só para isso.
+
+**Alternativas rejeitadas:**
+- Novo endpoint `GET /api/departures/:id` só para a UI reconsultar depois
+  de um erro — rejeitado por duplicar `listDepartures` (já existe e já é
+  `no-store`) sem necessidade.
+- Selecionar automaticamente outra saída disponível — rejeitado, a
+  instrução da fase foi explícita: "não tentar automaticamente outra
+  saída". O turista decide.
+
+**Consequências:** o turista só vê a disponibilidade atualizada se voltar
+ao step de seleção (`BookingReview` continua mostrando o erro na tela
+atual, sem navegar sozinho) — comportamento aceito como correto: não
+esconder o erro nem forçar navegação, só garantir que o dado, quando o
+turista voltar a olhar, está fresco.
+
+---
+
+## ADR-009 — Nenhum E2E controlado contra produção na Fase 3 (sem mecanismo de cleanup)
+
+**Contexto:** a Fase 3 conecta a UI a `POST /api/bookings` de verdade —
+tecnicamente pronta para criar um hold real no NauticFlow. A instrução da
+fase autorizava um E2E controlado contra produção, mas só se já existisse
+uma saída seguramente destinada a teste **e** um mecanismo de
+cleanup/cancelamento acessível; caso contrário, instruía a não executar.
+
+**Decisão:** não executar nenhum E2E contra produção nesta fase.
+
+**Motivo:** este repositório (ToursFlow) não tem nenhuma rota, script ou
+mecanismo documentado para cancelar/expirar manualmente uma reserva criada
+no NauticFlow — a única forma conhecida de "desfazer" um hold seria
+esperar `holdExpiresAt` passar (15 min) sem confirmar pagamento. Criar uma
+reserva real de teste sem um jeito confirmado de limpá-la imediatamente
+violaria a própria condição que autorizava o E2E.
+
+**Alternativas consideradas:**
+- Criar mesmo assim e deixar o hold expirar sozinho em 15 min — rejeitado:
+  a instrução foi explícita ("se não existir mecanismo de cleanup
+  acessível, NÃO executar E2E"), e "esperar expirar" não é um mecanismo
+  de cleanup, é só não fazer nada por 15 minutos enquanto uma reserva
+  real (ainda que de teste) ocupa capacidade de verdade no passeio de
+  integração.
+- Pedir ao usuário confirmação pontual para criar+aguardar expirar —
+  não solicitado; a instrução já cobria esse cenário e pedia para não
+  executar.
+
+**Consequências:** a validação desta fase ficou inteiramente em: (1) 209
+testes automatizados com `fetch` mockado, cobrindo todo o contrato
+observável de `submitBooking()`/`BookingSelector` (payload, normalização,
+todos os `BookingErrorCode`, rede, double-submit, ciclo da Idempotency-Key,
+preço do backend, PII); (2) verificação em browser real até o step de
+revisão (sem clicar em "Confirmar reserva"). **Não há confirmação real,
+em produção, de que o fluxo completo (clique em "Confirmar reserva" →
+201/hold real → countdown correto) funciona ponta a ponta.** Registrado
+como pendência não bloqueante em [SECURITY.md](SECURITY.md#planejado--não-implementado)
+— só deve ser fechada quando existir um mecanismo de cleanup, ou com
+autorização explícita para criar e aguardar expirar uma reserva de teste.
+
+---
+
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Revalidação sob demanda (`revalidateTag`) para eliminar a janela de até
@@ -245,3 +322,8 @@ de proteção; o motivo acima reflete essa análise mais precisa.
   implementado, revisitável se o volume de tráfego real justificar.
 - E2E cross-serviço específico do `X-ToursFlow-Client-Key` contra o
   NauticFlow em produção — pendente de deploy coordenado dos dois lados.
+- E2E controlado da criação real de reserva pela UI (ADR-009) — pendente
+  de mecanismo de cleanup.
+- Checkout, pagamento, Asaas, PIX, cartão, split, webhook, voucher, QR
+  Code — fora do escopo mesmo com a UI de reserva (Fase 3) já criando
+  hold real.
