@@ -14,6 +14,29 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-28 — Auditoria de segurança: correção de XSS armazenado no JSON-LD
+
+Auditoria de segurança revisou segredos (`TOURSFLOW_API_SECRET` e seu isolamento via `server-only`), whitelist do payload de reserva, rate limit por HMAC (`X-ToursFlow-Client-Key`), idempotência, proteção de origem, configuração de imagens e uso de `dangerouslySetInnerHTML` no projeto.
+
+Encontrado e corrigido: `src/app/passeios/[destino]/[slug]/page.tsx` embutia o JSON-LD (`TouristTrip`) com `JSON.stringify(structuredData)` sem escapar `</script>`. Os campos usados (`tour.name`, `tour.summary`, nome do operador, nomes de categoria) vêm do catálogo do NauticFlow — dado que o ToursFlow não controla na origem. Um valor de catálogo contendo a substring `</script>` fecharia a tag prematuramente e injetaria HTML/script arbitrário na página: XSS armazenado. Corrigido escapando todo caractere de abre-tag do JSON antes de embutir (`.replace(/</g, '\\u003c')`, mitigação padrão para este padrão exato). `npm run typecheck`, `lint`, `test` (86 testes) e `build` verificados depois da correção, todos verdes.
+
+Documentado em [docs/SECURITY.md](../SECURITY.md) (nova seção 8 + "Achados desta auditoria").
+
+## 2026-08-28 — Regra permanente de documentação obrigatória + atualização geral da documentação
+
+A partir de agora, toda entrega neste projeto (feature, bug, segurança, arquitetura, contrato, integração, env var, decisão de produto, limitação conhecida, deploy) precisa vir com a documentação correspondente atualizada — tarefa com código alterado e documentação desatualizada não é considerada concluída.
+
+Auditoria da documentação existente encontrou `docs/ARCHITECTURE.md` e `README.md` desatualizados desde 2026-08-25 (fase pré-integração): ainda descreviam o projeto como rodando "inteiramente sobre dados mockados", listavam "reserva" como fora do escopo, e a seção "Trocar MOCK por dados reais" descrevia como futuro algo que já estava implementado. Ambos reescritos para refletir o estado real (catálogo real via NauticFlow, backend de reserva existente mas não conectado à UI, rate limit por visitante, `BookingSelector`).
+
+Documentos novos criados (conteúdo real, nada especulativo — futuro marcado como PLANEJADO/NÃO IMPLEMENTADO):
+- [docs/PRICE-TYPES.md](../PRICE-TYPES.md) — contrato de price types extraído para arquivo próprio (antes duplicado dentro de `RESERVAS-SERVER-TO-SERVER.md`, que agora só referencia).
+- [docs/SECURITY.md](../SECURITY.md) — consolida a postura de segurança já implementada (segredos, rate limit por HMAC, whitelist de payload, idempotência, proteção de origem, imagens, limitações conhecidas).
+- [docs/ENVIRONMENT.md](../ENVIRONMENT.md) — tabela completa das 3 variáveis de ambiente do projeto.
+- [docs/DEPLOYMENT.md](../DEPLOYMENT.md) — onde/como o deploy acontece, checklist pré-deploy.
+- [docs/DECISIONS.md](../DECISIONS.md) — 6 ADRs retroativos das decisões de arquitetura já tomadas (fonte de dados por env var, cache dividido, rota dinâmica, HMAC do rate limit, whitelist do payload, tipos de reserva separados dos de catálogo).
+
+`BOOKING.md`/`INTEGRATION-NAUTICFLOW.md` deliberadamente **não** criados como arquivos separados — o conteúdo já está consolidado em `RESERVAS-SERVER-TO-SERVER.md`/`PLANO-INTEGRACAO-NAUTICFLOW.md`; criar duplicata violaria a própria regra de não criar arquivo redundante.
+
 ## 2026-08-28 — Fase 1 do fluxo de reserva: seleção real + contrato de price types fechado
 
 Substituído `DeparturesList` (só exibia saídas) por `BookingSelector` (`src/components/tours/BookingSelector.tsx`): seleção de saída → quantidade de pessoas (stepper acessível, sem teto inventado) → preço/total estimado → "Continuar reserva". O clique em "Continuar" só avança para um placeholder de "Dados do comprador" — **nenhuma chamada a `/api/bookings` nesta fase**. Lógica pura extraída para `src/lib/booking-selection.ts` (testável sem DOM).

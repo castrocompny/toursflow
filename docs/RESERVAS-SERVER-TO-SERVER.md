@@ -67,14 +67,11 @@ A rota `/api/bookings` **exige** o header `Idempotency-Key` (formato UUID) e o r
 
 ## Contrato de price types (confirmado)
 
-| NauticFlow (`price_type`) | ToursFlow (`PriceType`) | Vendável? | Total |
-|---|---|---|---|
-| `por_pessoa` | `per_person` | Sim | `price × quantity` — confirmado em E2E real (`teste-e2e-producao-toursflow-78a909`: 15000 × 2 = 30000) |
-| `por_grupo` | `per_group` | Sim | `price` fixo — `quantity` não multiplica, confirmado contra o contrato real |
-| `a_partir_de` | `starting_from` | **Não** | Preço de catálogo apenas — o NauticFlow rejeita reserva desse tipo com `PRICE_TYPE_NOT_SELLABLE` |
-| — | `per_boat` | **Não** | Sem equivalente confirmado no NauticFlow hoje. Existe no tipo do ToursFlow só por compatibilidade com dado mock/legado; `mapPriceType()` nunca produz esse valor a partir de dado real — qualquer `price_type` desconhecido cai em `starting_from` (padrão seguro: nunca "vendável por engano") |
-
-Qualquer saída com `priceType` não vendável (`starting_from` ou `per_boat`) aparece na lista de saídas mas fica desabilitada para seleção (`isSellablePriceType()` em `src/lib/booking-selection.ts`) — nunca é possível chegar a "Continuar reserva" com uma delas.
+Tabela completa, padrão de segurança e histórico em
+[PRICE-TYPES.md](PRICE-TYPES.md). Resumo: `per_person`/`per_group` são
+vendáveis; `starting_from`/`per_boat` não são e ficam desabilitados no
+`BookingSelector` (`isSellablePriceType()` em `src/lib/booking-selection.ts`)
+antes de qualquer chamada ao backend.
 
 ## Erros
 

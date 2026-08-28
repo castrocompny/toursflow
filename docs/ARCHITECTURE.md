@@ -1,23 +1,30 @@
 # Arquitetura do ToursFlow
 
-Documentação técnica de como o projeto é organizado hoje. Para visão de
-produto e passo a passo de instalação, ver o [README](../README.md).
+Documentação técnica de como o projeto é organizado hoje (atualizado até o
+commit `a11424a`). Para visão de produto e passo a passo de instalação, ver
+o [README](../README.md). Para o backend de reservas em detalhe, ver
+[RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md); para o
+contrato de preço, [PRICE-TYPES.md](PRICE-TYPES.md).
 
 ## 1. Visão geral
 
-ToursFlow é a vitrine pública (descoberta, comparação, escolha) de um
+ToursFlow é a vitrine pública (descoberta, comparação, escolha, e — a
+partir da Fase 1 do fluxo de reserva — seleção de saída/quantidade) de um
 marketplace de passeios náuticos. É a contraparte de turista do
 **NauticFlow**, sistema do operador (embarcações, saídas, reservas,
 manifesto). Os dois são repositórios, deploys e domínios independentes.
 
-Hoje o projeto roda inteiramente sobre dados mockados em memória. Nenhuma
-página, componente ou rota conhece essa origem: tudo passa por um contrato
-de dados único (`src/data/source.ts`), o que torna a troca por dados reais
-do NauticFlow uma mudança de um arquivo, sem tocar em UI. Ver seção 7.
+O catálogo (passeios, destinos, categorias, saídas) já consome dados reais
+do NauticFlow em produção — o mock só existe como fallback de
+desenvolvimento local (ver seção 6). Existe também um backend de criação
+de reserva (`POST /api/bookings` → NauticFlow), testado e validado em E2E
+real, mas **ainda não conectado a nenhum botão da interface pública** — a
+seleção de saída/quantidade na página do passeio (`BookingSelector`)
+termina num placeholder, não numa reserva de verdade.
 
-Fora do escopo atual: pagamento, Asaas, split, checkout, reserva, voucher,
-QR Code, avaliações, login e área do turista, comissão e repasse
-financeiro.
+**PLANEJADO / NÃO IMPLEMENTADO ainda:** formulário de dados do comprador,
+checkout, pagamento, Asaas, split, webhook de confirmação, voucher, QR
+Code, avaliações, login e área do turista, comissão e repasse financeiro.
 
 ## 2. Stack
 
@@ -28,10 +35,13 @@ financeiro.
 | Estilo | Tailwind CSS 3.4 |
 | Ícones | lucide-react |
 | Fontes | Bricolage Grotesque (display) + Instrument Sans (corpo), via Google Fonts `<link>` em `layout.tsx` |
+| Testes | Vitest (lógica pura, `node`) + `@testing-library/react`/`jsdom` (componentes, por arquivo via `// @vitest-environment jsdom`) |
+| Segredo server-only | pacote `server-only` — quebra o build se um módulo marcado for importado por um Client Component |
 
-Sem cliente de banco, sem gerenciador de estado global, sem camada de
-autenticação — todas as páginas são Server Components assíncronos que
-buscam dados diretamente do repositório de dados no servidor.
+Sem cliente de banco direto (o NauticFlow é consultado só via HTTP), sem
+gerenciador de estado global, sem camada de autenticação de usuário —
+páginas de catálogo são Server Components assíncronos; a escrita de
+reserva passa por uma única Route Handler server-only.
 
 ## 3. Como rodar
 
@@ -40,17 +50,22 @@ npm install
 npm run dev        # http://localhost:3000
 npm run typecheck  # tsc --noEmit
 npm run lint
+npm run test       # vitest run
 npm run build
 ```
 
-Variável opcional (`.env.local`, ver `.env.example`):
+Variáveis (`.env.local`, ver `.env.example` e
+[ENVIRONMENT.md](ENVIRONMENT.md) para a lista completa):
 
 ```
 NEXT_PUBLIC_SITE_URL=https://toursflow.com.br
+NAUTICFLOW_API_URL=https://nauticflow.com.br
+TOURSFLOW_API_SECRET=
 ```
 
-Sem ela, `src/lib/site.ts` usa `https://toursflow.com.br` como base de
-canonical, sitemap e Open Graph.
+Sem `NAUTICFLOW_API_URL`, o site usa mock local automaticamente (dev sem
+setup extra). Sem `TOURSFLOW_API_SECRET`, `/api/bookings` falha de forma
+segura (nunca cria reserva fake).
 
 Para parar um servidor dev em background: `lsof -ti:3000 -sTCP:LISTEN | xargs kill`.
 
@@ -58,69 +73,68 @@ Para parar um servidor dev em background: `lsof -ti:3000 -sTCP:LISTEN | xargs ki
 
 ```
 src/
-  app/                          rotas (App Router)
-    layout.tsx                  layout raiz: fontes, Header, Footer, skip-link, metadata base
-    page.tsx                    home
-    passeios/page.tsx           listagem com filtros (?destino, ?categoria, ?data, ?pessoas, ?q)
-    passeios/[destino]/         atalho -> redirect 307 para /destinos/[slug]
-    passeios/[destino]/[slug]/  página do passeio (rota canônica do produto)
-    destinos/page.tsx           índice de destinos
-    destinos/[slug]/page.tsx    página de destino (hero + lista de passeios)
-    sitemap.ts, robots.ts       gerados a partir da camada de dados
-    not-found.tsx
-    icon.svg
+  app/
+    layout.tsx                     fontes, Header, Footer, skip-link, metadata base
+    page.tsx                       home
+    error.tsx                      boundary de erro (API fora do ar != lista vazia)
+    passeios/page.tsx              listagem com filtros e paginação real
+    passeios/[destino]/            atalho -> redirect 307 para /destinos/[slug]
+    passeios/[destino]/[slug]/     página do passeio (force-dynamic — ver seção 5)
+    destinos/, sitemap.ts, robots.ts, not-found.tsx
+    api/bookings/route.ts          único endpoint de escrita (server-only)
   components/
-    layout/       Header, Footer
-    search/       SearchBar (hero/destino), FilterBar (listagem, usa useSearchParams)
-    tours/        TourCard, TourGrid, TourGallery, TourItinerary, TourChecklist, BoardingLocation
-    destinations/ DestinationCard
-    categories/   CategoryCard
-    ui/           Rating, Price, Section, EmptyState, Breadcrumbs
-    brand/        Logo
+    tours/       TourCard, TourGrid, TourGallery, TourItinerary, TourChecklist,
+                  BoardingLocation, BookingSelector (seleção de reserva, 'use client')
+    layout/, search/, destinations/, categories/, ui/, brand/
   data/
-    source.ts         contrato ToursDataSource (interface)
-    repository.ts      ponto único de seleção da implementação ativa
-    sources/           implementações do contrato (hoje só mock-source.ts)
-    mock/               dados estáticos em memória (tours, operators, destinations, categories)
+    source.ts        contrato ToursDataSource (inclui listDepartures, paginação)
+    repository.ts     escolhe nauticflow-source ou mock-source por env var
+    sources/
+      nauticflow-source.ts   leitura pública real (sem segredo)
+      mock-source.ts         fallback só para dev local
+    mock/             dados estáticos (usados só pelo mock-source)
+    vitrine/          metadados de destino/categoria que o NauticFlow não fornece
+                       (tagline, descrição, imagem, ícone) — propriedade do ToursFlow
   lib/
-    routes.ts    fonte única das URLs públicas
-    seo.ts       pageMetadata(): canonical + Open Graph + Twitter Card padronizados
-    site.ts      nome, domínio, URL base, tagline, description
-    format.ts    formatação (duração, preço, etc.)
-    maps.ts      geração de link de mapa (coordenadas ou busca por endereço)
+    routes.ts, seo.ts, site.ts, format.ts, maps.ts
+    booking-validation.ts, booking-errors.ts, booking-selection.ts
+    nauticflow-bookings.ts (server-only)   único ponto que fala com o NauticFlow para escrever
+    client-ip.ts, toursflow-client-key.ts (server-only)   IP confiável + HMAC do rate limit
   types/
-    index.ts     contratos de domínio (Tour, Operator, Destination, Category, ...)
+    index.ts     contratos de catálogo (Tour, Departure, PriceType, ...)
+    booking.ts    contratos de reserva (request/response/erros)
+  test/
+    server-only-mock.ts   stub para os testes rodarem fora do bundler do Next
 public/
-  img/mock/      imagens de exemplo (SVG) geradas por scripts/generate-placeholders.mjs
-  brand/         logo em SVG (mark, lockup, mono, light)
+  img/mock/      imagens de exemplo (SVG), só usadas quando o mock está ativo
 scripts/
-  generate-placeholders.mjs   gera os SVGs de mock em public/img/mock/
+  generate-placeholders.mjs
 ```
 
 ## 5. Rotas (App Router)
 
 | Rota | Tipo | Origem dos dados | Observações |
 |---|---|---|---|
-| `/` | estática (SSG no build) | `listDestinations`, `listCategories`, `listFeaturedTours(6)`, `listTours` | Hero com `SearchBar`, destinos, passeios em destaque, categorias, CTA para operadores |
-| `/passeios` | dinâmica (lê `searchParams`) | `listTours(filters)` | Filtros via querystring: `destino`, `categoria`, `data`, `pessoas`, `q`. Com qualquer filtro ativo, `generateMetadata` retorna `robots: { index: false, follow: true }` para não competir com `/destinos/[slug]` no índice de busca. `data` é aceito na URL mas ainda não filtra — a página avisa o usuário em vez de fingir que filtrou |
-| `/passeios/[destino]` | redirect | — | 307 para `/destinos/[destino]`. Existe só para não quebrar links antigos/externos; não é a rota canônica |
-| `/passeios/[destino]/[slug]` | estática (`generateStaticParams` via `listTourPaths`) | `getTour(destino, slug)` | Página de produto: galeria, roteiro, checklist, local de embarque, política de cancelamento, JSON-LD `TouristTrip`, passeios relacionados do mesmo destino |
-| `/destinos` | estática | `listDestinations`, `listTours` | Grid de destinos com contagem de passeios |
-| `/destinos/[slug]` | estática (`generateStaticParams`) | `getDestination(slug)`, `listTours({ destination })` | Hero com imagem do destino + `SearchBar` pré-preenchida + grid de passeios; `notFound()` se o slug não existe |
-| `/sitemap.xml` | gerado (`app/sitemap.ts`) | `listDestinations`, `listTourPaths` | Inclui home, `/passeios`, `/destinos`, cada destino e cada passeio |
-| `/robots.txt` | gerado (`app/robots.ts`) | — | |
+| `/` | estática (ISR) | catálogo real (ou mock em dev) | Hero, `SearchBar`, destinos, passeios em destaque, categorias |
+| `/passeios` | dinâmica (lê `searchParams`) | `listTours(filters)`, paginado | `destino`/`categoria` filtram de verdade (query param real na API); `data`/`pessoas`/`q` aceitos na URL mas sem suporte na API — avisado ao usuário, nunca escondido |
+| `/passeios/[destino]` | redirect | — | 307 para `/destinos/[destino]` |
+| `/passeios/[destino]/[slug]` | **dinâmica** (`export const dynamic = 'force-dynamic'`) | `getTour`, `listDepartures` | Sem `generateStaticParams`: a disponibilidade (`listDepartures`, `no-store`) não pode ser pré-renderizada em build — decisão registrada em [DECISIONS.md](DECISIONS.md) |
+| `/destinos`, `/destinos/[slug]` | estática (ISR) | `listDestinations`, `listTours` | |
+| `/api/bookings` | Route Handler, `POST` only | — | Único endpoint de escrita; server-only; **não chamado por nenhuma UI ainda** |
+| `/sitemap.xml`, `/robots.txt` | gerados | `listDestinations`, `listTourPaths` | |
 
-`src/lib/routes.ts` é a única fonte de verdade para montar essas URLs — nenhum componente concatena string de rota manualmente.
+`src/lib/routes.ts` é a única fonte de verdade para montar URLs de página — nenhum componente concatena string de rota manualmente.
 
-## 6. Camada de dados
+## 6. Camada de dados (catálogo)
 
 ### 6.1 Contrato (`src/data/source.ts`)
 
 ```ts
 interface ToursDataSource {
   readonly name: string;
-  listTours(filters?: TourFilters): Promise<TourWithRelations[]>;
+  listTours(filters?: TourFilters): Promise<TourListResult>; // paginado
   getTour(destinationSlug: string, tourSlug: string): Promise<TourWithRelations | null>;
+  listDepartures(tourSlug: string): Promise<Departure[]>;
   listFeaturedTours(limit?: number): Promise<TourWithRelations[]>;
   listDestinations(): Promise<Destination[]>;
   getDestination(slug: string): Promise<Destination | null>;
@@ -129,123 +143,75 @@ interface ToursDataSource {
 }
 ```
 
-Todas as funções são assíncronas mesmo sendo mock — é isso que garante que
-trocar por chamadas de rede reais não muda a assinatura nem exige
-refatorar componentes.
+Erro de infraestrutura (rede, timeout, resposta inválida) é `DataSourceError` — nunca confundido com "não encontrado" (`null`). Ver seção 8.
 
 ### 6.2 Repositório (`src/data/repository.ts`)
 
-Único ponto que escolhe qual implementação está ativa:
-
 ```ts
-const source: ToursDataSource = mockSource;
+const source: ToursDataSource = process.env.NAUTICFLOW_API_URL ? nauticflowSource : mockSource;
 ```
 
-Todas as páginas importam funções daqui (`listTours`, `getTour`, etc.),
-nunca de `sources/mock-source.ts` diretamente.
+Escolhido automaticamente pela env var — nenhum componente sabe qual está ativo. Em produção `NAUTICFLOW_API_URL` está sempre configurada; o mock nunca é fallback silencioso ali.
 
-### 6.3 Mock (`src/data/sources/mock-source.ts` + `src/data/mock/`)
+### 6.3 Fonte real (`src/data/sources/nauticflow-source.ts`)
 
-- Filtra sempre por `status === 'published'` antes de expor qualquer passeio.
-- Resolve relações em memória: junta `Tour` com `Operator`, `Destination` e
-  `Category[]` para produzir `TourWithRelations`.
-- `listFeaturedTours` ordena por `rating.count` desc (passeios sem
-  avaliação ficam no fim).
-- `matches()` implementa os filtros de `listTours`: destino, categoria,
-  capacidade mínima (`people` vs `maxPeople`) e busca textual em
-  nome/resumo/destino/operador. **O filtro de `date` é intencionalmente
-  ignorado aqui** — não existe conceito de saída/agenda no mock.
+Consome `GET /api/public/tours`, `/tours/[slug]`, `/tours/[slug]/departures`, `/destinations`, `/categories` do NauticFlow (sem autenticação — API pública). Mapeamento defensivo DTO → tipos internos, incluindo `mapPriceType()` (ver [PRICE-TYPES.md](PRICE-TYPES.md)) e enriquecimento de destino/categoria com os metadados de vitrine (`src/data/vitrine/`) que a API não fornece.
 
-### 6.4 Campos simulados que dependem do NauticFlow
+**Cache:** conteúdo (tours, destinos, categorias, detalhe) usa `next: { revalidate: 300 }` (ISR, 5 min). Disponibilidade (`listDepartures`) usa `cache: 'no-store'` — sempre fresca. Sem revalidação sob demanda (`revalidateTag`) ainda — publicar/despublicar um passeio no NauticFlow pode levar até 5 min para refletir no catálogo, mas uma tentativa de reserva sempre revalida no NauticFlow (nunca reserva um passeio já suspenso).
 
-`rating`, `boardingPoint.latitude/longitude`, `maxPeople`, `priceFrom` e
-disponibilidade por data. Ao integrar, esses campos passam a vir do
-Supabase do NauticFlow em vez de serem fixos no mock.
+### 6.4 Mock (`src/data/sources/mock-source.ts` + `src/data/mock/`)
 
-## 7. Trocar mock por dados reais
+Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'published'`, resolve relações em memória, gera saídas sintéticas para `listDepartures`. Nunca usado em produção.
 
-1. Criar `src/data/sources/nauticflow-source.ts` implementando
-   `ToursDataSource` sobre o Supabase do NauticFlow, lendo apenas passeios
-   com status publicado.
-2. Em `src/data/repository.ts`, trocar a constante `source` (por exemplo,
-   selecionando por `process.env.DATA_SOURCE`).
-3. Apagar `src/data/mock/` e `public/img/mock/`.
+## 7. Tipos de domínio
 
-Nenhum componente importa mock diretamente e todas as funções do
-repositório já são assíncronas — a troca não exige refatorar a UI.
+- `src/types/index.ts`: `Tour`, `TourWithRelations`, `Departure` (saída real — id, data/hora, preço, `priceType`, `soldOut`), `PriceType` (4 valores, ver [PRICE-TYPES.md](PRICE-TYPES.md)), `Operator`, `Destination`, `Category`, `BoardingPoint`, `TourListResult` (paginação).
+- `src/types/booking.ts`: contratos de reserva — `BookingRequestInput`, `NauticFlowBookingResponseData`, `BookingErrorCode` (deliberadamente separado dos tipos de catálogo, ver [DECISIONS.md](DECISIONS.md)).
+- `rating?`, `boardingPoint.latitude/longitude?`, `Operator.slug/state/verified?` são opcionais de propósito: a API real não garante esses campos, e a UI nunca inventa valor pra eles.
 
-## 8. Tipos de domínio (`src/types/index.ts`)
-
-- `Tour` — entidade crua (referencia `destinationSlug`, `operatorId`,
-  `categorySlugs` por slug/id, não por objeto).
-- `TourWithRelations` — `Tour` + `operator`, `destination`, `categories`
-  já resolvidos; é o formato que toda a UI consome.
-- `Operator`, `Destination`, `Category`, `BoardingPoint`, `TourRating`,
-  `ItineraryStop`, `TourImage`, `TourFilters`.
-- `rating?: TourRating` é opcional de propósito: passeio sem avaliação não
-  recebe nota inventada nem "0 estrelas" (ver seção 10).
-- `BoardingPoint.latitude/longitude` são opcionais: sem coordenadas, o
-  botão de mapa (`src/lib/maps.ts`) cai para busca por endereço.
-
-## 9. Componentes
+## 8. Componentes
 
 | Pasta | Componentes | Responsabilidade |
 |---|---|---|
-| `layout/` | `Header`, `Footer` | Navegação global; `Footer` recebe a lista de destinos para montar os links "Passeios em X" |
-| `search/` | `SearchBar`, `FilterBar` | `SearchBar`: destino + data + pessoas, usado na home e no hero de destino. `FilterBar`: filtros da listagem `/passeios`, lê/escreve `useSearchParams` |
-| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation` | Card e grid de passeio; galeria de imagens; timeline do roteiro; lista "incluído/não incluído"; bloco de local de embarque com CTA de mapa |
-| `destinations/` | `DestinationCard` | Card de destino com contagem de passeios (`tourCount` opcional) |
-| `categories/` | `CategoryCard` | Card de categoria (ícone + nome + descrição) |
-| `ui/` | `Rating`, `Price`, `Section`, `EmptyState`, `Breadcrumbs` | Primitivas reutilizadas: nota (só renderiza se `rating` existir), preço formatado por `PriceType`, wrapper de seção com eyebrow/título/CTA, estado vazio, breadcrumb |
-| `brand/` | `Logo` | Logo em SVG inline (mark/lockup) |
+| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`** | `BookingSelector` (`'use client'`) é a seleção de reserva: saída → quantidade → total estimado → "Continuar" (placeholder, sem backend ainda — ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md)) |
+| `layout/`, `search/`, `destinations/`, `categories/`, `ui/`, `brand/` | — | Inalterados desde a fase de catálogo |
+
+Só 4 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector` — todo o resto é Server Component.
+
+## 9. Camada de reservas (server-only)
+
+Resumo — detalhe completo em [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md):
+
+```
+navegador -> POST /api/bookings (ToursFlow) -> POST /api/marketplace/bookings (NauticFlow)
+```
+
+`src/lib/nauticflow-bookings.ts` é o único módulo que lê `TOURSFLOW_API_SECRET`; `src/lib/client-ip.ts`/`toursflow-client-key.ts` calculam a identidade pseudônima do rate limit (HMAC do IP, nunca o IP em claro). Todos marcados `import 'server-only'`. Whitelist explícita do payload em `booking-validation.ts` — nunca repassa campo além de `departureId`/`quantity`/`customer.{name,email,phone,cpf}`.
 
 ## 10. Regras de conteúdo já aplicadas
 
-- **Avaliação só aparece quando existe.** `Rating` não renderiza nada
-  (nem "sem avaliações") quando `tour.rating` é `undefined` — nunca inventa
-  nota.
-- **Ponto de embarque funciona sem coordenadas.** Quando
-  `latitude`/`longitude` estão ausentes, o CTA de mapa (`src/lib/maps.ts`)
-  cai para busca por endereço em vez de quebrar ou esconder o botão.
-- **Filtro de data é honesto.** `/passeios?data=...` é aceito e refletido
-  na UI, mas como o mock não modela agenda/saídas, a página exibe um aviso
-  explícito de que a disponibilidade por data ainda não está conectada —
-  em vez de aplicar um filtro que pareceria funcionar e não funciona.
-- **`/passeios/[destino]` não compete com `/destinos/[slug]`.** É um
-  redirect puro; a página indexável e canônica para "passeios em X" é
-  `/destinos/[slug]`.
+- **Avaliação só aparece quando existe.**
+- **Ponto de embarque funciona sem coordenadas** (cai para busca por endereço).
+- **Filtro de data/pessoas/busca é honesto** — aceito na URL, avisa que não filtra em vez de fingir.
+- **`/passeios/[destino]` não compete com `/destinos/[slug]`** no índice de busca.
+- **Preço nunca vem do cliente como autoridade** — o total mostrado na seleção é só estimativa visual; o NauticFlow recalcula tudo na reserva real.
+- **Tipo de preço não vendável nunca chega a "Continuar"** — ver [PRICE-TYPES.md](PRICE-TYPES.md).
 
 ## 11. SEO
 
-- `pageMetadata()` (`src/lib/seo.ts`) centraliza `title`, `description`,
-  `alternates.canonical`, Open Graph e Twitter Card — toda página chama
-  essa função em vez de montar `Metadata` na mão.
-- JSON-LD `TouristTrip` injetado na página do passeio
-  (`src/app/passeios/[destino]/[slug]/page.tsx`), com `aggregateRating`
-  presente apenas quando `tour.rating` existe.
-- `sitemap.xml` e `robots.txt` são gerados a partir da própria camada de
-  dados (`listDestinations`, `listTourPaths`), não de uma lista mantida à
-  mão.
-- Páginas de listagem com filtro (`/passeios?...`) recebem
-  `robots: { index: false, follow: true }` para não diluir a autoridade
-  das páginas de destino no índice de busca.
+- `pageMetadata()` (`src/lib/seo.ts`) centraliza title/description/canonical/OG/Twitter.
+- JSON-LD `TouristTrip` na página do passeio, `aggregateRating` só quando existe.
+- `sitemap.xml`/`robots.txt` gerados da própria camada de dados.
+- `/passeios?...` com filtro recebe `noindex, follow`.
 
 ## 12. Design tokens (Tailwind)
 
-Definidos em `tailwind.config.ts`, sem plugins externos:
-
-- Cores: `ink` (texto/fundo escuro), `sea` (marca, com `dark`/`light`),
-  `foam`, `sand`, `sun` (destaque/CTA, com `dark`).
-- Fontes: `font-display` (Bricolage Grotesque) e `font-sans` (Instrument
-  Sans), carregadas via CSS variables setadas no `<link>` de Google Fonts
-  em `layout.tsx`.
-- `rounded-card` (20px), `shadow-card` / `shadow-lift`, `max-w-shell`
-  (1240px, usado pela classe utilitária `.shell`).
+Inalterado desde a fase de catálogo — `tailwind.config.ts`: cores `ink`/`sea`/`foam`/`sand`/`sun`, `font-display`/`font-sans`, `rounded-card` (20px), `shadow-card`/`shadow-lift`, `max-w-shell` (1240px).
 
 ## 13. Imagens
 
-`next.config.mjs` não libera nenhum host remoto (`remotePatterns: []`) —
-hoje todas as imagens (`public/img/mock/`) são SVGs locais gerados por
-`scripts/generate-placeholders.mjs`. Ao integrar o Storage do
-NauticFlow/Supabase, o host correspondente precisa ser adicionado em
-`remotePatterns` antes de qualquer `<Image src>` remoto funcionar.
+`next.config.mjs` libera **só** o host específico do Storage do NauticFlow (`gggpihphjjxndpfntnvm.supabase.co`, path `/storage/v1/object/**`) — nunca wildcard. Fallback visual (`ImageOff`) em `TourCard`/`TourGallery` quando não há foto.
+
+## 14. Testes
+
+Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, seleção de reserva (componente, via `@testing-library/react`). `npm test` roda tudo.

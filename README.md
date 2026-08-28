@@ -5,11 +5,11 @@ Marketplace público de passeios náuticos. Projeto **independente** do NauticFl
 - **NauticFlow**: sistema do operador (embarcações, saídas, reservas, manifesto).
 - **ToursFlow**: vitrine do turista (descoberta, comparação, escolha do passeio).
 
-A integração entre os dois acontece depois, pela camada de dados descrita abaixo. Nada neste repositório grava no banco do NauticFlow.
+O catálogo (passeios, destinos, saídas) já consome a API pública real do NauticFlow em produção. A escrita de reserva (`POST /api/bookings`) também já existe e foi validada em E2E real contra produção — mas ainda não está conectada a nenhum botão da interface pública. Nada neste repositório grava no banco do NauticFlow diretamente; toda escrita passa pela API dele.
 
 ## Stack
 
-Next.js 14 (App Router, Server Components), React 18, TypeScript strict, Tailwind CSS, lucide-react. Mesma base do NauticFlow, para reaproveitar conhecimento e facilitar a integração.
+Next.js 14.2.5 (App Router, Server Components), React 18, TypeScript strict, Tailwind CSS, lucide-react, Vitest + `@testing-library/react`. Mesma base do NauticFlow, para reaproveitar conhecimento e facilitar a integração.
 
 ## Rodar
 
@@ -22,15 +22,22 @@ npm run test       # vitest run
 npm run build
 ```
 
-Variável opcional (`.env.local`):
+Variáveis (`.env.local`, ver [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md) para a lista completa):
 
 ```
 NEXT_PUBLIC_SITE_URL=https://toursflow.com.br
+NAUTICFLOW_API_URL=https://nauticflow.com.br
+TOURSFLOW_API_SECRET=
 ```
 
-Sem ela, o site usa `https://toursflow.com.br` como base de canonical, sitemap e Open Graph.
+Sem `NAUTICFLOW_API_URL`, o site usa dados mock locais automaticamente — nenhum setup extra necessário para rodar em dev.
 
 Documentação técnica completa (rotas, camada de dados, tipos, componentes, SEO): [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Contrato de price types: [docs/PRICE-TYPES.md](docs/PRICE-TYPES.md).
+Segurança: [docs/SECURITY.md](docs/SECURITY.md).
+Variáveis de ambiente: [docs/ENVIRONMENT.md](docs/ENVIRONMENT.md).
+Deploy: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+Decisões de arquitetura (ADR): [docs/DECISIONS.md](docs/DECISIONS.md).
 Auditoria pré-integração com o NauticFlow: [docs/AUDITORIA-PRE-INTEGRACAO.md](docs/AUDITORIA-PRE-INTEGRACAO.md).
 Plano de execução da integração com o NauticFlow: [docs/PLANO-INTEGRACAO-NAUTICFLOW.md](docs/PLANO-INTEGRACAO-NAUTICFLOW.md).
 Integração de reservas (server-to-server, ainda não conectada à interface pública): [docs/RESERVAS-SERVER-TO-SERVER.md](docs/RESERVAS-SERVER-TO-SERVER.md).
@@ -38,41 +45,14 @@ Histórico de tudo o que foi feito no projeto: [docs/changelog/CHANGELOG.md](doc
 
 ## Estrutura
 
-```
-src/
-  app/                          rotas (App Router)
-    page.tsx                    home
-    passeios/page.tsx           listagem com filtros
-    passeios/[destino]/         atalho -> redirect para /destinos/[slug]
-    passeios/[destino]/[slug]/  página do passeio
-    destinos/                   índice e página de destino
-    sitemap.ts, robots.ts
-  components/
-    layout/    Header, Footer
-    search/    SearchBar, FilterBar
-    tours/     TourCard, TourGrid, TourGallery, TourItinerary, TourChecklist, BoardingLocation
-    destinations/ DestinationCard
-    categories/   CategoryCard
-    ui/        Rating, Price, Section, EmptyState, Breadcrumbs
-  data/
-    source.ts        contrato ToursDataSource
-    repository.ts    ponto único de troca da origem dos dados
-    sources/         implementações (hoje só mock)
-    mock/            dados temporários (ver README da pasta)
-  lib/         format, routes, maps, seo, site
-  types/       contratos de domínio
-public/img/mock/  imagens de exemplo geradas por script
-```
+Estrutura completa e comentada: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#4-estrutura-de-pastas).
 
-## Trocar MOCK por dados reais
+## Fonte de dados: real vs. mock
 
-1. Criar `src/data/sources/nauticflow-source.ts` implementando `ToursDataSource` (`src/data/source.ts`) sobre o Supabase do NauticFlow, lendo apenas passeios com status publicado.
-2. Em `src/data/repository.ts`, trocar a constante `source`.
-3. Apagar `src/data/mock/` e `public/img/mock/`.
-
-Nenhum componente importa mock diretamente, e todas as funções do repositório já são assíncronas: a troca não muda assinatura nem exige refatorar a UI.
-
-Campos que hoje são simulados e dependem do NauticFlow: `rating` (não existe avaliação no sistema ainda), `boardingPoint.latitude/longitude`, `maxPeople`, `priceFrom` e disponibilidade por data.
+`src/data/repository.ts` escolhe `nauticflow-source` (real) ou
+`mock-source` (fallback) automaticamente pela presença de
+`NAUTICFLOW_API_URL` — nenhum componente sabe qual está ativo. Ver
+[ADR-001](docs/DECISIONS.md#adr-001--repositório-de-dados-escolhido-por-variável-de-ambiente).
 
 ## Regras de conteúdo já aplicadas no código
 
@@ -88,6 +68,6 @@ Campos que hoje são simulados e dependem do NauticFlow: `rating` (não existe a
 - `sitemap.xml` e `robots.txt` gerados a partir da própria camada de dados.
 - Páginas com filtro (`/passeios?...`) recebem `noindex, follow` para não competir com as páginas de destino.
 
-## Fora do escopo desta etapa
+## Fora do escopo / PLANEJADO — NÃO IMPLEMENTADO
 
-Pagamento, Asaas, split, checkout, reserva, voucher, QR Code, avaliações, login e área do turista, comissão e repasse financeiro.
+Conexão da UI de seleção de reserva (`BookingSelector`) a `/api/bookings`, formulário de dados do comprador, checkout, pagamento, Asaas, split, webhook de confirmação, voucher, QR Code, avaliações, login e área do turista, comissão e repasse financeiro.

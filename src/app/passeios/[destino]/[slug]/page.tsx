@@ -15,7 +15,7 @@ import { Price } from '@/components/ui/Price';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { formatDuration, formatLocation } from '@/lib/format';
 import { routes } from '@/lib/routes';
-import { pageMetadata } from '@/lib/seo';
+import { pageMetadata, toSafeJsonLdScript } from '@/lib/seo';
 import { site } from '@/lib/site';
 
 interface PageProps {
@@ -82,10 +82,11 @@ export default async function TourPage({ params }: PageProps) {
 
   return (
     <article className="shell py-8 sm:py-12">
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
-      />
+      {/* Campos como tour.name/summary vêm do catálogo do NauticFlow — não são
+          texto de confiança total do ToursFlow. toSafeJsonLdScript() escapa
+          "<" para evitar que um valor contendo "</script>" feche a tag e
+          injete HTML/script (ver src/lib/seo.ts e src/lib/seo.test.ts). */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: toSafeJsonLdScript(structuredData) }} />
 
       <Breadcrumbs
         items={[
