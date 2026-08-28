@@ -3,22 +3,34 @@
 ## Onde roda
 
 - **Repositório:** `github.com/castrocompny/toursflow`, branch `main`.
-- **Hospedagem:** Vercel, via CLI (`vercel --prod`) — não há `.vercel/`
-  nem `vercel.json` commitado neste repositório; a ligação
-  projeto-Vercel/env vars é feita na própria dashboard da Vercel, não em
-  arquivo versionado.
-- **Domínio de produção:** `https://toursflow.com.br` (valor de
-  `NEXT_PUBLIC_SITE_URL`, usado em canonical/OG/sitemap).
+- **Hospedagem:** Vercel, com **deploy automático via integração
+  GitHub → Vercel**: todo push em `main` gera um novo Production
+  Deployment sem passo manual — confirmado em produção em 2026-08-28 (o
+  commit `9594cec`, pushado sem rodar `vercel --prod`, apareceu como
+  Production Deployment `READY` no dashboard e foi confirmado servindo o
+  fix nele contido via smoke test HTTP real). Não há `.vercel/` neste
+  repositório (o link projeto-Vercel vive só na configuração da conta
+  Vercel/GitHub, não em arquivo versionado) nem `vercel.json`.
+- **Domínios de produção:** `https://toursflow.com.br` e
+  `https://toursflow.vercel.app` (ambos servem o mesmo deployment).
+  `NEXT_PUBLIC_SITE_URL` usa o primeiro (canonical/OG/sitemap).
 - **Build:** `npm run build` (Next.js 14.2.5, App Router). Sem passo de
   build customizado além do padrão do Next.
 
-## Regra deste projeto: deploy nunca é automático a partir de uma sessão
+## Deploy é automático a partir de `main` — não existe passo manual de rotina
 
-Rodar `vercel --prod` só acontece com autorização explícita do usuário
-**a cada vez** — não é implícito por "o código está pronto" ou "os testes
-passaram". Um `git push origin main` por si só não dispara deploy de
-produção nesta configuração (sem `vercel.json` versionado nem CI de deploy
-neste repo) — o deploy é um passo manual e separado.
+Um `git push origin main` **já é** o deploy de produção — a Vercel builda
+e publica automaticamente via GitHub App, sem intervenção manual. Rodar
+`vercel --prod` a partir de uma sessão **não deveria ser necessário** no
+fluxo normal; se algum dia for preciso (ex.: forçar redeploy sem novo
+commit), isso continua exigindo autorização explícita do usuário a cada
+vez — nunca implícito.
+
+Nota de correção (2026-08-28): uma versão anterior deste documento
+afirmava que o deploy era manual (`vercel --prod`, sem auto-deploy
+configurado). Isso estava incorreto — era uma suposição não verificada,
+não um fato checado contra a configuração real da Vercel. Corrigido nesta
+entrada depois de confirmar o auto-deploy do commit `9594cec` na prática.
 
 ## Variáveis de ambiente em produção
 
@@ -30,27 +42,43 @@ NauticFlow — um deploy que muda esse valor de um lado sem coordenar o outro
 quebra `/api/bookings` (ver
 [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md)).
 
-## Antes de qualquer deploy de produção
+## Antes de qualquer push em `main` (já é o deploy)
 
-1. `git fetch origin` + confirmar `HEAD` local == `origin/main` (nunca
-   deployar código que diverge do que está no GitHub).
+Como o push já publica em produção, os passos abaixo precisam acontecer
+**antes** do push, não depois:
+
+1. `git fetch origin` + confirmar `HEAD` local == `origin/main` antes de
+   commitar em cima (nunca divergir do que está no GitHub).
 2. `npm run typecheck && npm run lint && npm test && npm run build` locais,
    todos verdes.
-3. Confirmar que a mudança sendo deployada está documentada (`docs/` e
+3. Confirmar que a mudança está documentada (`docs/` e
    `docs/changelog/CHANGELOG.md`) — regra permanente deste projeto.
 4. Se a mudança envolve `TOURSFLOW_API_SECRET` ou o contrato com o
    NauticFlow (`X-ToursFlow-Client-Key`, formato de payload, price types),
-   confirmar que o lado do NauticFlow está compatível **antes** de
-   deployar — ver limitação conhecida em
+   confirmar que o lado do NauticFlow está compatível **antes** do push —
+   ver limitação conhecida em
    [SECURITY.md](SECURITY.md#limitações-conhecidas-aceitas-não-resolvidas-nesta-etapa)
    sobre o rate limit ainda não estar coordenado nos dois lados.
+5. Depois do push, validar produção com smoke test HTTP real (`/`,
+   `/passeios`, uma página de passeio real) antes de considerar a mudança
+   entregue — não assumir sucesso só pelo build local.
+
+## Histórico de deploys confirmados
+
+| Commit | Data | Conteúdo | Confirmado em produção |
+|---|---|---|---|
+| `9594cec` | 2026-08-28 | Fix de XSS no JSON-LD (`toSafeJsonLdScript`) + documentação | Sim — smoke test HTTP real (`toursflow.com.br`, `toursflow.vercel.app`), commit reportado `READY` no dashboard da Vercel |
 
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Pipeline de CI que rode typecheck/lint/test/build automaticamente em PR
-  (não existe hoje neste repositório).
-- Deploy automático a partir de push em `main` (deliberadamente não
-  configurado — ver regra acima).
+  (não existe hoje neste repositório — o auto-deploy da Vercel builda o
+  projeto, mas não é a mesma coisa que um CI de PR com esses 4 passos).
 - Ambiente de staging/preview dedicado e documentado (Vercel gera preview
   deploys por PR/branch por padrão, mas isso não foi verificado nem
   documentado como parte do fluxo deste projeto).
+- Acesso a essa conta/projeto Vercel a partir de sessões de agente neste
+  ambiente: a CLI autenticada aqui em 2026-08-28 só enxergava o time/projeto
+  do NauticFlow, não o do ToursFlow — validação de deploy nesta data foi
+  feita por HTTP direto contra os domínios públicos, não via API/CLI da
+  Vercel.

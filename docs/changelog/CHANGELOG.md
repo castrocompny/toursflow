@@ -14,6 +14,14 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-08-28 — Deploy automático confirmado: fix de XSS ativo em produção
+
+Commit `9594cec` (fix de XSS no JSON-LD + documentação) foi pushado em `main` e apareceu como Production Deployment `READY` no dashboard da Vercel sem nenhum `vercel --prod` manual — confirmado que a integração GitHub → Vercel do ToursFlow faz deploy automático a cada push em `main`. Isso corrige uma suposição incorreta registrada antes em `docs/DEPLOYMENT.md` (de que o deploy seria sempre manual); a suposição nunca tinha sido verificada contra a configuração real da conta Vercel.
+
+Smoke test HTTP real contra produção (sem dado malicioso, sem tentativa de exploração): `https://toursflow.com.br/` (200), `/passeios` (200), `https://toursflow.vercel.app/` (200), e a página real de integração `/passeios/buzios/teste-integracao-toursflow-90f2bc` (200) — `BookingSelector` presente ("Continuar reserva" renderizado), 2 saídas reais carregadas (R$150,00 e R$180,00), JSON-LD (`TouristTrip`) presente e válido. Nenhuma reserva ou pagamento criado.
+
+Documentado em [docs/DEPLOYMENT.md](../DEPLOYMENT.md) (seção reescrita sobre auto-deploy + histórico de deploys confirmados) e [docs/SECURITY.md](../SECURITY.md) (seção 8 marcada como ativa em produção).
+
 ## 2026-08-28 — Auditoria de segurança: correção de XSS armazenado no JSON-LD
 
 Auditoria de segurança revisou segredos (`TOURSFLOW_API_SECRET` e seu isolamento via `server-only`), whitelist do payload de reserva, rate limit por HMAC (`X-ToursFlow-Client-Key`), idempotência, proteção de origem, configuração de imagens e uso de `dangerouslySetInnerHTML` no projeto.

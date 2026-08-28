@@ -98,7 +98,7 @@ ativo (o NauticFlow pode servir SVG de logo/foto) combinado com
 vez de renderizar inline um SVG malicioso fora do componente `<Image>` do
 Next — mitigação padrão do próprio Next.js para XSS via SVG.
 
-## 8. JSON-LD (dado externo embutido em `<script>`)
+## 8. JSON-LD (dado externo embutido em `<script>`) — corrigido e ativo em produção
 
 `src/app/passeios/[destino]/[slug]/page.tsx` injeta o `TouristTrip`
 structured data via `dangerouslySetInnerHTML`. Os valores (`tour.name`,
@@ -136,15 +136,25 @@ catálogo/UI, não só segurança).
 
 ## Achados desta auditoria (2026-08-28)
 
-- **[Corrigido] XSS armazenado via JSON-LD sem escape de `</script>`** —
-  seção 8 acima. Único achado com exploração real possível. Revisado:
-  segredos, whitelist de payload, rate limit/HMAC, idempotência, proteção
-  de origem, `next.config.mjs` (imagens), `.gitignore`, ausência de
-  `eval`/`new Function`, e os outros usos de `dangerouslySetInnerHTML` no
-  projeto (só este um existe). Nenhum outro problema encontrado nesta
-  passada — o que não significa auditoria exaustiva de todo o código, só
-  desta superfície (segredos, rota de escrita, rate limit, injeção de
-  dado externo em HTML/script).
+- **[Corrigido, versionado e ativo em produção] XSS armazenado via JSON-LD
+  sem escape de `</script>`** — seção 8 acima. Único achado com
+  exploração real possível. Revisado: segredos, whitelist de payload,
+  rate limit/HMAC, idempotência, proteção de origem, `next.config.mjs`
+  (imagens), `.gitignore`, ausência de `eval`/`new Function`, e os outros
+  usos de `dangerouslySetInnerHTML` no projeto (só este um existe).
+  Nenhum outro problema encontrado nesta passada — o que não significa
+  auditoria exaustiva de todo o código, só desta superfície (segredos,
+  rota de escrita, rate limit, injeção de dado externo em HTML/script).
+  Commit `9594cec`, pushado em `main` e confirmado em produção
+  (`toursflow.com.br` e `toursflow.vercel.app`) via smoke test HTTP real
+  no mesmo dia — Vercel faz deploy automático a partir de `main` (ver
+  [DEPLOYMENT.md](DEPLOYMENT.md)), então o fix ficou ativo assim que o
+  push completou. Sem prova estrutural via inspeção HTTP de que o
+  registro real (`teste-integracao-toursflow-90f2bc`) exercitou o caminho
+  de escape (o nome/descrição desse passeio não contém `<`) — a garantia
+  de que o código correto está no ar vem do commit em `main` +
+  confirmação do deployment no dashboard da Vercel, não de uma exploração
+  ativa contra produção (deliberadamente não tentada).
 
 ## Limitações conhecidas (aceitas, não resolvidas nesta etapa)
 
