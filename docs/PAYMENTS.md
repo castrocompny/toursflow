@@ -1,7 +1,7 @@
-# Pagamento (Pix) — contrato real, wiring completo, não publicado
+# Pagamento (Pix) — contrato real, wiring completo, publicado atrás de feature flag
 
 Data: 2026-09-02
-Status: **contrato real confirmado e implementado ponta a ponta (tipos, rotas internas, client server-only, client do navegador, UI, testes). Nenhuma chamada real foi feita — `MARKETPLACE_PAYMENTS_ENABLED` está desligada no NauticFlow e `PAYMENTS_UI_ENABLED` está travada em `false` no ToursFlow.** Existe só em `feature/booking-checkout`, não publicada.
+Status: **contrato real confirmado e implementado ponta a ponta (tipos, rotas internas, client server-only, client do navegador, UI, testes) — código publicado em `main`/produção (`217c5bc`), gate server-side confirmado ao vivo contra `https://toursflow.com.br` (`422 PAYMENT_PROVIDER_NOT_ENABLED`, sem chamada upstream). Nenhuma chamada real ao NauticFlow foi feita — `MARKETPLACE_PAYMENTS_ENABLED` está desligada lá e `PAYMENTS_UI_ENABLED` está travada em `false` no ToursFlow.** Fluxo transacional continua inatingível ao público.
 
 ## Contrato real do NauticFlow
 

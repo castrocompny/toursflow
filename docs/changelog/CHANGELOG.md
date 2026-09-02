@@ -14,6 +14,20 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-02 — Deploy automático confirmado: checkout/pagamento publicados com os dois gates verificados em produção
+
+`main` (`217c5bc`) pushado para `origin/main` — Vercel disparou o deploy automático via integração GitHub. Publica toda a infraestrutura das entradas anteriores desta data (reserva/hold real, wiring completo do pagamento Pix, e os dois rollout gates) — **nenhum fluxo transacional foi tornado acessível ao público nesta publicação**: `BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` continuam `false`.
+
+**Verificado em produção real (`https://toursflow.com.br`), depois do deploy ficar pronto:**
+- `GET /` e `GET /passeios` → `200`.
+- `POST /api/bookings` bem-formado (Origin/Idempotency-Key corretos, `departureId` de teste) → `422 BOOKING_CHECKOUT_NOT_ENABLED` em <1s (tempo incompatível com uma tentativa real de rede ao NauticFlow, timeout de 8s) — o código só existe a partir deste commit, então a resposta em si já confirma que o deploy novo está no ar.
+- `POST`/`GET /api/bookings/{bookingId-dummy}/payment` bem-formados → `422 PAYMENT_PROVIDER_NOT_ENABLED` em <1,3s, mesma lógica.
+- **Verificação de UI real via Playwright** contra uma página de passeio real: seleção de saída → formulário do comprador → revisão — chegou até a revisão sem erro de console, **zero botão "Confirmar reserva" no DOM**, mensagem "fale com o operador" presente, **zero requisição a `/api/bookings`** em todo o fluxo.
+
+Nenhum hold criado, nenhum pagamento criado, nenhuma cobrança, nenhum segredo exposto (`TOURSFLOW_API_SECRET`/`X-ToursFlow-Client-Key` nunca aparecem em nenhuma resposta testada). NauticFlow não foi alterado — `MARKETPLACE_PAYMENTS_ENABLED`/`MARKETPLACE_WITHDRAWAL_PAYOUT_ENABLED` continuam fora do controle/alcance desta sessão, e nenhuma tentativa de alterá-los foi feita. **R$ 0,00 movimentado.**
+
+---
+
 ## 2026-09-02 — Booking rollout gate: reserva/hold também travada atrás de feature flag (ADR-013)
 
 Revisão de impacto pré-push (`1fc0d96..c290250`, já mergeado em `main` local) identificou que aquele range publicaria, pela primeira vez, um botão "Confirmar reserva" **funcional** na UI pública — antes, `BookingReview` nunca teve esse botão funcional. Tecnicamente seguro (sem risco financeiro, hold expira em 15 min sozinho, proteções de capacidade/idempotência/rate-limit já aceitas desde o ADR-007), mas é uma decisão de prontidão operacional, não algo para ser decidido implicitamente por um `git push`.
