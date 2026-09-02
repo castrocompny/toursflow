@@ -91,16 +91,57 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 
 Tudo isso foi validado **antes** da Fase 3 (via chamada direta à rota, não pela UI). A Fase 3 conecta a UI ao mesmo caminho, mas **não repetiu esse E2E pela UI** — ver "Limitações" abaixo (ADR-009).
 
+## Validação real contra produção (2026-09-01)
+
+Depois de configurar o mesmo `TOURSFLOW_API_SECRET` nos dois projetos
+Vercel (ToursFlow e NauticFlow, ambos redeployados), rodadas 3 chamadas
+HTTP reais e não-destrutivas direto a
+`https://nauticflow.com.br/api/marketplace/bookings` (nunca através da UI
+do ToursFlow), todas com `departureId` inexistente (UUID gerado
+aleatoriamente) para garantir que nenhuma reserva pudesse ser criada
+independentemente do resultado da autenticação:
+
+| Chamada | Authorization | Resultado |
+|---|---|---|
+| Sem header | — | `401 UNAUTHORIZED` |
+| Bearer inválido | `Bearer valor-claramente-invalido` | `401 UNAUTHORIZED` |
+| Bearer correto (mesmo valor do `.env.local`, presumivelmente == produção) | `Bearer <TOURSFLOW_API_SECRET>` | `400 INVALID_CLIENT_KEY: "Cabeçalho X-ToursFlow-Client-Key ausente ou inválido."` |
+
+**Conclusões:**
+- A autenticação Bearer funciona de verdade contra produção — a resposta
+  muda de `401` para uma validação de camada seguinte assim que o
+  segredo correto é enviado, prova direta de que o segredo configurado
+  autentica com sucesso.
+- **Achado que corrige a documentação anterior:** o NauticFlow em
+  produção **já exige `X-ToursFlow-Client-Key`** neste endpoint — a
+  suposição de que essa validação só existia no ambiente local dele
+  (registrada em 2026-08-27/28) estava desatualizada. Como a chamada foi
+  feita direto ao NauticFlow (sem passar pela rota `/api/bookings` do
+  ToursFlow, que é quem calcula esse header), o teste não enviou o header
+  — por isso a resposta parou nessa validação, não avançou até a checagem
+  de `departureId`.
+- **Não testado:** se o NauticFlow rejeita um `X-ToursFlow-Client-Key`
+  presente mas com HMAC incorreto (forjado). Isso exigiria calcular o
+  HMAC esperado a partir do IP que o NauticFlow enxerga desta chamada —
+  não tentado nesta rodada para não escalar o escopo de um teste que já
+  tinha objetivo cumprido (provar a autenticação Bearer).
+- Nenhum registro foi criado em nenhuma das 3 chamadas — nem por falha de
+  autenticação, nem por `departureId` inexistente (que teria sido a
+  próxima barreira mesmo se a autenticação e o `X-ToursFlow-Client-Key`
+  tivessem passado).
+- Nenhum valor de segredo foi impresso em nenhum momento.
+
 ## O que já existe mas ainda NÃO foi publicado
 
 - **A UI chama `/api/bookings` de verdade.** `BookingSelector` (seleção → `CustomerForm` → `BookingReview` → `BookingConfirmation`) cria uma reserva/hold real ao clicar "Confirmar reserva" — payload whitelisted e normalizado (`src/lib/booking-submission.ts`), `Idempotency-Key` enviada com ciclo de vida completo (`resolveIdempotencyKey()`), todos os `BookingErrorCode` tratados com mensagem segura, double-submit impedido, countdown do hold baseado em `holdExpiresAt` do servidor. Validado por 209 testes automatizados (`fetch` mockado) e verificação em browser real até o step de revisão (sem confirmar de verdade). **Não commitado/publicado em produção nesta etapa** — decisão deliberada, sem pagamento implementado.
+- **Checkout/pagamento Pix também já existe, mais adiante na mesma branch local.** Contrato real do NauticFlow confirmado e integrado ponta a ponta (rota `/api/bookings/[bookingId]/payment`, `ToursFlowPaymentClient`, `PixPayment`/`BookingVoucher`) — ver [PAYMENTS.md](PAYMENTS.md), [DECISIONS.md](DECISIONS.md) ADR-011/ADR-012. Continua atrás de `PAYMENTS_UI_ENABLED = false`, não publicado.
 
 ## O que ainda NÃO existe
 
-- Checkout, pagamento, Asaas, Split, PIX, cartão, voucher, QR Code, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros. `BookingConfirmation` deixa isso explícito ("Pagamento será disponibilizado na próxima etapa").
-- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado); o lado NauticFlow só tem a validação correspondente no ambiente local dele — não deployado nos dois lados de forma coordenada ainda.** Por isso o E2E cross-serviço desta parte específica continua pendente. Revisado em 2026-08-28: nenhuma evidência posterior (commit, teste, changelog) fecha essa lacuna — continua real, não é suposição.
-- Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador).
-- **E2E controlado do fluxo completo pela UI contra produção** — não executado nesta fase por falta de mecanismo de cleanup/cancelamento de reserva acessível neste repositório (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)). Não há confirmação real, em produção, de que clicar "Confirmar reserva" cria o hold corretamente ponta a ponta — só a garantia forte que 209 testes com `fetch` mockado + verificação até a revisão em browser real conseguem dar.
+- Asaas/Split visível ao ToursFlow, cartão, webhook (recebido só pelo NauticFlow), voucher real, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros.
+- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado). O lado NauticFlow agora comprovadamente EXIGE este header em produção (ver "Validação real contra produção" acima) — isso fecha parte da lacuna antes registrada como "só validado localmente".** O que ainda não foi comprovado é se o NauticFlow valida o HMAC corretamente (rejeita um header forjado/incorreto) — só a presença/formato foram testados.
+- Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador) (ver "Limitações" abaixo).
+- **E2E controlado do fluxo completo pela UI contra produção** (reserva e pagamento) — não executado por falta de mecanismo de cleanup/cancelamento de reserva acessível neste repositório (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)). Não há confirmação real, em produção, de que clicar "Confirmar reserva"/"Pagar com Pix" cria o hold/pagamento corretamente ponta a ponta — só a garantia forte que os testes automatizados com `fetch` mockado + verificação em browser real conseguem dar.
 
 ## Limitações conhecidas (documentadas, não resolvidas nesta etapa)
 
@@ -111,7 +152,7 @@ Tudo isso foi validado **antes** da Fase 3 (via chamada direta à rota, não pel
 
 ## Próximo passo (fora desta etapa)
 
-1. Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos (NauticFlow e ToursFlow) de forma coordenada.
-2. Fazer o E2E cross-serviço específico do rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele) — item de acompanhamento, não bloqueador.
-3. Antes de publicar o fluxo da Fase 3 em produção: definir um mecanismo de cleanup/cancelamento de reserva (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)) e então rodar o E2E controlado do fluxo completo pela UI.
-4. Fase 4 (fora do escopo deste documento): checkout/pagamento (Asaas ou equivalente) — só depois disso o fluxo de reserva pode ser considerado pronto para tráfego público real.
+1. ~~Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos de forma coordenada.~~ **Feito** — confirmado em produção em 2026-09-01 (ver "Validação real contra produção" acima): o NauticFlow já exige o header.
+2. Fechar a parte que falta do E2E cross-serviço do rate limit: confirmar que o NauticFlow rejeita um `X-ToursFlow-Client-Key` com HMAC incorreto/forjado, não só ausente — item de acompanhamento, não bloqueador.
+3. Antes de publicar o fluxo de reserva/pagamento em produção: definir um mecanismo de cleanup/cancelamento de reserva (ver [ADR-009](DECISIONS.md#adr-009--nenhum-e2e-controlado-contra-produção-na-fase-3-sem-mecanismo-de-cleanup)) e então rodar o E2E controlado do fluxo completo pela UI.
+4. **Checkout/pagamento (Pix) já está implementado ponta a ponta em `feature/booking-checkout`** (contrato real confirmado, wiring completo, testado — ver [PAYMENTS.md](PAYMENTS.md), ADR-011/ADR-012 em [DECISIONS.md](DECISIONS.md)), mas continua atrás de `PAYMENTS_UI_ENABLED = false` e não publicado. Ligar a flag exige `MARKETPLACE_PAYMENTS_ENABLED` em produção no NauticFlow **e** revisão explícita autorizando a mudança — as duas condições, não uma ou outra.

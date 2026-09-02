@@ -87,6 +87,18 @@ Todos os 14 `BookingErrorCode` + `NETWORK_ERROR` (quando o `fetch` rejeita sem r
 
 `npm run typecheck`, `lint`, `test` (209 testes) e `build` verdes. Documentado em [docs/ARCHITECTURE.md](../ARCHITECTURE.md), [docs/SECURITY.md](../SECURITY.md), [docs/DECISIONS.md](../DECISIONS.md) (ADR-008, ADR-009), [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md). **Ainda não commitado** — código pronto tecnicamente, mas não publicado em produção nesta etapa (sem pagamento implementado).
 
+## 2026-09-01 — Validado: comunicação real ToursFlow ↔ NauticFlow com o secret compartilhado em produção
+
+`TOURSFLOW_API_SECRET` foi configurado com o mesmo valor nos dois projetos Vercel (ToursFlow e NauticFlow), ambos redeployados. Sem alterar código, rodadas 3 chamadas HTTP reais e não-destrutivas direto a `https://nauticflow.com.br/api/marketplace/bookings` (nunca pela UI, sempre com `departureId` inexistente para garantir que nada pudesse ser criado): sem Authorization → `401`; Bearer inválido → `401`; Bearer correto → `400 INVALID_CLIENT_KEY`. A mudança de `401` para uma validação de camada seguinte prova que a autenticação Bearer funciona de verdade em produção.
+
+**Achado que corrige documentação anterior:** a resposta `INVALID_CLIENT_KEY` revela que o NauticFlow em produção já exige `X-ToursFlow-Client-Key` — a suposição registrada em 2026-08-27/28 de que essa validação só existia no ambiente local do NauticFlow estava desatualizada. Fecha parte da lacuna de E2E cross-serviço documentada em `SECURITY.md`/`RESERVAS-SERVER-TO-SERVER.md`; a parte que falta (o NauticFlow rejeitar um HMAC forjado, não só a ausência do header) não foi testada nesta rodada, para não escalar o escopo além do que foi pedido.
+
+Auditado também: uso de `TOURSFLOW_API_SECRET` no código (só server-side, `server-only`, nunca `NEXT_PUBLIC_`, nunca logado/retornado — confirmado por grep, sem mudança necessária). Smoke test de `toursflow.com.br` e `nauticflow.com.br` — ambos `200`. Confirmado que `feature/booking-checkout` (Fase 3) continua só local, sem remote tracking, sem alterar `main`.
+
+**Ressalva registrada, não resolvida:** uma tentativa de listar variáveis de ambiente do projeto Vercel `nauticflow` via CLI (só nomes) não mostrou `TOURSFLOW_API_SECRET` nem `MARKETPLACE_PAYMENTS_ENABLED`/`MARKETPLACE_WITHDRAWAL_PAYOUT_ENABLED`, apesar do teste de rede ter provado que o primeiro está ativo — a listagem via CLI não é confiável para confirmar ausência de variável neste ambiente. As duas flags financeiras **não puderam ser confirmadas como desligadas** a partir desta sessão; precisam de verificação direta no dashboard da Vercel ou na fonte de verdade do NauticFlow antes de qualquer decisão que dependa delas.
+
+`npm run typecheck`, `lint`, `test` (145 testes, `main`) e `build` verificados, todos verdes — nenhuma mudança de código nesta entrada, só validação + documentação. Documentado em [docs/SECURITY.md](../SECURITY.md) e [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md) (nova seção "Validação real contra produção").
+
 ## 2026-08-28 — Correções na Fase 2 antes do commit: limite de corpo real, reconciliação do histórico do rate limit, testes de Origin/idempotência
 
 Revisão do relatório da Fase 2 encontrou dois pontos a corrigir antes de commitar, nenhum deles um problema de segurança novo — os dois eram sobre a rota já estar mais forte ou mais bem documentada do que o relatório anterior deixava claro.

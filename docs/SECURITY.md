@@ -22,6 +22,28 @@ um valor real (ver [ENVIRONMENT.md](ENVIRONMENT.md)). `.env.local` está no
 `.gitignore` (checado antes de cada commit deste projeto via `git status`
 + leitura de conteúdo, nunca `git add -A`).
 
+**Validado contra produção em 2026-09-01:** o mesmo valor de
+`TOURSFLOW_API_SECRET` foi configurado nos dois projetos Vercel
+(ToursFlow e NauticFlow) e ambos redeployados. Um teste real (Bearer
+correto vs. ausente/inválido, contra `https://nauticflow.com.br`) confirma
+que a autenticação server-to-server funciona em produção — detalhe em
+[RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#validação-real-contra-produção-2026-09-01).
+Nenhum valor de segredo foi impresso em nenhum momento desta validação.
+
+**Ressalva sobre inventário de env vars via Vercel CLI:** uma tentativa
+de listar as variáveis de ambiente do projeto Vercel `nauticflow` (via
+`vercel env ls`, só nomes — nunca valores) não mostrou
+`TOURSFLOW_API_SECRET` nem `MARKETPLACE_PAYMENTS_ENABLED`/
+`MARKETPLACE_WITHDRAWAL_PAYOUT_ENABLED`, apesar do teste de rede direto
+ter provado que `TOURSFLOW_API_SECRET` está ativo em produção. Isso
+significa que essa listagem via CLI não é uma fonte confiável para
+confirmar a ausência de uma variável neste ambiente (pode ser var
+sensível/oculta, var compartilhada em nível de time, ou o projeto listado
+não ser exatamente o vinculado ao domínio) — **as duas flags financeiras
+não puderam ser confirmadas como `false`/ausentes a partir desta sessão**;
+precisam ser verificadas direto no dashboard da Vercel ou na fonte de
+verdade do NauticFlow.
+
 ## 2. Identidade do visitante no rate limit (nunca o IP em claro)
 
 O NauticFlow aplica rate limit global e por visitante usando
@@ -59,16 +81,22 @@ ao NauticFlow é sempre a recalculada, nunca a forjada) — está coberta por
 teste automatizado real (HMAC calculado de verdade nos testes, não
 mockado).
 
-**O que NÃO está comprovado:** nenhum E2E cross-serviço confirma que o
-NauticFlow, do lado dele, de fato aplica o rate limit usando esta key ou
-ignora um header equivalente forjado na chamada dele. A documentação
-histórica (`RESERVAS-SERVER-TO-SERVER.md`, `CHANGELOG.md`, entrada de
-2026-08-27) registra isso como pendente desde a implementação original —
-"o NauticFlow só tem a validação... no ambiente local dele... o E2E desta
-parte específica está pendente" — e não há nenhum commit, teste ou
-entrada de changelog posterior que feche essa lacuna. Revisado nesta
-entrada (2026-08-28): a lacuna continua real, não foi fechada por engano
-nem por omissão de registro.
+**O que NÃO está comprovado (atualizado 2026-09-01 — parcialmente
+fechado):** a documentação histórica registrava que o NauticFlow só
+validava `X-ToursFlow-Client-Key` no ambiente local dele. Um teste real
+contra produção em 2026-09-01 (`POST` direto a
+`https://nauticflow.com.br/api/marketplace/bookings`, com `Authorization:
+Bearer` válido mas **sem** `X-ToursFlow-Client-Key`) devolveu `400
+INVALID_CLIENT_KEY: "Cabeçalho X-ToursFlow-Client-Key ausente ou
+inválido."` — confirmando que **o NauticFlow em produção já exige este
+header**, não só localmente como antes documentado. Isso fecha a parte
+"o NauticFlow valida a presença/formato do header" da lacuna. **O que
+ainda não foi testado:** se o NauticFlow, ao receber um
+`X-ToursFlow-Client-Key` presente mas com valor forjado/incorreto (HMAC
+que não bate com o IP real do chamador), rejeita especificamente por
+esse motivo — o teste de 2026-09-01 não enviou o header, então não prova
+essa parte. Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#validação-real-contra-produção-2026-09-01)
+para o teste completo.
 
 Detalhe completo: [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md#rate-limit-por-visitante-identidade-pseudônima).
 
