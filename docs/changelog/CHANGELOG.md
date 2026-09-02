@@ -14,6 +14,50 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-02 — Achado de segurança corrigido: rota de pagamento agora falha fechada server-side (não dependia mais só da UI)
+
+Revisão de segurança pós-wiring do contrato de pagamento encontrou um bloqueador real: `POST`/`GET /api/bookings/[bookingId]/payment` não verificavam `PAYMENTS_UI_ENABLED` antes de processar a requisição — a única coisa que impedia uma chamada real ao NauticFlow era `BookingConfirmation` não renderizar o botão "Pagar com Pix". Um `curl`/`fetch` direto à rota, com headers corretos, teria chegado ao NauticFlow de verdade, dependendo inteiramente da flag `MARKETPLACE_PAYMENTS_ENABLED` do outro lado como única rede de segurança — exatamente o cenário de defesa em profundidade ausente que a revisão pediu para investigar.
+
+Corrigido: `throwIfPaymentsDisabled()` (`src/app/api/bookings/[bookingId]/payment/route.ts`) é a primeira checagem de ambos os handlers — antes de Origin, Content-Type ou qualquer parsing —, reusando a mesma constante `PAYMENTS_UI_ENABLED` já usada para gating de UI. Resposta segura: `422 PAYMENT_PROVIDER_NOT_ENABLED`, sem tocar em `createNauticFlowPayment`/`getNauticFlowBookingStatus`. `GET` também travado, por decisão documentada (sem efeito financeiro, mas sem caso de uso legítimo com a flag off).
+
+Idempotência do pagamento revisada e extraída para função pura testável: `resolvePaymentIdempotencyKey()` (`src/lib/idempotency-key.ts`) — nasce no clique de "Pagar com Pix" (`BookingSelector`), vive em `useState` (nunca regenerada em re-render), reaproveitada em qualquer retry, morre (`null`) só depois de `onPaid`. Client-key/IP, `amount` e a whitelist do payload reconfirmados intactos (grep + testes).
+
+13 testes novos: `route.disabled.test.ts` (7, sem nenhum mock de `feature-flags` — exercita o valor real `false` do código), client-key forjada ignorada na rota de pagamento (1), `resolvePaymentIdempotencyKey()` (5). Verificação adicional fora dos testes automatizados: `curl` real contra o dev server local, `POST`/`GET` bem-formados (Origin correto, todos os headers certos) — ambos `422 PAYMENT_PROVIDER_NOT_ENABLED` em menos de 1 segundo, tempo incompatível com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
+
+273 testes no total. `npm run typecheck`, `lint`, `test` e `build` verdes. Documentado em [docs/DECISIONS.md](../DECISIONS.md) (ADR-012), [docs/PAYMENTS.md](../PAYMENTS.md) (seção "Feature flag" reescrita — diagrama de defesa em profundidade), [docs/SECURITY.md](../SECURITY.md) (nova seção 15). **Ainda em `feature/booking-checkout`, não commitado nesta entrada, não mergeado, não publicado, nenhum dinheiro movimentado.**
+
+## 2026-09-02 — Wiring completo do contrato real de pagamento (branch local, zero chamada real)
+
+Contrato de pagamento do NauticFlow confirmado, substituindo a modelagem hipotética da entrada anterior. `POST /api/marketplace/bookings/{bookingId}/payment` (Bearer + `X-ToursFlow-Client-Key` + `Idempotency-Key`, body `{ paymentMethod: "pix" }`, nunca `amount`) e `GET /api/marketplace/bookings/{bookingId}` (mesma auth, sem Idempotency-Key, somente leitura) — os dois devolvem a mesma "view" (booking + payment + pix opcional). Estados confirmados: `pending`/`paid`/`failed`/`refunded`/`partially_refunded` — `manual_review` removido por não estar confirmado.
+
+Implementado ponta a ponta: `src/types/payment.ts` (tipos exatos), `src/lib/nauticflow-payments.ts` (`server-only`, único módulo que fala com o NauticFlow para pagamento, mesmo padrão de `nauticflow-bookings.ts`), `src/app/api/bookings/[bookingId]/payment/route.ts` (`POST`/`GET`, mesmo hardening de `/api/bookings`), `src/lib/payment-client.ts` (`ToursFlowPaymentClient` — chama só as rotas do próprio ToursFlow, substitui `NotImplementedPaymentClient` no wiring real de `BookingSelector`). `PixPayment`/`BookingVoucher` atualizados para os tipos reais.
+
+Duas refatorações de suporte, sem mudança de comportamento (testadas): `src/lib/http-guards.ts` (Origin/Sec-Fetch-Site/Content-Type/limite real de corpo extraídos de `/api/bookings` para reuso pelas duas rotas) e `getTrustedClientIp()` generalizada para receber `onUnavailable: () => never` em vez de lançar `BookingApiError` fixo — permite ser reaproveitada pela rota de pagamento sem acoplar o módulo ao tipo de erro do booking.
+
+Idempotência do pagamento tratada como conceito separado da idempotência da reserva: `paymentIdempotencyKey` gerada uma vez ao entrar no step Pix, resetada após sucesso.
+
+`amount` nunca sai do ToursFlow em nenhuma camada — confirmado por grep. `TOURSFLOW_API_SECRET` continua exclusivo dos módulos `server-only`. `PAYMENTS_UI_ENABLED` continua `false` — o wiring é real e testado, mas nenhuma chamada de rede foi feita: confirmado por grep e por verificação em browser real (fluxo completo até a revisão, zero requisição a `/payment`, botão "Pagar com Pix" ausente).
+
+40 testes novos (`payment-client.test.ts`, rota `route.test.ts` do pagamento — 32 casos cobrindo todos os `PaymentErrorCode` relevantes, `PAYMENT_PROVIDER_NOT_ENABLED`, `CUSTOMER_DOCUMENT_REQUIRED`, hold expirado, os 5 estados via GET —, `PixPayment.test.tsx` atualizado, `client-ip.test.ts` para a nova assinatura) — 260 no total. `npm run typecheck`, `lint`, `test` e `build` verdes.
+
+Documentado em [docs/PAYMENTS.md](../PAYMENTS.md) (reescrito — contrato real, não mais hipótese), [docs/DECISIONS.md](../DECISIONS.md) (ADR-011, revisão do ADR-010), [docs/ARCHITECTURE.md](../ARCHITECTURE.md), [docs/SECURITY.md](../SECURITY.md). **Ainda em `feature/booking-checkout`, não commitado nesta entrada, não mergeado, não publicado, nenhum dinheiro movimentado.**
+
+## 2026-09-02 — Preparação do checkout Pix (branch local, sem contrato confirmado)
+
+Retomada a branch local `feature/booking-checkout` para preparar o fluxo pós-hold (Pix → QR Code → aguardando pagamento → confirmado → voucher), sem publicar nada e sem gerar cobrança real — `MARKETPLACE_PAYMENTS_ENABLED` continua desligada no NauticFlow.
+
+**Nenhum endpoint de pagamento do NauticFlow foi inventado.** Nenhum documento ou código deste repositório confirma o contrato real (`docs/PLANO-INTEGRACAO-NAUTICFLOW.md` marca isso como fase futura própria, fora de escopo). Preparado em vez disso: `src/types/payment.ts` (tipos provisórios, marcados como tal), `src/lib/payment-client.ts` (interface `PaymentClient` + `NotImplementedPaymentClient`, que nunca chama rede e falha explícito), `src/components/tours/PixPayment.tsx` (QR/copia-e-cola, countdown, polling, os 5 estados: pending/paid/failed/manual_review/expired) e `BookingVoucher.tsx` (tela final). Nenhum destes arquivos importa `fetch` nem qualquer credencial — confirmado por grep.
+
+Tudo isso fica atrás de `src/lib/feature-flags.ts` (`PAYMENTS_UI_ENABLED = false`, constante literal, não lê env var) — `BookingConfirmation` continua mostrando só o aviso "Pagamento será disponibilizado na próxima etapa", sem oferecer o botão "Pagar com Pix"; os novos steps de `BookingSelector` ficam inatingíveis pela UI real, testados só diretamente.
+
+Decisão registrada em [ADR-010](../DECISIONS.md#adr-010--pagamento-preparado-atrás-de-interface--feature-flag-sem-contrato-confirmado-do-nauticflow): construir contra uma interface própria em vez de adivinhar um endpoint, para o trabalho de UI não precisar ser refeito quando o contrato real existir — só trocar o client e ligar a flag.
+
+**Achado incidental corrigido:** um fixture de teste com `holdExpiresAt` hardcoded numa data fixa (`2026-09-01T12:15:00Z`) "expirou sozinho" quando o relógio real do sistema avançou além dela, quebrando 6 testes sem relação com a mudança sendo feita — corrigido para uma data sempre calculada a partir de `Date.now()` no momento do teste.
+
+11 testes novos (`payment-client.test.ts`, `PixPayment.test.tsx`, `BookingVoucher.test.tsx`, + 1 em `BookingSelector.test.tsx` provando que a flag mantém o botão de Pix fora do fluxo real) — 220 no total. `npm run typecheck`, `lint`, `test` e `build` verdes. Fluxo real (seleção → formulário → revisão) verificado em browser real (Playwright) sem regressão — zero erro de console, botão "Pagar com Pix" confirmadamente ausente.
+
+Documentado em novo [docs/PAYMENTS.md](../PAYMENTS.md) (arquitetura, trust boundary, estados, feature flag, segurança, pendências), [docs/DECISIONS.md](../DECISIONS.md) (ADR-010), [docs/ARCHITECTURE.md](../ARCHITECTURE.md), [docs/SECURITY.md](../SECURITY.md). **Ainda em `feature/booking-checkout`, não commitado nesta entrada, não mergeado, não publicado.**
+
 ## 2026-08-28 — Fase 3: UI conectada a POST /api/bookings de verdade (não commitado)
 
 Substituído o botão "Confirmar reserva" sem função (Fase 2) por submissão real: `BookingReview` agora chama `POST /api/bookings` via `src/lib/booking-submission.ts` (novo — único ponto do navegador que faz essa chamada). Novo step `BookingConfirmation` (`src/components/tours/BookingConfirmation.tsx`) mostra o hold criado: código da reserva, countdown até `holdExpiresAt` (`src/lib/hold-countdown.ts`, sempre derivado do timestamp do servidor, nunca 15:00 fixo no cliente), e o total REAL devolvido pelo NauticFlow (`priceCents`/`totalCents`) — nunca mais o total estimado calculado no cliente depois do sucesso. Aviso explícito: "Pagamento será disponibilizado na próxima etapa." — Asaas/PIX/cartão/split/webhook/voucher continuam fora do escopo.

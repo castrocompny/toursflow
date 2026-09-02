@@ -312,6 +312,187 @@ autorização explícita para criar e aguardar expirar uma reserva de teste.
 
 ---
 
+## ADR-010 — Pagamento preparado atrás de interface + feature flag, sem contrato confirmado do NauticFlow
+
+**Contexto:** a preparação do checkout (Pix) foi pedida antes de existir
+um contrato confirmado do NauticFlow para criação/consulta de pagamento
+— `docs/PLANO-INTEGRACAO-NAUTICFLOW.md` marca isso como fase futura
+própria, sem endpoint/payload definido. A instrução explícita foi "NÃO
+inventar endpoints".
+
+**Decisão:** construir a UI/lógica do lado ToursFlow (tipos, componentes,
+testes) contra uma interface própria (`PaymentClient`), com a única
+implementação "real" (`NotImplementedPaymentClient`) lançando um erro
+explícito em vez de chamar qualquer URL — e atrás de uma feature flag
+(`PAYMENTS_UI_ENABLED`, constante literal `false`) que mantém esses
+componentes inatingíveis pela UI pública.
+
+**Motivo:** isso separa duas coisas que a tarefa pedia ao mesmo tempo —
+"preparar o fluxo completo" e "sem gerar cobrança real, sem inventar
+endpoint" — sem comprometer nenhuma das duas. O trabalho de UI/estado
+(QR Code, countdown, polling, os 5 estados de pagamento, tela de voucher)
+é real e testado (220 testes no total do projeto), mas nenhuma linha de
+código chama rede — confirmado por grep (zero `fetch` em qualquer arquivo
+novo desta entrada). Quando o contrato real existir, o trabalho que resta
+é só trocar `NotImplementedPaymentClient` por uma implementação real e
+ligar a flag — não redesenhar a UI.
+
+**Alternativas rejeitadas:**
+- Adivinhar um endpoint plausível (`POST /api/marketplace/bookings/:id/payment`
+  e formato de resposta) e já wireá-lo — rejeitado explicitamente pela
+  instrução "não inventar endpoints"; um contrato errado custaria mais
+  para desfazer depois do que vale a economia de não esperar a confirmação.
+- Não preparar nada até o contrato existir — rejeitado: a interface
+  `PaymentClient` deixa claro exatamente qual é o "buraco" (2 métodos,
+  1 tipo de dado) que a integração real precisa preencher, sem exigir
+  redesenho da UI depois.
+
+**Consequências:** o formato de `PixPaymentData` (`src/types/payment.ts`)
+é uma hipótese, marcada como tal — se o contrato real do NauticFlow tiver
+campos diferentes, esse arquivo (e só ele, na maior parte) precisa mudar.
+Nenhum risco de cobrança real: a única implementação existente sempre
+falha explicitamente. Detalhe completo: [PAYMENTS.md](PAYMENTS.md).
+
+**Revisão (2026-09-02):** o contrato real foi confirmado (endpoints,
+headers, DTOs — ver [ADR-011](DECISIONS.md#adr-011--wiring-completo-do-contrato-real-de-pagamento-sem-chamada-real)).
+A previsão deste ADR se confirmou: só foi preciso trocar o client e os
+tipos, a UI (`PixPayment`/`BookingVoucher`) não precisou ser redesenhada.
+`PixPaymentData` (hipotético) foi substituído por
+`NauticFlowBookingPaymentView` (real); `manual_review`, que era um
+estado hipotético, foi removido por não ser confirmado no contrato real.
+
+---
+
+## ADR-011 — Wiring completo do contrato real de pagamento, sem chamada real
+
+**Contexto:** o contrato de pagamento do NauticFlow (confirmado
+2026-09-02) tornou obsoleta a premissa do ADR-010 ("sem contrato
+confirmado"). A tarefa pediu para conectar o wiring completo — tipos,
+rota interna, client server-only, client do navegador, UI — mantendo
+`PAYMENTS_UI_ENABLED = false` e zero chamada real ao NauticFlow.
+
+**Decisão:** implementar todas as camadas contra o contrato real:
+
+- `src/types/payment.ts` — tipos exatos (`PaymentStatus` com só os 5
+  valores confirmados; `manual_review` removido).
+- `src/lib/nauticflow-payments.ts` (`server-only`) — único módulo que
+  chama o NauticFlow para pagamento, mesmo padrão de
+  `nauticflow-bookings.ts`.
+- `src/app/api/bookings/[bookingId]/payment/route.ts` — `POST`/`GET`,
+  mesmo hardening de `/api/bookings` (Origin/Sec-Fetch-Site, Content-Type,
+  limite real de corpo).
+- `src/lib/payment-client.ts` — `ToursFlowPaymentClient` (real, chama só
+  as rotas do próprio ToursFlow) substitui `NotImplementedPaymentClient`
+  no wiring de `BookingSelector` (a classe continua existindo, só não é
+  mais o que está em uso).
+- Duas refatorações de suporte: `src/lib/http-guards.ts` (Origin/
+  Content-Type/limite de corpo extraídos de `/api/bookings` para reuso,
+  comportamento idêntico) e `getTrustedClientIp()` generalizada para
+  receber `onUnavailable: () => never` em vez de lançar `BookingApiError`
+  fixo — as duas rotas (`bookings` e `bookings/[id]/payment`) agora
+  compartilham a mesma lógica sem se acoplarem ao tipo de erro uma da
+  outra.
+
+**Motivo:** com o contrato confirmado, manter o stub
+(`NotImplementedPaymentClient`) como "proteção" deixaria de fazer
+sentido — a proteção real e suficiente é `PAYMENTS_UI_ENABLED = false`
+(nenhum componente que chama o client é alcançável pela UI). Usar o
+client real, mas gated pela flag, é mais fiel ao que vai para produção
+quando a flag ligar: exatamente este código, sem trocar nada.
+
+**Alternativas rejeitadas:**
+- Manter `NotImplementedPaymentClient` no wiring e só documentar o
+  contrato real — rejeitado: a tarefa pediu explicitamente para
+  "conectar" o fluxo, e adiar o wiring real geraria mais um passo (trocar
+  o client) para revisar depois, sem necessidade.
+- Duplicar a lógica de Origin/Content-Type/body-limit na nova rota em vez
+  de extrair — rejeitado: a segunda rota precisando exatamente da mesma
+  proteção é o sinal claro de que a duplicação já não vale a pena.
+
+**Consequências:** `ToursFlowPaymentClient` é código real, testado,
+pronto para produção — mas nunca executado de fato nesta entrega (zero
+`fetch` para o NauticFlow, confirmado por grep e por verificação em
+browser real sem clicar em nenhum botão de pagamento, que nem aparece).
+O primeiro uso real desse caminho só vai acontecer quando
+`PAYMENTS_UI_ENABLED` for ligada — nenhuma garantia adicional além dos
+260 testes automatizados existe até lá. Detalhe completo:
+[PAYMENTS.md](PAYMENTS.md).
+
+**Revisão (2026-09-02, mesmo dia):** a afirmação acima ("nenhuma
+garantia adicional além dos testes") estava incompleta — a única coisa
+que impedia uma chamada real era a UI não oferecer o botão, e um
+`curl`/`fetch` direto à rota **chegaria ao NauticFlow de verdade**.
+Corrigido no [ADR-012](DECISIONS.md#adr-012--trava-server-side-da-rota-de-pagamento-ui-flag-não-é-security-boundary)
+antes deste ADR ser dado como concluído.
+
+---
+
+## ADR-012 — Trava server-side da rota de pagamento (UI flag não é security boundary)
+
+**Contexto:** revisão de segurança pós-ADR-011 identificou que
+`POST/GET /api/bookings/[bookingId]/payment` não verificava
+`PAYMENTS_UI_ENABLED` (nem nada equivalente) antes de processar a
+requisição — a única coisa que impedia uma chamada real ao NauticFlow
+era `BookingConfirmation` não renderizar o botão "Pagar com Pix" quando
+a flag está `false`. Um `curl`/`fetch` direto à rota, com headers
+corretos, chegaria a `createNauticFlowPayment()`/`getNauticFlowBookingStatus()`
+de verdade — a ausência de UI nunca foi (e nunca deveria ter sido
+tratada como) um controle de segurança.
+
+**Decisão:** adicionar `throwIfPaymentsDisabled()` como a **primeira**
+checagem de ambos os handlers (`POST` e `GET`) — antes de Origin,
+Content-Type, parsing de corpo, ou qualquer outra validação — reusando
+a mesma constante `PAYMENTS_UI_ENABLED` (`src/lib/feature-flags.ts`) já
+usada para gating de UI. Resposta: `422 PAYMENT_PROVIDER_NOT_ENABLED`
+(mesmo código que o NauticFlow usaria pelo motivo equivalente do lado
+dele), sem tocar em `createNauticFlowPayment`/`getNauticFlowBookingStatus`.
+
+**GET também foi travado**, apesar de não ter efeito financeiro (é só
+leitura) — decisão deliberada, não reflexo: (1) com a flag off, nenhum
+pagamento pode ter sido criado por este caminho, então não existe status
+legítimo para consultar; (2) evita expor uma superfície de leitura
+(status/`holdExpiresAt`/quantidade de qualquer `bookingId`) enquanto o
+recurso inteiro está desligado, sem custo real — nenhum caminho legítimo
+do produto depende de chamar este `GET` com a flag off hoje.
+
+**Motivo:** defesa em profundidade real, não hipotética — o cenário que
+a motivou é concreto: o NauticFlow pode ligar `MARKETPLACE_PAYMENTS_ENABLED`
+antes do ToursFlow estar pronto para expor o fluxo publicamente (rollout
+assíncrono dos dois lados é a norma neste projeto, não exceção — ver
+histórico do `X-ToursFlow-Client-Key`). Sem uma trava própria, o
+ToursFlow dependeria inteiramente do NauticFlow rejeitar a chamada — a
+mesma lição já registrada para rate limit (ADR-007), agora aplicada a
+"o recurso está ligado", não só "quantas vezes por minuto".
+
+**Alternativas rejeitadas:**
+- Confiar em `MARKETPLACE_PAYMENTS_ENABLED` do NauticFlow como única
+  trava — rejeitado pelo motivo acima: os dois lados podem ficar
+  dessincronizados, e a trava real (não a mensagem de erro) precisa
+  existir nos dois.
+- Criar uma variável de ambiente nova (`PAYMENTS_ENABLED` no ToursFlow)
+  em vez de reaproveitar `PAYMENTS_UI_ENABLED` — rejeitado: adicionaria
+  um segundo lugar para as duas travas ficarem dessincronizadas *dentro
+  do próprio ToursFlow*; uma constante literal única, checada nos dois
+  lugares (UI e rota), é mais simples e não há cenário legítimo em que
+  UI e rota deveriam divergir.
+- Deixar GET liberado (só bloquear POST) — considerado e rejeitado por
+  não ter nenhum caso de uso real com a flag off, e por reduzir a
+  superfície de leitura enquanto o recurso está desligado sem custo (ver
+  "Decisão" acima).
+
+**Consequências:** confirmado por 7 testes novos (`route.disabled.test.ts`,
+sem nenhum mock de `feature-flags` — exercita o valor real `false` do
+código-fonte) + verificação manual contra o dev server local (`curl`
+direto à rota, `POST`/`GET` bem-formados, ambos `422
+PAYMENT_PROVIDER_NOT_ENABLED` em <1s — tempo incompatível com uma
+chamada real ao NauticFlow, que teria timeout de 8s se travasse). Os
+testes do pipeline completo (`route.test.ts`) passaram a mockar
+`PAYMENTS_UI_ENABLED: true` explicitamente, para continuar testando o
+resto da lógica (Origin, whitelist, erros do NauticFlow) — documentado
+no topo do próprio arquivo de teste para não confundir os dois papéis.
+
+---
+
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Revalidação sob demanda (`revalidateTag`) para eliminar a janela de até
@@ -324,6 +505,13 @@ autorização explícita para criar e aguardar expirar uma reserva de teste.
   NauticFlow em produção — pendente de deploy coordenado dos dois lados.
 - E2E controlado da criação real de reserva pela UI (ADR-009) — pendente
   de mecanismo de cleanup.
-- Checkout, pagamento, Asaas, PIX, cartão, split, webhook, voucher, QR
-  Code — fora do escopo mesmo com a UI de reserva (Fase 3) já criando
-  hold real.
+- Checkout, cartão, split visível ao ToursFlow, webhook (recebido só pelo
+  NauticFlow, nunca pelo ToursFlow), voucher real — fora do escopo mesmo
+  com o wiring de pagamento Pix (ADR-011) já implementado.
+- Ligar `PAYMENTS_UI_ENABLED` — wiring completo já existe (ADR-011), mas
+  a flag continua `false`; ligar exige `MARKETPLACE_PAYMENTS_ENABLED` em
+  produção no NauticFlow **e** revisão explícita. Ver
+  [PAYMENTS.md](PAYMENTS.md).
+- Primeira chamada real ao endpoint de pagamento (E2E financeiro) —
+  nenhuma foi feita; precisa de mecanismo de cleanup/estorno definido
+  antes (mesma ressalva do booking, ADR-009).

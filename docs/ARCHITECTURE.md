@@ -33,7 +33,11 @@ IMPLEMENTADO" abaixo).
 cartão, split, webhook de confirmação, voucher, QR Code, avaliações, login
 e área do turista, comissão e repasse financeiro. O step de confirmação
 (`BookingConfirmation`) deixa isso explícito para o turista ("Pagamento
-será disponibilizado na próxima etapa").
+será disponibilizado na próxima etapa"). **O fluxo Pix tem contrato real confirmado e wiring completo**
+(`PixPayment`, `BookingVoucher`, rota interna
+`/api/bookings/[bookingId]/payment`, client server-only e do navegador),
+mas atrás de uma feature flag travada em `false` — inatingível pela UI
+real, zero chamada feita ao NauticFlow. Ver [PAYMENTS.md](PAYMENTS.md).
 
 ## 2. Stack
 
@@ -90,10 +94,13 @@ src/
     passeios/[destino]/            atalho -> redirect 307 para /destinos/[slug]
     passeios/[destino]/[slug]/     página do passeio (force-dynamic — ver seção 5)
     destinos/, sitemap.ts, robots.ts, not-found.tsx
-    api/bookings/route.ts          único endpoint de escrita (server-only)
+    api/bookings/route.ts                        cria reserva/hold (server-only)
+    api/bookings/[bookingId]/payment/route.ts     cria/consulta pagamento Pix (server-only, inatingível pela UI — PAYMENTS_UI_ENABLED)
   components/
     tours/       TourCard, TourGrid, TourGallery, TourItinerary, TourChecklist,
-                  BoardingLocation, BookingSelector (seleção de reserva, 'use client')
+                  BoardingLocation, BookingSelector, CustomerForm, BookingReview,
+                  BookingConfirmation, PixPayment, BookingVoucher (todos 'use client'
+                  exceto os de catálogo)
     layout/, search/, destinations/, categories/, ui/, brand/
   data/
     source.ts        contrato ToursDataSource (inclui listDepartures, paginação)
@@ -105,15 +112,20 @@ src/
     vitrine/          metadados de destino/categoria que o NauticFlow não fornece
                        (tagline, descrição, imagem, ícone) — propriedade do ToursFlow
   lib/
-    routes.ts, seo.ts, site.ts, format.ts, maps.ts
-    booking-validation.ts, booking-errors.ts, booking-selection.ts
-    nauticflow-bookings.ts (server-only)   único ponto que fala com o NauticFlow para escrever
+    routes.ts, seo.ts, site.ts, format.ts, maps.ts, feature-flags.ts
+    http-guards.ts     Origin/Sec-Fetch-Site, Content-Type, limite real de corpo — compartilhado pelas 2 rotas de escrita
+    booking-validation.ts, booking-errors.ts, booking-selection.ts, booking-submission.ts, booking-error-messages.ts
+    payment-validation.ts, payment-errors.ts, payment-error-messages.ts, payment-client.ts
+    idempotency-key.ts, hold-countdown.ts
+    nauticflow-bookings.ts, nauticflow-payments.ts (server-only)   únicos pontos que falam com o NauticFlow para escrever
     client-ip.ts, toursflow-client-key.ts (server-only)   IP confiável + HMAC do rate limit
   types/
     index.ts     contratos de catálogo (Tour, Departure, PriceType, ...)
     booking.ts    contratos de reserva (request/response/erros)
+    payment.ts    contrato real de pagamento (request/response/erros) — ver PAYMENTS.md
   test/
-    server-only-mock.ts   stub para os testes rodarem fora do bundler do Next
+    server-only-mock.ts    stub para os testes rodarem fora do bundler do Next
+    fake-payment-client.ts  fake em memória de PaymentClient, só para teste/preview
 public/
   img/mock/      imagens de exemplo (SVG), só usadas quando o mock está ativo
 scripts/
@@ -129,7 +141,8 @@ scripts/
 | `/passeios/[destino]` | redirect | — | 307 para `/destinos/[destino]` |
 | `/passeios/[destino]/[slug]` | **dinâmica** (`export const dynamic = 'force-dynamic'`) | `getTour`, `listDepartures` | Sem `generateStaticParams`: a disponibilidade (`listDepartures`, `no-store`) não pode ser pré-renderizada em build — decisão registrada em [DECISIONS.md](DECISIONS.md) |
 | `/destinos`, `/destinos/[slug]` | estática (ISR) | `listDestinations`, `listTours` | |
-| `/api/bookings` | Route Handler, `POST` only | — | Único endpoint de escrita; server-only; **não chamado por nenhuma UI ainda** |
+| `/api/bookings` | Route Handler, `POST` only | — | Cria reserva/hold real — chamado por `BookingReview` (`onConfirm`) |
+| `/api/bookings/[bookingId]/payment` | Route Handler, `POST`/`GET` | — | Criar/consultar pagamento Pix — server-only; wiring completo mas **inatingível pela UI hoje** (`PAYMENTS_UI_ENABLED === false`, ver [PAYMENTS.md](PAYMENTS.md)) |
 | `/sitemap.xml`, `/robots.txt` | gerados | `listDestinations`, `listTourPaths` | |
 
 `src/lib/routes.ts` é a única fonte de verdade para montar URLs de página — nenhum componente concatena string de rota manualmente.
@@ -182,10 +195,10 @@ Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'publish
 
 | Pasta | Componentes | Responsabilidade |
 |---|---|---|
-| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`**, **`BookingConfirmation`** | `BookingSelector` (`'use client'`) orquestra 4 steps: seleção (saída → quantidade → total estimado) → `CustomerForm` (dados do comprador) → `BookingReview` (resumo mascarado + botão "Confirmar reserva", que chama `POST /api/bookings` de verdade) → `BookingConfirmation` (hold criado, countdown até `holdExpiresAt`, preço REAL do backend). Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) |
+| `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`**, **`BookingConfirmation`**, **`PixPayment`**, **`BookingVoucher`** | `BookingSelector` (`'use client'`) orquestra até 6 steps: seleção → `CustomerForm` → `BookingReview` (chama `POST /api/bookings` de verdade) → `BookingConfirmation` (hold, countdown, preço real) → `PixPayment`/`BookingVoucher` (wiring real contra `/api/bookings/[bookingId]/payment`, atrás de `PAYMENTS_UI_ENABLED === false` — inatingíveis pela UI real hoje). Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) e [PAYMENTS.md](PAYMENTS.md) |
 | `layout/`, `search/`, `destinations/`, `categories/`, `ui/`, `brand/` | — | Inalterados desde a fase de catálogo |
 
-7 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview`, `BookingConfirmation` — todo o resto é Server Component.
+9 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview`, `BookingConfirmation`, `PixPayment`, `BookingVoucher` — todo o resto é Server Component.
 
 ## 9. Camada de reservas (server-only) — conectada na Fase 3
 
@@ -233,7 +246,16 @@ Inalterado desde a fase de catálogo — `tailwind.config.ts`: cores `ink`/`sea`
 
 ## 14. Testes
 
-Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, fluxo completo de reserva (componente, via `@testing-library/react`), validação/máscara/checksum de CPF, Idempotency-Key, submissão real (`booking-submission.ts`), countdown de hold. `npm test` roda tudo — 209 testes.
+Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, fluxo completo de reserva (componente, via `@testing-library/react`), validação/máscara/checksum de CPF, Idempotency-Key, submissão real (`booking-submission.ts`), countdown de hold, wiring completo do fluxo Pix (rota `/api/bookings/[bookingId]/payment`, `ToursFlowPaymentClient`, `PixPayment`/`BookingVoucher` — ver [PAYMENTS.md](PAYMENTS.md)). `npm test` roda tudo — 273 testes.
 
-**Achado corrigido nesta fase:** `vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Isso significa que **todo componente React testado com `@testing-library/react`
+**Achado corrigido nesta fase (Fase 3):** `vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Isso significa que **todo componente React testado com `@testing-library/react`
 (`BookingSelector.test.tsx` desde a Fase 1) nunca rodou de fato via `npm test`** em nenhuma fase anterior, apesar de relatórios anteriores terem reportado "todos os testes passando" — o comando saía com sucesso porque simplesmente não encontrava esses arquivos, não porque eles passavam. Corrigido para `src/**/*.test.{ts,tsx}` (mais `oxc: { jsx: { runtime: 'automatic' } }`, necessário para o parser da Vite 8/rolldown reconhecer JSX em teste). Ao rodar de verdade pela primeira vez, 3 bugs reais (e até então invisíveis) apareceram nos próprios testes — nenhum no código de produção — e foram corrigidos: duas queries ambíguas (`getByLabelText`/`getByText` casando mais de um elemento) e uma máscara de e-mail com contagem de asteriscos errada na asserção. Detalhe completo: [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes).
+
+**Segundo achado do mesmo tipo (2026-09-02):** um fixture de teste
+(`holdExpiresAt: '2026-09-01T12:15:00Z'`, hardcoded) em
+`BookingSelector.test.tsx` "expirou sozinho" quando o relógio real do
+sistema avançou além dessa data, fazendo 6 testes falharem por um motivo
+sem relação com a mudança sendo feita naquele momento. Corrigido para uma
+data sempre calculada a partir de `Date.now()` no momento do teste, nunca
+uma data absoluta fixa — lição registrada para não repetir em fixtures
+futuros que dependem de "no futuro"/"no passado".

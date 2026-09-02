@@ -289,6 +289,36 @@ auditoria pré-integração de 2026-08-25 (ver
 Next.js ainda não foi feito** — registrado como pendente, não como
 resolvido.
 
+## 15. Rota de pagamento falha fechada server-side — não só ausência de botão (ADR-012)
+
+**A UI escondida (ausência de botão "Pagar com Pix" quando
+`PAYMENTS_UI_ENABLED === false`) nunca foi, e nunca deve ser tratada
+como, um controle de segurança.** Até 2026-09-02,
+`POST`/`GET /api/bookings/[bookingId]/payment` não verificavam essa flag
+— um `curl`/`fetch` direto à rota, com headers corretos, chegaria ao
+NauticFlow de verdade. Corrigido: `throwIfPaymentsDisabled()` é a
+**primeira** checagem de ambos os handlers, antes de Origin, Content-Type
+ou qualquer parsing — reusa a mesma constante `PAYMENTS_UI_ENABLED`, mas
+agora verificada onde precisa estar (no servidor, na própria rota), não
+só onde é conveniente (no componente React).
+
+Cadeia de defesa em profundidade real:
+
+```
+Browser -> ToursFlow (feature gate, PRIMEIRA linha da rota)
+        -> ToursFlow (Origin/Content-Type/IP confiável -> HMAC/Bearer)
+        -> NauticFlow (feature gate próprio, independente)
+        -> Asaas
+```
+
+`GET` também travado (sem efeito financeiro, mas sem caso de uso
+legítimo com a flag off — decisão registrada, não reflexo). Confirmado
+por 7 testes sem mock de `feature-flags` (`route.disabled.test.ts`) e
+por `curl` real contra o dev server local — `422
+PAYMENT_PROVIDER_NOT_ENABLED` em <1s, tempo incompatível com uma
+tentativa real de rede ao NauticFlow. Detalhe completo:
+[PAYMENTS.md](PAYMENTS.md), [ADR-012](DECISIONS.md#adr-012--trava-server-side-da-rota-de-pagamento-ui-flag-não-é-security-boundary).
+
 ## Testes de segurança relevantes
 
 - `booking-validation.test.ts` — whitelist do payload, rejeição de campo
@@ -330,8 +360,19 @@ resolvido.
   `sessionStorage`.
 - `BookingConfirmation.test.tsx` (Fase 3) — countdown com fake timers,
   preço real do backend, estado de expirado.
+- `route.test.ts`/`route.disabled.test.ts` do pagamento (`/api/bookings/[bookingId]/payment`)
+  — pipeline completo (Origin, Content-Type, idempotência, whitelist,
+  ausência de `amount`, client-key forjada ignorada, todos os
+  `PaymentErrorCode` relevantes incluindo `PAYMENT_PROVIDER_NOT_ENABLED`
+  e `CUSTOMER_DOCUMENT_REQUIRED`) **e**, sem nenhum mock de
+  `feature-flags`, o comportamento real de produção — `PAYMENTS_UI_ENABLED`
+  `false` faz `POST` e `GET` falharem fechados antes de tocar no
+  NauticFlow, mesmo com headers/Origin corretos.
+- `idempotency-key.test.ts` — `resolvePaymentIdempotencyKey()`: mesma
+  garantia de `resolveIdempotencyKey()` (reaproveita em re-render/retry,
+  nunca chama o gerador à toa) para a tentativa de pagamento.
 
-`npm test` roda todos (209 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (273 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
 
 **Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**
@@ -427,7 +468,12 @@ verdade.
 - CAPTCHA no fluxo de reserva.
 - Upgrade do Next.js para resolver os CVEs da auditoria pré-integração.
 - Content-Security-Policy.
-- Checkout, pagamento (Asaas/PIX/cartão), split, webhook de confirmação,
-  voucher, QR Code — a UI de reserva (Fase 3) já cria hold real, mas o
-  step de confirmação deixa explícito que pagamento vem depois; nada
-  disso existe no código ainda.
+- Checkout (cartão), split visível ao ToursFlow, webhook (recebido só
+  pelo NauticFlow), voucher real — fora do escopo. **Pix já tem contrato
+  real confirmado e wiring completo** (tipos, rota interna
+  `/api/bookings/[bookingId]/payment`, client server-only, client do
+  navegador, UI) — mas `PAYMENTS_UI_ENABLED = false` mantém tudo isso
+  inatingível pela UI pública, e nenhuma chamada real foi feita (zero
+  `fetch` ao NauticFlow para pagamento, confirmado por grep e por
+  verificação em browser real). Ver [PAYMENTS.md](PAYMENTS.md) (ADR-010/
+  ADR-011/ADR-012 em [DECISIONS.md](DECISIONS.md)).

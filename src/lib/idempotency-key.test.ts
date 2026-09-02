@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { createIdempotencyKey, idempotencyFingerprint, resolveIdempotencyKey } from './idempotency-key';
+import {
+  createIdempotencyKey,
+  idempotencyFingerprint,
+  resolveIdempotencyKey,
+  resolvePaymentIdempotencyKey,
+} from './idempotency-key';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -86,5 +91,46 @@ describe('resolveIdempotencyKey — ciclo de vida completo', () => {
 
     expect(result.regenerated).toBe(true);
     expect(result.key).toBe('key-nova-reserva-2');
+  });
+});
+
+describe('resolvePaymentIdempotencyKey — usada pelo fluxo de pagamento Pix', () => {
+  it('sem key existente (current: null): gera uma nova', () => {
+    expect(resolvePaymentIdempotencyKey(null, () => 'key-pagamento-1')).toBe('key-pagamento-1');
+  });
+
+  it('com key existente: reaproveita, NUNCA chama generate() de novo (retry acidental/re-render não muda a key)', () => {
+    let generateCalls = 0;
+    const generate = () => {
+      generateCalls++;
+      return 'nunca-deveria-ser-chamada';
+    };
+
+    expect(resolvePaymentIdempotencyKey('key-pagamento-existente', generate)).toBe('key-pagamento-existente');
+    expect(generateCalls).toBe(0);
+  });
+
+  it('chamadas repetidas com o mesmo estado continuam devolvendo a mesma key (simula vários re-renders seguidos)', () => {
+    const first = resolvePaymentIdempotencyKey(null, createIdempotencyKey);
+    const second = resolvePaymentIdempotencyKey(first, createIdempotencyKey);
+    const third = resolvePaymentIdempotencyKey(second, createIdempotencyKey);
+
+    expect(second).toBe(first);
+    expect(third).toBe(first);
+  });
+
+  it('depois de reset para null (sucesso definitivo do pagamento anterior), gera key nova — nunca reaproveita a de um pagamento já concluído', () => {
+    const concludedAttemptKey = 'key-pagamento-ja-pago';
+    const afterSuccessReset = null; // BookingSelector reseta para null no onPaid
+
+    const result = resolvePaymentIdempotencyKey(afterSuccessReset, () => 'key-pagamento-nova-tentativa');
+
+    expect(result).not.toBe(concludedAttemptKey);
+    expect(result).toBe('key-pagamento-nova-tentativa');
+  });
+
+  it('gera um UUID real quando usada com o gerador padrão (crypto.randomUUID)', () => {
+    const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    expect(resolvePaymentIdempotencyKey(null)).toMatch(UUID_RE);
   });
 });

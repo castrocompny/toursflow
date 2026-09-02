@@ -18,6 +18,8 @@ export interface BookingConfirmationData {
 interface BookingConfirmationProps {
   departure: Departure;
   booking: BookingConfirmationData;
+  /** Presente só quando `PAYMENTS_UI_ENABLED` está ligada (`src/lib/feature-flags.ts`) — hoje nunca é passado pela UI real. */
+  onPayWithPix?: () => void;
 }
 
 /** Recalcula a cada segundo a partir de `holdExpiresAt` — nunca assume 15:00 fixo no cliente. */
@@ -35,12 +37,16 @@ function useHoldCountdown(holdExpiresAtIso: string) {
 /**
  * STEP 4 — reserva criada (hold), Fase 3. Mostra só dado vindo do backend
  * (`booking.priceCents`/`totalCents`) — nunca o total estimado calculado
- * no cliente, que pode divergir do preço real. Sem botão de pagamento:
- * "Pagamento será disponibilizado na próxima etapa" é só aviso — Asaas/
- * PIX/cartão/split/webhook/voucher continuam fora do escopo do projeto
- * nesta fase.
+ * no cliente, que pode divergir do preço real.
+ *
+ * `onPayWithPix` só é passado quando `PAYMENTS_UI_ENABLED` está ligada
+ * (hoje `false` — ver `src/lib/feature-flags.ts`); sem ele, mostra o
+ * aviso "Pagamento será disponibilizado na próxima etapa". Asaas/cartão/
+ * split/webhook continuam fora do escopo mesmo com o fluxo Pix
+ * preparado (`PixPayment`/`BookingVoucher`) — o contrato real de
+ * pagamento do NauticFlow ainda não está confirmado.
  */
-export function BookingConfirmation({ departure, booking }: BookingConfirmationProps) {
+export function BookingConfirmation({ departure, booking, onPayWithPix }: BookingConfirmationProps) {
   const { date, time } = formatDepartureDateTime(departure.departsAt);
   const { remainingMs, expired } = useHoldCountdown(booking.holdExpiresAt);
 
@@ -89,7 +95,11 @@ export function BookingConfirmation({ departure, booking }: BookingConfirmationP
         </div>
       </dl>
 
-      {!expired ? (
+      {!expired && onPayWithPix ? (
+        <button type="button" onClick={onPayWithPix} className="btn-primary mt-4 w-full">
+          Pagar com Pix
+        </button>
+      ) : !expired ? (
         <p className="mt-4 rounded-2xl bg-foam px-4 py-3 text-xs text-ink-muted">
           Pagamento será disponibilizado na próxima etapa. Por enquanto, fale com o operador para confirmar.
         </p>

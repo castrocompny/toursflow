@@ -1,6 +1,5 @@
 import 'server-only';
 import { isIP } from 'node:net';
-import { BookingApiError } from './booking-errors';
 
 /**
  * IP confiável do visitante — só para gerar a identidade pseudônima do
@@ -63,25 +62,28 @@ export function normalizeClientIp(raw: string | null | undefined): string | null
   return candidate;
 }
 
-const IP_UNAVAILABLE_MESSAGE = 'Não foi possível iniciar a reserva. Tente novamente.';
-
 /**
- * IP confiável da requisição atual, já normalizado. Lança
- * `CLIENT_IP_UNAVAILABLE` (nunca retorna uma identidade compartilhada)
- * quando não é possível determinar um IP confiável.
+ * IP confiável da requisição atual, já normalizado. Chama `onUnavailable()`
+ * (nunca retorna uma identidade compartilhada) quando não é possível
+ * determinar um IP confiável.
+ *
+ * `onUnavailable` é injetado (em vez desta função lançar um erro fixo)
+ * para cada rota poder lançar o próprio tipo de erro (`BookingApiError`,
+ * `PaymentApiError`, ...) sem este módulo depender de nenhum deles —
+ * mesmo padrão de `readBodyWithLimit()` em `http-guards.ts`.
  */
-export function getTrustedClientIp(request: Request): string {
+export function getTrustedClientIp(request: Request, onUnavailable: () => never): string {
   const onVercel = process.env.VERCEL === '1';
 
   if (onVercel) {
     const ip = normalizeClientIp(request.headers.get('x-vercel-forwarded-for'));
     if (ip) return ip;
-    throw new BookingApiError(503, 'CLIENT_IP_UNAVAILABLE', IP_UNAVAILABLE_MESSAGE);
+    onUnavailable();
   }
 
   // Fallback só fora da Vercel — nunca em produção real.
   const fallback = normalizeClientIp(request.headers.get('x-forwarded-for'));
   if (fallback) return fallback;
 
-  throw new BookingApiError(503, 'CLIENT_IP_UNAVAILABLE', IP_UNAVAILABLE_MESSAGE);
+  onUnavailable();
 }

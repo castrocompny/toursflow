@@ -283,7 +283,11 @@ describe('BookingSelector', () => {
     const successData = {
       bookingId: 'bk-real-1',
       status: 'pendente',
-      holdExpiresAt: '2026-09-01T12:15:00Z',
+      // Sempre 15 min à frente do momento em que o teste roda — nunca uma
+      // data fixa, que acabaria no passado conforme o tempo passa (bug já
+      // visto: um valor hardcoded expirou sozinho quando o relógio real
+      // avançou além dele).
+      holdExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
       tour: { slug: 't', name: 'T' },
       departure: { id: available.id, departsAt: available.departsAt },
       quantity: 1,
@@ -525,6 +529,17 @@ describe('BookingSelector', () => {
       expect(window.location.search).toBe('');
       expect(window.localStorage.length).toBe(0);
       expect(window.sessionStorage.length).toBe(0);
+    });
+
+    it('PAYMENTS_UI_ENABLED desligada: STEP 4 não oferece "Pagar com Pix", só o aviso de que pagamento vem depois', async () => {
+      const fetchSpy = mockFetchResponse({ ok: true, status: 201, body: { data: successData } });
+      vi.stubGlobal('fetch', fetchSpy);
+
+      goToReview();
+      await confirmAndWaitFor(/sua vaga está garantida/i);
+
+      expect(screen.queryByRole('button', { name: /pagar com pix/i })).toBeNull();
+      expect(screen.getByText(/pagamento será disponibilizado na próxima etapa/i)).toBeTruthy();
     });
   });
 });

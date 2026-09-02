@@ -87,3 +87,23 @@ export function resolveIdempotencyKey(
   }
   return { key: state.key, fingerprint: state.fingerprint, regenerated: false };
 }
+
+/**
+ * Versão sem fingerprint de `resolveIdempotencyKey()` — para uma
+ * tentativa que não tem dado editável nenhum (o pagamento Pix: o único
+ * "input" é "pagar esta reserva com Pix", sempre igual). Reaproveita a
+ * key existente sempre que já existe uma; só gera nova quando `current`
+ * é `null` — que é exatamente o estado depois de um reset (sucesso
+ * definitivo do pagamento anterior, ver `BookingSelector`).
+ *
+ * Usado por `BookingSelector` no clique de "Pagar com Pix" — nasce ali,
+ * vive em `useState` (nunca regenerada em re-render, porque
+ * `useState` preserva a referência entre renders), e morre (`null`)
+ * assim que `PixPayment` reporta `status: 'paid'`.
+ */
+export function resolvePaymentIdempotencyKey(
+  current: string | null,
+  generate: () => string = createIdempotencyKey,
+): string {
+  return current ?? generate();
+}

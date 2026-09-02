@@ -5,6 +5,7 @@ import { validateBookingInput, validateIdempotencyKey } from '@/lib/booking-vali
 import { getTrustedClientIp } from '@/lib/client-ip';
 import { createNauticFlowBooking } from '@/lib/nauticflow-bookings';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
+import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, readBodyWithLimit } from '@/lib/http-guards';
 
 /**
  * POST /api/bookings — única rota do ToursFlow que inicia uma reserva.
@@ -30,92 +31,6 @@ import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
  * oficiais — ver docs/SECURITY.md.
  */
 
-/**
- * Hosts oficiais do ToursFlow, além do host da própria requisição (que já
- * cobre produção, cada preview deploy e dev local automaticamente via
- * comparação Origin/Host abaixo). Só nomes de domínio públicos — não é
- * segredo, não precisa vir de env var.
- */
-const ALLOWED_ORIGIN_HOSTS = new Set(['toursflow.com.br', 'toursflow.vercel.app']);
-
-/**
- * Checagem best-effort de mesma origem/mesmo site. Não substitui
- * autenticação nem é proteção CSRF completa (não há sessão de usuário
- * nesta etapa) — é só uma primeira barreira contra POST cross-site óbvio.
- *
- * Ordem de sinais:
- * 1. `Sec-Fetch-Site` (enviado automaticamente por navegadores modernos em
- *    toda requisição `fetch`, não pode ser forjado por JS de página): se
- *    o próprio navegador diz "cross-site", rejeita sempre — sinal mais
- *    forte que temos, mesmo que `Origin` esteja ausente ou falsificado por
- *    um cliente não-browser.
- * 2. Sem esse header (navegador antigo, cliente não-browser) ou valor
- *    diferente de "cross-site": cai para `Origin` vs. `Host`/allowlist,
- *    igual à checagem anterior — se `Origin` também estiver ausente,
- *    deixa passar (ver limitação abaixo).
- */
-function isTrustedOrigin(request: Request): boolean {
-  if (request.headers.get('sec-fetch-site') === 'cross-site') return false;
-
-  const origin = request.headers.get('origin');
-  if (!origin) return true; // navegadores nem sempre mandam Origin; ver limitação no doc.
-
-  let originHost: string;
-  try {
-    originHost = new URL(origin).host;
-  } catch {
-    return false;
-  }
-
-  return originHost === request.headers.get('host') || ALLOWED_ORIGIN_HOSTS.has(originHost);
-}
-
-/** ~10KB — generoso para um payload de reserva (nome/e-mail/telefone/CPF/departureId/quantity); nunca deveria chegar perto disso legitimamente. */
-const MAX_BODY_BYTES = 10_000;
-
-/** Só `application/json`, com ou sem `charset` — nunca outro tipo de conteúdo. */
-function hasAllowedContentType(request: Request): boolean {
-  const contentType = request.headers.get('content-type');
-  if (!contentType) return false;
-  return contentType.split(';')[0].trim().toLowerCase() === 'application/json';
-}
-
-/**
- * Lê o corpo da requisição contando bytes reais recebidos, em vez de
- * confiar em `Content-Length` (que é só um header — o cliente pode mentir,
- * omitir, ou mandar mais dado do que declarou). Aborta a leitura e lança
- * 413 assim que os bytes recebidos ultrapassam `MAX_BODY_BYTES`, sem
- * nunca acumular mais que isso mais um chunk em memória. `JSON.parse` só
- * acontece depois desta função retornar — nunca antes da verificação de
- * tamanho.
- */
-async function readBodyWithLimit(request: Request): Promise<string> {
-  const reader = request.body?.getReader();
-  if (!reader) return '';
-
-  const chunks: Uint8Array[] = [];
-  let total = 0;
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > MAX_BODY_BYTES) {
-      await reader.cancel().catch(() => {});
-      throw new BookingApiError(413, 'INVALID_REQUEST', 'Corpo da requisição excede o tamanho permitido.');
-    }
-    chunks.push(value);
-  }
-
-  const merged = new Uint8Array(total);
-  let offset = 0;
-  for (const chunk of chunks) {
-    merged.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return new TextDecoder('utf-8').decode(merged);
-}
-
 export async function POST(request: Request) {
   try {
     if (!isTrustedOrigin(request)) {
@@ -137,13 +52,17 @@ export async function POST(request: Request) {
 
     // IP confiável e HMAC calculados aqui, sempre server-side — nunca a
     // partir de um header que o navegador possa ter enviado.
-    const clientIp = getTrustedClientIp(request);
+    const clientIp = getTrustedClientIp(request, () => {
+      throw new BookingApiError(503, 'CLIENT_IP_UNAVAILABLE', 'Não foi possível iniciar a reserva. Tente novamente.');
+    });
     const clientKey = createToursFlowClientKey(clientIp);
 
     const idempotency = validateIdempotencyKey(request.headers.get('idempotency-key'));
     if (!idempotency.ok) throw idempotency.error;
 
-    const bodyText = await readBodyWithLimit(request);
+    const bodyText = await readBodyWithLimit(request, MAX_BODY_BYTES, () => {
+      throw new BookingApiError(413, 'INVALID_REQUEST', 'Corpo da requisição excede o tamanho permitido.');
+    });
 
     let rawBody: unknown;
     try {

@@ -14,20 +14,37 @@ import {
   sortDeparturesByDate,
 } from '@/lib/booking-selection';
 import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
-import { idempotencyFingerprint, resolveIdempotencyKey, type IdempotencyKeyState } from '@/lib/idempotency-key';
+import {
+  idempotencyFingerprint,
+  resolveIdempotencyKey,
+  resolvePaymentIdempotencyKey,
+  type IdempotencyKeyState,
+} from '@/lib/idempotency-key';
 import { buildBookingPayload, submitBooking } from '@/lib/booking-submission';
 import type { ClientBookingErrorCode } from '@/lib/booking-error-messages';
+import { PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
+import { ToursFlowPaymentClient } from '@/lib/payment-client';
+import type { NauticFlowBookingPaymentView } from '@/types/payment';
 import { CustomerForm } from './CustomerForm';
 import { BookingReview } from './BookingReview';
 import { BookingConfirmation, type BookingConfirmationData } from './BookingConfirmation';
+import { PixPayment } from './PixPayment';
+import { BookingVoucher } from './BookingVoucher';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
+
+// Client real (chama só as rotas do próprio ToursFlow, nunca o
+// NauticFlow/Asaas diretamente) — a proteção contra uso em produção é
+// PAYMENTS_UI_ENABLED (`src/lib/feature-flags.ts`), não este client:
+// enquanto a flag for false, nenhum componente que o chama é alcançável
+// pela UI real.
+const paymentClient = new ToursFlowPaymentClient();
 
 interface BookingSelectorProps {
   departures: Departure[];
 }
 
-type Step = 'selection' | 'customer-form' | 'review' | 'confirmation';
+type Step = 'selection' | 'customer-form' | 'review' | 'confirmation' | 'payment-pix' | 'voucher';
 type SubmissionStatus = 'idle' | 'submitting' | 'error';
 
 /**
@@ -88,6 +105,15 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
   // Guarda síncrona contra duplo-clique/duplo-submit — não depende do
   // re-render de `submissionStatus` (state) ter acontecido a tempo.
   const isSubmittingRef = useRef(false);
+  // Preenchido só quando PixPayment confirma 'paid' — hoje inatingível
+  // pela UI real (PAYMENTS_UI_ENABLED === false).
+  const [paymentResult, setPaymentResult] = useState<NauticFlowBookingPaymentView | null>(null);
+  // Uma key por tentativa lógica de PAGAMENTO — conceito separado da
+  // Idempotency-Key da reserva (`idempotencyKeyState` acima). Gerada uma
+  // vez ao entrar no step `payment-pix`; como não há dado editável nesse
+  // step (o método é sempre "pix"), não precisa de fingerprint — só não
+  // pode ser gerada de novo a cada re-render.
+  const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState<string | null>(null);
 
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
@@ -204,7 +230,44 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
   }
 
   if (step === 'confirmation' && selectedDeparture && bookingResult) {
-    return <BookingConfirmation departure={selectedDeparture} booking={bookingResult} />;
+    return (
+      <BookingConfirmation
+        departure={selectedDeparture}
+        booking={bookingResult}
+        onPayWithPix={
+          PAYMENTS_UI_ENABLED
+            ? () => {
+                // Uma key nova por tentativa de pagamento — gerada uma
+                // única vez ao entrar no step, nunca a cada re-render
+                // (resolvePaymentIdempotencyKey só gera quando current é null).
+                setPaymentIdempotencyKey((current) => resolvePaymentIdempotencyKey(current));
+                setStep('payment-pix');
+              }
+            : undefined
+        }
+      />
+    );
+  }
+
+  if (step === 'payment-pix' && bookingResult && paymentIdempotencyKey) {
+    return (
+      <PixPayment
+        bookingId={bookingResult.bookingId}
+        idempotencyKey={paymentIdempotencyKey}
+        paymentClient={paymentClient}
+        onPaid={(data) => {
+          setPaymentResult(data);
+          // Sucesso definitivo: uma eventual nova tentativa de pagamento
+          // (outra reserva) precisa de key nova, nunca reaproveitar esta.
+          setPaymentIdempotencyKey(null);
+          setStep('voucher');
+        }}
+      />
+    );
+  }
+
+  if (step === 'voucher' && selectedDeparture && paymentResult) {
+    return <BookingVoucher departure={selectedDeparture} bookingId={paymentResult.bookingId} payment={paymentResult} />;
   }
 
   const allSoldOut = sorted.every((departure) => departure.soldOut);
