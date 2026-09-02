@@ -89,11 +89,51 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 - `soldOut` refletido corretamente no catálogo público após o hold.
 - Autenticação real (Bearer) contra produção, sem o segredo aparecer em nenhum log ou resposta.
 
+## Validação real contra produção (2026-09-01)
+
+Depois de configurar o mesmo `TOURSFLOW_API_SECRET` nos dois projetos
+Vercel (ToursFlow e NauticFlow, ambos redeployados), rodadas 3 chamadas
+HTTP reais e não-destrutivas direto a
+`https://nauticflow.com.br/api/marketplace/bookings` (nunca através da UI
+do ToursFlow), todas com `departureId` inexistente (UUID gerado
+aleatoriamente) para garantir que nenhuma reserva pudesse ser criada
+independentemente do resultado da autenticação:
+
+| Chamada | Authorization | Resultado |
+|---|---|---|
+| Sem header | — | `401 UNAUTHORIZED` |
+| Bearer inválido | `Bearer valor-claramente-invalido` | `401 UNAUTHORIZED` |
+| Bearer correto (mesmo valor do `.env.local`, presumivelmente == produção) | `Bearer <TOURSFLOW_API_SECRET>` | `400 INVALID_CLIENT_KEY: "Cabeçalho X-ToursFlow-Client-Key ausente ou inválido."` |
+
+**Conclusões:**
+- A autenticação Bearer funciona de verdade contra produção — a resposta
+  muda de `401` para uma validação de camada seguinte assim que o
+  segredo correto é enviado, prova direta de que o segredo configurado
+  autentica com sucesso.
+- **Achado que corrige a documentação anterior:** o NauticFlow em
+  produção **já exige `X-ToursFlow-Client-Key`** neste endpoint — a
+  suposição de que essa validação só existia no ambiente local dele
+  (registrada em 2026-08-27/28) estava desatualizada. Como a chamada foi
+  feita direto ao NauticFlow (sem passar pela rota `/api/bookings` do
+  ToursFlow, que é quem calcula esse header), o teste não enviou o header
+  — por isso a resposta parou nessa validação, não avançou até a checagem
+  de `departureId`.
+- **Não testado:** se o NauticFlow rejeita um `X-ToursFlow-Client-Key`
+  presente mas com HMAC incorreto (forjado). Isso exigiria calcular o
+  HMAC esperado a partir do IP que o NauticFlow enxerga desta chamada —
+  não tentado nesta rodada para não escalar o escopo de um teste que já
+  tinha objetivo cumprido (provar a autenticação Bearer).
+- Nenhum registro foi criado em nenhuma das 3 chamadas — nem por falha de
+  autenticação, nem por `departureId` inexistente (que teria sido a
+  próxima barreira mesmo se a autenticação e o `X-ToursFlow-Client-Key`
+  tivessem passado).
+- Nenhum valor de segredo foi impresso em nenhum momento.
+
 ## O que ainda NÃO existe
 
 - Nenhum botão da interface pública chama `/api/bookings`. O fluxo em `BookingSelector` (seleção → `CustomerForm` → `BookingReview`, Fase 2) termina numa tela de revisão — confirmado por teste (spy em `fetch`, zero chamadas) e por verificação manual em browser real.
 - Checkout, pagamento, Asaas, Split, voucher, QR Code, login do turista, área do cliente, e-mail transacional, cancelamento/reembolso, formulário completo de passageiros.
-- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado); o lado NauticFlow só tem a validação correspondente no ambiente local dele — não deployado nos dois lados de forma coordenada ainda.** Por isso o E2E cross-serviço desta parte específica continua pendente (o E2E validado acima, contra produção, é anterior a esta mudança e não a cobre). Revisado em 2026-08-28: nenhuma evidência posterior (commit, teste, changelog) fecha essa lacuna — continua real, não é suposição.
+- **`X-ToursFlow-Client-Key`: o lado ToursFlow está implementado e comprovado por teste automatizado real (HMAC calculado de verdade, header forjado do navegador provadamente ignorado). O lado NauticFlow agora comprovadamente EXIGE este header em produção (ver "Validação real contra produção" acima) — isso fecha parte da lacuna antes registrada como "só validado localmente".** O que ainda não foi comprovado é se o NauticFlow valida o HMAC corretamente (rejeita um header forjado/incorreto) — só a presença/formato foram testados.
 - Rate limiting próprio da rota `/api/bookings` no ToursFlow — **classificado como hardening/defesa em profundidade, não bloqueador**, em [ADR-007](DECISIONS.md#adr-007--rate-limit-próprio-do-toursflow-classificado-como-hardening-não-bloqueador) (ver "Limitações" abaixo).
 - Envio da `Idempotency-Key` gerada no navegador (`src/lib/idempotency-key.ts` já existe, com ciclo de vida completo via `resolveIdempotencyKey()` — reaproveita em retry, regenera em mudança relevante — mas nenhum `fetch` a envia ainda).
 
@@ -106,6 +146,6 @@ Diferente do catálogo (que cai para mock em dev local sem `NAUTICFLOW_API_URL`)
 
 ## Próximo passo (fora desta etapa)
 
-1. Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos (NauticFlow e ToursFlow) de forma coordenada.
-2. Fazer o E2E cross-serviço específico do rate limit (confirmar que o NauticFlow de fato aplica o limite global e por `X-ToursFlow-Client-Key`, e que um header forjado pelo navegador é ignorado também do lado dele) — item de acompanhamento, não bloqueador para a Fase 3.
-3. Fase 3: conectar `BookingReview` a `POST /api/bookings` de verdade (enviar a `Idempotency-Key` já preparada — resetando o estado para `null` depois de um sucesso definitivo, ver [SECURITY.md](SECURITY.md#12-ciclo-de-vida-da-idempotency-key-definido-não-enviada--fase-2) —, tratar os 14 `BookingErrorCode` com as mensagens já preparadas em `booking-error-messages.ts`).
+1. ~~Commitar, revisar e deployar a mudança do `X-ToursFlow-Client-Key` nos dois projetos de forma coordenada.~~ **Feito** — confirmado em produção em 2026-09-01 (ver "Validação real contra produção" acima): o NauticFlow já exige o header.
+2. Fechar a parte que falta do E2E cross-serviço: confirmar que o NauticFlow rejeita um `X-ToursFlow-Client-Key` com HMAC incorreto/forjado, não só ausente — item de acompanhamento, não bloqueador.
+3. Fase 3 (implementada em branch local `feature/booking-checkout`, não publicada): conectar `BookingReview` a `POST /api/bookings` de verdade. Ver `docs/DECISIONS.md` (ADR-008, ADR-009) e o changelog dessa branch para o estado completo.
