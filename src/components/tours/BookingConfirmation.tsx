@@ -41,10 +41,13 @@ function useHoldCountdown(holdExpiresAtIso: string) {
  *
  * `onPayWithPix` só é passado quando `PAYMENTS_UI_ENABLED` está ligada
  * (hoje `false` — ver `src/lib/feature-flags.ts`); sem ele, mostra o
- * aviso "Pagamento será disponibilizado na próxima etapa". Asaas/cartão/
- * split/webhook continuam fora do escopo mesmo com o fluxo Pix
- * preparado (`PixPayment`/`BookingVoucher`) — o contrato real de
- * pagamento do NauticFlow ainda não está confirmado.
+ * aviso "Pagamento será disponibilizado na próxima etapa". O contrato
+ * real de pagamento Pix do NauticFlow já está confirmado e integrado
+ * ponta a ponta (`PixPayment`/`BookingVoucher`, ver ADR-011 em
+ * docs/DECISIONS.md) — o rollout continua bloqueado só pelas feature
+ * flags (`PAYMENTS_UI_ENABLED` aqui, `MARKETPLACE_PAYMENTS_ENABLED` no
+ * NauticFlow), não pela ausência de integração. Cartão/split visível ao
+ * ToursFlow/webhook/voucher real continuam fora do escopo.
  */
 export function BookingConfirmation({ departure, booking, onPayWithPix }: BookingConfirmationProps) {
   const { date, time } = formatDepartureDateTime(departure.departsAt);

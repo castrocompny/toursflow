@@ -14,6 +14,17 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-02 — Fechamento dos achados MEDIUM/LOW da revisão final da branch de checkout
+
+Revisão final completa de `feature/booking-checkout` (`6d37661..dfb8a5a`) encontrou zero BLOCKER/HIGH e dois achados menores — fechados nesta entrada, sem tocar em contrato, feature flags, ou qualquer coisa fora do escopo dos dois achados:
+
+- **MEDIUM — glue de pagamento em `BookingSelector.tsx` sem cobertura de integração.** Cada peça (`resolvePaymentIdempotencyKey`, `PixPayment`, `BookingVoucher`, a rota) já tinha teste próprio, mas a cadeia real dentro de `BookingSelector` (clique em "Pagar com Pix" → `resolvePaymentIdempotencyKey()` → step `payment-pix` → `PixPayment` → `paid` → `onPaid` → step `voucher` → `BookingVoucher`) nunca rodava em nenhum teste — só era alcançável com `PAYMENTS_UI_ENABLED` ligada, e nenhum teste mockava isso. Corrigido com `src/components/tours/BookingSelector.payment.test.tsx` (arquivo novo, mesmo padrão de `route.test.ts`/`route.disabled.test.ts`: `vi.mock()` se aplica ao arquivo inteiro, então a flag mockada `true` precisa ficar separada do arquivo que testa o valor real `false`). O teste mocka só `fetch` (nunca o NauticFlow/Asaas reais — `BookingSelector` usa o `ToursFlowPaymentClient` real, não injetável, então mockar `fetch` é a única forma de testar sem tocar rede real) e prova, na integração: `bookingResult` existe antes de `payment-pix`; exatamente um `POST .../payment` com uma `Idempotency-Key` UUID válida; um `rerender()` do pai com props idênticas não gera um novo `POST` nem uma nova key; o voucher (`payment.status === 'paid'`) só aparece depois do polling confirmar `paid`, nunca antes.
+- **LOW — comentário desatualizado em `BookingConfirmation.tsx`.** Ainda afirmava que "o contrato real de pagamento do NauticFlow ainda não está confirmado" — verdade antes do ADR-011, corrigido em todo o resto da base menos ali. Atualizado para refletir o estado real: contrato confirmado, integração implementada ponta a ponta, rollout bloqueado só pelas feature flags (`PAYMENTS_UI_ENABLED`/`MARKETPLACE_PAYMENTS_ENABLED`), não pela ausência de wiring. Nenhuma mudança de comportamento.
+
+274 testes no total (273 + 1 novo). `npm run typecheck`, `lint` e `build` verdes. **Ainda em `feature/booking-checkout`, não mergeado, não publicado, `PAYMENTS_UI_ENABLED` continua `false`, nenhum dinheiro movimentado.**
+
+---
+
 ## 2026-09-02 — Achado de segurança corrigido: rota de pagamento agora falha fechada server-side (não dependia mais só da UI)
 
 Revisão de segurança pós-wiring do contrato de pagamento encontrou um bloqueador real: `POST`/`GET /api/bookings/[bookingId]/payment` não verificavam `PAYMENTS_UI_ENABLED` antes de processar a requisição — a única coisa que impedia uma chamada real ao NauticFlow era `BookingConfirmation` não renderizar o botão "Pagar com Pix". Um `curl`/`fetch` direto à rota, com headers corretos, teria chegado ao NauticFlow de verdade, dependendo inteiramente da flag `MARKETPLACE_PAYMENTS_ENABLED` do outro lado como única rede de segurança — exatamente o cenário de defesa em profundidade ausente que a revisão pediu para investigar.

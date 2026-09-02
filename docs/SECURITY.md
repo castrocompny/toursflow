@@ -371,8 +371,16 @@ tentativa real de rede ao NauticFlow. Detalhe completo:
 - `idempotency-key.test.ts` — `resolvePaymentIdempotencyKey()`: mesma
   garantia de `resolveIdempotencyKey()` (reaproveita em re-render/retry,
   nunca chama o gerador à toa) para a tentativa de pagamento.
+- `BookingSelector.payment.test.tsx` (2026-09-02, achado MEDIUM da revisão
+  final fechado) — glue real do fluxo de pagamento dentro de
+  `BookingSelector` (`PAYMENTS_UI_ENABLED` mockada `true`, arquivo
+  separado de `BookingSelector.test.tsx` pelo mesmo motivo do par
+  `route.test.ts`/`route.disabled.test.ts`): `bookingResult` existe antes
+  de `payment-pix`, um único `POST .../payment` com `Idempotency-Key`
+  válida, um `rerender()` do pai não gera novo `POST` nem nova key, e o
+  voucher só aparece depois do polling confirmar `paid`.
 
-`npm test` roda todos (273 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (274 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
 
 **Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**
