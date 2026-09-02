@@ -22,8 +22,12 @@ vi.mock('next/navigation', () => ({
  * módulo, não injetável) — a única forma de testar sem tocar
  * NauticFlow/Asaas é mockar `fetch` global, mesmo padrão já usado para
  * `/api/bookings` em `BookingSelector.test.tsx`.
+ *
+ * `BOOKING_CHECKOUT_ENABLED` também precisa ser mockada `true` aqui: sem
+ * ela, a revisão nem mostra "Confirmar reserva" — não haveria como chegar
+ * ao step de pagamento para testar o glue de `PAYMENTS_UI_ENABLED`.
  */
-vi.mock('@/lib/feature-flags', () => ({ PAYMENTS_UI_ENABLED: true }));
+vi.mock('@/lib/feature-flags', () => ({ BOOKING_CHECKOUT_ENABLED: true, PAYMENTS_UI_ENABLED: true }));
 
 const { BookingSelector } = await import('./BookingSelector');
 

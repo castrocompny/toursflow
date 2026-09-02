@@ -22,7 +22,7 @@ import {
 } from '@/lib/idempotency-key';
 import { buildBookingPayload, submitBooking } from '@/lib/booking-submission';
 import type { ClientBookingErrorCode } from '@/lib/booking-error-messages';
-import { PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
+import { BOOKING_CHECKOUT_ENABLED, PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
 import { ToursFlowPaymentClient } from '@/lib/payment-client';
 import type { NauticFlowBookingPaymentView } from '@/types/payment';
 import { CustomerForm } from './CustomerForm';
@@ -49,10 +49,16 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
 
 /**
  * Interface real de reserva: saída -> quantidade -> total estimado ->
- * dados do comprador -> revisão -> confirmação (hold). Fase 3: o step de
- * revisão chama `POST /api/bookings` de verdade — único ponto do projeto
- * que cria uma reserva real no NauticFlow (via `submitBooking()`).
+ * dados do comprador -> revisão -> confirmação (hold). O step de revisão
+ * chama `POST /api/bookings` de verdade — único ponto do projeto que cria
+ * uma reserva real no NauticFlow (via `submitBooking()`) — **só quando
+ * `BOOKING_CHECKOUT_ENABLED` está ligada** (`src/lib/feature-flags.ts`,
+ * hoje `false`): sem ela, `BookingReview` não recebe `onConfirm` e mostra
+ * o mesmo aviso "fale com o operador" de antes desta fase. A rota
+ * `/api/bookings` falha fechada por conta própria com a flag off — não
+ * depende da ausência do botão (mesma lição do ADR-012).
  *
+
  * O total mostrado antes da confirmação é só para o turista decidir —
  * nunca é a fonte de verdade do preço. Depois do sucesso, o step de
  * confirmação mostra `priceCents`/`totalCents` REAIS devolvidos pelo
@@ -222,7 +228,7 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
         customer={customer}
         onEdit={() => setStep('customer-form')}
         onBack={() => setStep('selection')}
-        onConfirm={handleConfirmBooking}
+        onConfirm={BOOKING_CHECKOUT_ENABLED ? handleConfirmBooking : undefined}
         submitting={submissionStatus === 'submitting'}
         errorMessage={submissionError?.message ?? null}
       />

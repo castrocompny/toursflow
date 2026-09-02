@@ -347,6 +347,42 @@ PAYMENT_PROVIDER_NOT_ENABLED` em <1s, tempo incompatível com uma
 tentativa real de rede ao NauticFlow. Detalhe completo:
 [PAYMENTS.md](PAYMENTS.md), [ADR-012](DECISIONS.md#adr-012--trava-server-side-da-rota-de-pagamento-ui-flag-não-é-security-boundary).
 
+## 16. Rota de reserva também falha fechada server-side — `BOOKING_CHECKOUT_ENABLED` (ADR-013)
+
+Mesma lição do item 15, aplicada uma camada abaixo: revisão de impacto
+pré-push (2026-09-02) identificou que este range publicaria, pela
+primeira vez, um botão "Confirmar reserva" **funcional** na UI pública —
+sem isso, `origin/main` nunca teve esse botão funcional. Criar um hold
+real sem nenhum checkout online publicado (só o aviso "fale com o
+operador") é tecnicamente seguro (sem risco financeiro, hold expira
+sozinho em 15 min, proteções de capacidade/idempotência/rate-limit já
+aceitas desde o ADR-007), mas é uma decisão de prontidão **operacional**,
+não algo que devesse ser decidido implicitamente por um `git push`.
+
+Corrigido com o mesmo padrão do item 15: `BOOKING_CHECKOUT_ENABLED`
+(`src/lib/feature-flags.ts`, hoje `false`) — `throwIfBookingCheckoutDisabled()`
+é a **primeira** checagem de `POST /api/bookings`, antes de Origin,
+Content-Type ou qualquer parsing. `BookingReview` não recebe `onConfirm`
+de `BookingSelector` enquanto a flag está off — mostra o mesmo aviso
+"fale com o operador" de antes da Fase 3 — mas, de novo, a ausência do
+botão nunca é, sozinha, a proteção: a rota se recusa por conta própria.
+
+```
+Browser -> ToursFlow (feature gate BOOKING_CHECKOUT_ENABLED, PRIMEIRA linha da rota)
+        -> ToursFlow (Origin/Content-Type/IP confiável -> HMAC/Bearer)
+        -> NauticFlow (hold, capacidade, idempotência, rate limit)
+```
+
+`BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` (item 15) são flags
+independentes, com responsabilidades diferentes — a primeira controla se
+existe reserva pública, a segunda se existe checkout Pix público. As duas
+continuam `false`. Confirmado por testes sem mock de `feature-flags`
+(`route.disabled.test.ts` de `/api/bookings`) e por `curl` real contra o
+dev server local — `422 BOOKING_CHECKOUT_NOT_ENABLED` em <1s, tempo
+incompatível com uma tentativa real de rede ao NauticFlow. Detalhe
+completo: [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md),
+[ADR-013](DECISIONS.md#adr-013--booking-rollout-gate-booking_checkout_enabled).
+
 ## Testes de segurança relevantes
 
 - `booking-validation.test.ts` — whitelist do payload, rejeição de campo
@@ -357,14 +393,18 @@ tentativa real de rede ao NauticFlow. Detalhe completo:
   nunca usa o IP em claro no output.
 - `nauticflow-bookings.test.ts` (ou equivalente) — segredo nunca aparece em
   resposta de erro; sem fallback simulado em falha de rede/timeout.
-- `route.test.ts` (Fase 2) — Content-Type inválido (415); limite real de
-  corpo nos 4 cenários (normal, `Content-Length` grande, corpo grande sem
-  `Content-Length`, `Content-Length` mentiroso); JSON malformado sem
-  vazar stack trace; Origin de host oficial aceito e host
-  parecido/atacante rejeitado (comparação por host exato, não substring);
-  `Sec-Fetch-Site: cross-site` rejeitado mesmo com Origin batendo;
-  `localhost` rejeitado em produção, aceito só quando Host também é
-  `localhost`; strings acima do limite.
+- `route.test.ts`/`route.disabled.test.ts` de `/api/bookings` — Content-Type
+  inválido (415); limite real de corpo nos 4 cenários (normal,
+  `Content-Length` grande, corpo grande sem `Content-Length`,
+  `Content-Length` mentiroso); JSON malformado sem vazar stack trace;
+  Origin de host oficial aceito e host parecido/atacante rejeitado
+  (comparação por host exato, não substring); `Sec-Fetch-Site: cross-site`
+  rejeitado mesmo com Origin batendo; `localhost` rejeitado em produção,
+  aceito só quando Host também é `localhost`; strings acima do limite; e,
+  sem nenhum mock de `feature-flags` (achado da revisão de impacto
+  pré-push, 2026-09-02, ADR-013), o comportamento real de produção —
+  `BOOKING_CHECKOUT_ENABLED` `false` faz a rota falhar fechada antes de
+  Origin/Content-Type/parsing/qualquer chamada ao NauticFlow.
 - `customer-form.test.ts` (Fase 2) — validação de nome/e-mail/telefone/CPF,
   checksum de CPF, máscaras de exibição nunca revelam o dado completo.
 - `idempotency-key.test.ts` (Fase 2/3) — ciclo de vida completo de
@@ -377,15 +417,23 @@ tentativa real de rede ao NauticFlow. Detalhe completo:
 - `hold-countdown.test.ts` (Fase 3) — cálculo nunca fica negativo,
   formatação do countdown, expiração.
 - `BookingSelector.test.tsx` (Fase 1–3) — fluxo completo: seleção, dados
-  inválidos não avançam, válidos avançam, estado preservado ao voltar;
-  desde a Fase 3, submissão real mockada cobrindo 201, 200 replay, os 6
-  códigos de erro relevantes (`IDEMPOTENCY_CONFLICT`,
+  inválidos não avançam, válidos avançam, estado preservado ao voltar; e,
+  com o valor REAL de `BOOKING_CHECKOUT_ENABLED` (`false`, achado da
+  revisão de impacto pré-push, ADR-013): revisão nunca mostra o botão
+  funcional "Confirmar reserva" (só o aviso "fale com o operador"), zero
+  `fetch` em todo o fluxo, `BookingConfirmation`/hold countdown/
+  `payment-pix`/voucher permanecem inatingíveis.
+- `BookingSelector.booking.test.tsx` (`BOOKING_CHECKOUT_ENABLED` mockada
+  `true`, arquivo separado pelo mesmo motivo do par `route.test.ts`/
+  `route.disabled.test.ts`) — submissão real mockada cobrindo 201, 200
+  replay, os 6 códigos de erro relevantes (`IDEMPOTENCY_CONFLICT`,
   `INSUFFICIENT_CAPACITY` com `router.refresh()`,
   `PRICE_TYPE_NOT_SELLABLE`, `RATE_LIMITED`,
   `BOOKING_SERVICE_UNAVAILABLE`, rede), double-submit (3 cliques = 1
   chamada), retry com mesma key, mudança de dado gera key nova, preço
   exibido sempre do backend, PII nunca em URL/`localStorage`/
-  `sessionStorage`.
+  `sessionStorage`, e (com `PAYMENTS_UI_ENABLED` no valor real `false`)
+  "Pagar com Pix" continua ausente mesmo com a reserva liberada.
 - `BookingConfirmation.test.tsx` (Fase 3) — countdown com fake timers,
   preço real do backend, estado de expirado.
 - `route.test.ts`/`route.disabled.test.ts` do pagamento (`/api/bookings/[bookingId]/payment`)
@@ -401,14 +449,14 @@ tentativa real de rede ao NauticFlow. Detalhe completo:
   nunca chama o gerador à toa) para a tentativa de pagamento.
 - `BookingSelector.payment.test.tsx` (2026-09-02, achado MEDIUM da revisão
   final fechado) — glue real do fluxo de pagamento dentro de
-  `BookingSelector` (`PAYMENTS_UI_ENABLED` mockada `true`, arquivo
-  separado de `BookingSelector.test.tsx` pelo mesmo motivo do par
+  `BookingSelector` (`BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED`
+  mockadas `true`, arquivo separado pelo mesmo motivo do par
   `route.test.ts`/`route.disabled.test.ts`): `bookingResult` existe antes
   de `payment-pix`, um único `POST .../payment` com `Idempotency-Key`
   válida, um `rerender()` do pai não gera novo `POST` nem nova key, e o
   voucher só aparece depois do polling confirmar `paid`.
 
-`npm test` roda todos (274 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (285 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
 
 **Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**

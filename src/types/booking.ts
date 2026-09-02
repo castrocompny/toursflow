@@ -26,7 +26,10 @@ export interface BookingRequestInput {
  * `BOOKING_SERVICE_UNAVAILABLE` e `CLIENT_IP_UNAVAILABLE` são específicos do
  * ToursFlow: falha de comunicação e impossibilidade de determinar um IP
  * confiável do visitante, respectivamente — nunca confundir com um erro de
- * negócio do NauticFlow.
+ * negócio do NauticFlow. `BOOKING_CHECKOUT_NOT_ENABLED` também é só do
+ * ToursFlow: `BOOKING_CHECKOUT_ENABLED` (`src/lib/feature-flags.ts`)
+ * desligada, mesmo padrão de `PAYMENT_PROVIDER_NOT_ENABLED` em
+ * `src/types/payment.ts`.
  */
 export type BookingErrorCode =
   | 'INVALID_REQUEST'
@@ -42,7 +45,8 @@ export type BookingErrorCode =
   | 'IDEMPOTENCY_CONFLICT'
   | 'INTERNAL_ERROR'
   | 'BOOKING_SERVICE_UNAVAILABLE'
-  | 'CLIENT_IP_UNAVAILABLE';
+  | 'CLIENT_IP_UNAVAILABLE'
+  | 'BOOKING_CHECKOUT_NOT_ENABLED';
 
 /** `data` da resposta de sucesso do NauticFlow — repassado ao navegador quase sem alteração. */
 export interface NauticFlowBookingResponseData {

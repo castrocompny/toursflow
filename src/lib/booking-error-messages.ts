@@ -28,6 +28,7 @@ export const BOOKING_ERROR_MESSAGES: Record<BookingErrorCode, string> = {
   INTERNAL_ERROR: 'Não foi possível completar a reserva agora. Tente novamente em instantes.', // 500
   BOOKING_SERVICE_UNAVAILABLE: 'O serviço de reservas está indisponível no momento. Tente novamente em instantes.', // 503
   CLIENT_IP_UNAVAILABLE: 'Não foi possível iniciar a reserva agora. Tente novamente.', // 503
+  BOOKING_CHECKOUT_NOT_ENABLED: 'Reserva online ainda não está disponível. Fale com o operador para confirmar sua reserva.', // 422
 };
 
 const DEFAULT_MESSAGE = BOOKING_ERROR_MESSAGES.INTERNAL_ERROR;

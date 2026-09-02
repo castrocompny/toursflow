@@ -142,6 +142,14 @@ Ligar a flag exige: `MARKETPLACE_PAYMENTS_ENABLED` ligada em produção no
 NauticFlow **e** revisão explícita autorizando a mudança de flag — as
 duas, não uma ou outra.
 
+**Camada abaixo, também travada (ADR-013):** `BOOKING_CHECKOUT_ENABLED`
+(mesmo arquivo, mesmo padrão) controla se existe reserva/hold público —
+logicamente anterior a esta flag, já que não há pagamento sem uma reserva
+primeiro. Também `false` hoje, com o mesmo tipo de trava server-side em
+`POST /api/bookings` (`throwIfBookingCheckoutDisabled()`). Detalhe:
+[RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md),
+[SECURITY.md](SECURITY.md#16-rota-de-reserva-também-falha-fechada-server-side--booking_checkout_enabled-adr-013).
+
 ## Idempotência (dois conceitos separados)
 
 - **Idempotency-Key da reserva** (`idempotencyKeyState` em

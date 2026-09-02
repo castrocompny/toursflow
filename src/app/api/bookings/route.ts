@@ -1,11 +1,13 @@
 import 'server-only';
 import { NextResponse } from 'next/server';
 import { BookingApiError } from '@/lib/booking-errors';
+import { getBookingErrorMessage } from '@/lib/booking-error-messages';
 import { validateBookingInput, validateIdempotencyKey } from '@/lib/booking-validation';
 import { getTrustedClientIp } from '@/lib/client-ip';
 import { createNauticFlowBooking } from '@/lib/nauticflow-bookings';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
 import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, readBodyWithLimit } from '@/lib/http-guards';
+import { BOOKING_CHECKOUT_ENABLED } from '@/lib/feature-flags';
 
 /**
  * POST /api/bookings — única rota do ToursFlow que inicia uma reserva.
@@ -21,18 +23,37 @@ import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, readBodyWithLim
  * chama `request.headers.get('x-toursflow-client-key')`), então não há
  * como um cliente forjar a própria identidade do rate limiter.
  *
- * IMPORTANTE (2026-08-27): esta rota existe mas ainda NÃO está conectada a
- * nenhum botão da interface pública. Ver docs/RESERVAS-SERVER-TO-SERVER.md.
+ * `BookingReview` (Fase 3) já chama esta rota de verdade quando
+ * `BOOKING_CHECKOUT_ENABLED` está ligada — hoje `false`, ver trava abaixo
+ * e docs/RESERVAS-SERVER-TO-SERVER.md.
  *
  * Hardening (2026-08-28, Fase 2): Content-Type restrito a `application/json`,
  * limite de tamanho de corpo sobre os bytes REALMENTE recebidos (não só
  * `Content-Length`, que é só um header — ver `readBodyWithLimit()`), e
  * checagem de origem reforçada com `Sec-Fetch-Site` + allowlist de hosts
  * oficiais — ver docs/SECURITY.md.
+ *
+ * **Trava server-side do rollout, não só ausência de botão na UI**
+ * (mesma lição do ADR-012 aplicada aqui): `BOOKING_CHECKOUT_ENABLED`
+ * (`src/lib/feature-flags.ts`) é verificada AQUI, antes de qualquer outra
+ * coisa — inclusive antes do Origin check. `BookingReview` não oferecer
+ * "Confirmar reserva" nunca é, sozinho, uma proteção de segurança.
  */
+
+/** Mesmo padrão de `throwIfPaymentsDisabled()` na rota de pagamento. */
+function throwIfBookingCheckoutDisabled(): void {
+  if (!BOOKING_CHECKOUT_ENABLED) {
+    throw new BookingApiError(422, 'BOOKING_CHECKOUT_NOT_ENABLED', getBookingErrorMessage('BOOKING_CHECKOUT_NOT_ENABLED'));
+  }
+}
 
 export async function POST(request: Request) {
   try {
+    // Primeiro de tudo — antes de Origin, Content-Type, ou qualquer
+    // parsing. Zero trabalho e zero exposição além do estritamente
+    // necessário quando a reserva está desligada.
+    throwIfBookingCheckoutDisabled();
+
     if (!isTrustedOrigin(request)) {
       throw new BookingApiError(403, 'INVALID_REQUEST', 'Origem não permitida.');
     }

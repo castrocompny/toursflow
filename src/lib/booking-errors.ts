@@ -15,6 +15,7 @@ const KNOWN_BOOKING_ERROR_CODES: ReadonlySet<BookingErrorCode> = new Set([
   'INTERNAL_ERROR',
   'BOOKING_SERVICE_UNAVAILABLE',
   'CLIENT_IP_UNAVAILABLE',
+  'BOOKING_CHECKOUT_NOT_ENABLED',
 ]);
 
 export function isKnownBookingErrorCode(value: unknown): value is BookingErrorCode {

@@ -6,6 +6,13 @@ vi.mock('@/lib/nauticflow-bookings', () => ({
   createNauticFlowBooking: vi.fn(),
 }));
 
+// Este arquivo testa o pipeline COMPLETO da rota (Origin, Content-Type,
+// idempotência, whitelist, preservação de erro do NauticFlow) — por isso
+// mocka a flag como `true`. O comportamento REAL de produção
+// (`BOOKING_CHECKOUT_ENABLED === false`, trava fail-closed) é testado à
+// parte, sem nenhum mock, em `route.disabled.test.ts`.
+vi.mock('@/lib/feature-flags', () => ({ BOOKING_CHECKOUT_ENABLED: true }));
+
 const { createNauticFlowBooking } = await import('@/lib/nauticflow-bookings');
 const { POST } = await import('./route');
 

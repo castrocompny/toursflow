@@ -493,6 +493,83 @@ no topo do próprio arquivo de teste para não confundir os dois papéis.
 
 ---
 
+## ADR-013 — Booking rollout gate (`BOOKING_CHECKOUT_ENABLED`)
+
+**Contexto:** revisão de impacto pré-push (`1fc0d96..c290250`) identificou
+que este range publicaria, pela primeira vez, um botão "Confirmar
+reserva" **funcional** na UI pública — em `origin/main`, `BookingReview`
+nunca teve esse botão funcional (a própria versão anterior do componente
+dizia isso explicitamente no código). Isso significa que qualquer
+visitante real do site passaria a poder criar um hold de verdade no
+NauticFlow, sem `PAYMENTS_UI_ENABLED` estar ligada — ou seja, um hold sem
+nenhum caminho de pagamento online, só o aviso "fale com o operador".
+Tecnicamente seguro (sem risco financeiro, hold expira em 15 min sozinho,
+proteção de capacidade/idempotência/rate-limit já existente e aceita
+desde o ADR-007), mas é uma decisão de **prontidão operacional** — o
+negócio precisa estar pronto para acompanhar holds manualmente — que não
+deveria ser tomada implicitamente por um `git push`.
+
+**Decisão:** criar `BOOKING_CHECKOUT_ENABLED` (`src/lib/feature-flags.ts`),
+mesmo padrão de `PAYMENTS_UI_ENABLED` (constante literal, não lê env var
+nem header) — travada em `false`. Enquanto `false`:
+
+- `BookingReview` não recebe `onConfirm` de `BookingSelector` — mostra o
+  mesmo aviso "Reserva online chega em breve... fale com o operador para
+  confirmar" de antes da Fase 3, sem nenhum botão funcional. `BookingSelector` não
+  passa o callback simplesmente porque a flag está off — mesmo padrão já
+  usado para `onPayWithPix` em `BookingConfirmation`.
+- **A rota `POST /api/bookings` falha fechada por conta própria** —
+  `throwIfBookingCheckoutDisabled()` é a primeira checagem do handler,
+  antes de Origin, Content-Type, parsing, ou qualquer chamada ao
+  NauticFlow. Resposta: `422 BOOKING_CHECKOUT_NOT_ENABLED`. Mesma lição do
+  ADR-012: a ausência do botão na UI nunca é, sozinha, uma proteção — um
+  `curl`/`fetch` direto à rota, mesmo com headers corretos, precisa ser
+  rejeitado pela própria rota.
+
+`BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` são independentes, com
+responsabilidades diferentes: a primeira controla se existe reserva/hold
+público; a segunda, se existe checkout Pix público (e logicamente só faz
+sentido depois da primeira — não há pagamento sem reserva). As duas
+continuam `false` nesta entrega.
+
+**Motivo:** permite publicar TODA a infraestrutura pronta (rotas
+reconhecidas no build, código testado, documentação atualizada) sem
+tornar nenhum fluxo transacional acessível ao público — separa "o deploy
+técnico está seguro" (responsabilidade desta revisão) de "o negócio está
+pronto para receber holds/pagamentos reais" (decisão de quem opera o
+produto, não de quem escreve o código). Mesmo espírito do ADR-010
+(construir atrás de uma trava explícita em vez de decidir por omissão).
+
+**Alternativas rejeitadas:**
+- Não publicar nada até a decisão de negócio estar tomada — rejeitado:
+  atrasaria a validação da infraestrutura em produção (build, rotas,
+  configuração) sem necessidade, já que essa validação não exige o fluxo
+  estar acessível ao público.
+- Confiar só na ausência do botão na UI (sem trava na rota) — rejeitado
+  pelo mesmo motivo do ADR-012: um `curl` direto bypassaria a "proteção".
+- Reaproveitar `PAYMENTS_UI_ENABLED` para gatear também a reserva —
+  rejeitado: são decisões de negócio genuinamente diferentes (a operação
+  pode querer receber reservas por hold-e-confirmação-manual antes de
+  oferecer pagamento online) — uma flag só cobrindo os dois casos forçaria
+  ligar as duas coisas juntas mesmo quando a intenção é só uma delas.
+
+**Consequências:** confirmado por testes novos — `route.disabled.test.ts`
+(`/api/bookings`, sem nenhum mock de `feature-flags`, mesmo padrão do
+par já existente na rota de pagamento) e uma nova suíte em
+`BookingSelector.test.tsx` provando que a revisão não oferece o botão
+funcional e nunca chama `fetch`. Os testes do pipeline completo de
+`/api/bookings` (`route.test.ts`) e o glue de `BookingSelector` que
+depende de reserva bem-sucedida (`BookingSelector.booking.test.tsx`,
+`BookingSelector.payment.test.tsx`) passaram a mockar
+`BOOKING_CHECKOUT_ENABLED: true` explicitamente — documentado no topo de
+cada arquivo para não confundir os papéis. Verificação adicional fora dos
+testes automatizados: `curl` real contra o dev server local, `POST`
+bem-formado (Origin correto, todos os headers certos) — `422
+BOOKING_CHECKOUT_NOT_ENABLED` em menos de 1 segundo, tempo incompatível
+com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
+
+---
+
 ## PLANEJADO / NÃO IMPLEMENTADO
 
 - Revalidação sob demanda (`revalidateTag`) para eliminar a janela de até
@@ -515,3 +592,7 @@ no topo do próprio arquivo de teste para não confundir os dois papéis.
 - Primeira chamada real ao endpoint de pagamento (E2E financeiro) —
   nenhuma foi feita; precisa de mecanismo de cleanup/estorno definido
   antes (mesma ressalva do booking, ADR-009).
+- Ligar `BOOKING_CHECKOUT_ENABLED` (ADR-013) — infraestrutura de
+  reserva/hold já pronta e testada, mas a flag continua `false`; ligar é
+  decisão de negócio (prontidão operacional para acompanhar holds), não
+  técnica. Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md).

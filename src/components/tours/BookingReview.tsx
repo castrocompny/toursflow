@@ -12,18 +12,23 @@ interface BookingReviewProps {
   customer: CustomerFormValues;
   onEdit: () => void;
   onBack: () => void;
-  onConfirm: () => void;
-  submitting: boolean;
-  errorMessage: string | null;
+  /** Presente só quando `BOOKING_CHECKOUT_ENABLED` está ligada (`src/lib/feature-flags.ts`) — hoje nunca é passado pela UI real. */
+  onConfirm?: () => void;
+  submitting?: boolean;
+  errorMessage?: string | null;
 }
 
 /**
- * Step de revisão — Fase 3. Exibe os dados já preenchidos, com
- * e-mail/telefone/CPF mascarados (nunca o valor completo no DOM). O botão
- * "Confirmar reserva" chama `onConfirm` (que dispara `POST /api/bookings`
- * em `BookingSelector`) — nunca "Pagar": pagamento não existe ainda.
+ * Step de revisão. Exibe os dados já preenchidos, com e-mail/telefone/CPF
+ * mascarados (nunca o valor completo no DOM). O botão "Confirmar reserva"
+ * só existe quando `onConfirm` é passado (`BOOKING_CHECKOUT_ENABLED`
+ * ligada em `BookingSelector`) — chama `onConfirm` (que dispara
+ * `POST /api/bookings`) — nunca "Pagar": pagamento não existe ainda.
  * Desabilitado enquanto `submitting` é true, para nunca permitir duplo
  * clique/múltiplas submissões simultâneas.
+ *
+ * Sem `onConfirm` (hoje, real): mesmo estado seguro de antes da Fase 3 —
+ * nenhum botão funcional, só o aviso para falar com o operador.
  */
 export function BookingReview({
   departure,
@@ -33,8 +38,8 @@ export function BookingReview({
   onEdit,
   onBack,
   onConfirm,
-  submitting,
-  errorMessage,
+  submitting = false,
+  errorMessage = null,
 }: BookingReviewProps) {
   const { date, time } = formatDepartureDateTime(departure.departsAt);
 
@@ -42,7 +47,11 @@ export function BookingReview({
     <div className="rounded-card border border-ink/10 bg-white p-6">
       <p className="eyebrow">Revisão da reserva</p>
       <h3 className="mt-2 font-display text-xl font-bold">Confira os dados</h3>
-      <p className="mt-2 text-sm text-ink-muted">Confira os dados antes de confirmar a reserva.</p>
+      <p className="mt-2 text-sm text-ink-muted">
+        {onConfirm
+          ? 'Confira os dados antes de confirmar a reserva.'
+          : 'Reserva online chega em breve. Por enquanto, confira o resumo abaixo e fale com o operador para confirmar.'}
+      </p>
 
       <dl className="mt-5 space-y-2 rounded-2xl bg-sand p-4 text-sm">
         <div className="flex justify-between gap-4">
@@ -107,14 +116,16 @@ export function BookingReview({
         </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onConfirm}
-        disabled={submitting}
-        className="btn-primary mt-3 w-full disabled:cursor-not-allowed disabled:opacity-40"
-      >
-        {submitting ? 'Confirmando...' : 'Confirmar reserva'}
-      </button>
+      {onConfirm ? (
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={submitting}
+          className="btn-primary mt-3 w-full disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {submitting ? 'Confirmando...' : 'Confirmar reserva'}
+        </button>
+      ) : null}
     </div>
   );
 }

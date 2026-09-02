@@ -14,6 +14,18 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-02 — Booking rollout gate: reserva/hold também travada atrás de feature flag (ADR-013)
+
+Revisão de impacto pré-push (`1fc0d96..c290250`, já mergeado em `main` local) identificou que aquele range publicaria, pela primeira vez, um botão "Confirmar reserva" **funcional** na UI pública — antes, `BookingReview` nunca teve esse botão funcional. Tecnicamente seguro (sem risco financeiro, hold expira em 15 min sozinho, proteções de capacidade/idempotência/rate-limit já aceitas desde o ADR-007), mas é uma decisão de prontidão operacional, não algo para ser decidido implicitamente por um `git push`.
+
+Corrigido: nova flag `BOOKING_CHECKOUT_ENABLED` (`src/lib/feature-flags.ts`, `false`), mesmo padrão de `PAYMENTS_UI_ENABLED` — independente dela (controla reserva, não pagamento). `BookingReview` só recebe `onConfirm` de `BookingSelector` quando a flag está ligada; sem ela, mostra o mesmo aviso "fale com o operador" de antes da Fase 3, sem nenhum botão funcional. **A rota `POST /api/bookings` também falha fechada por conta própria** — `throwIfBookingCheckoutDisabled()` é a primeira checagem do handler, antes de Origin/Content-Type/parsing/qualquer chamada ao NauticFlow — mesma lição do ADR-012 (ausência de botão na UI nunca é, sozinha, proteção).
+
+11 testes novos: `route.disabled.test.ts` de `/api/bookings` (7, sem mock de `feature-flags`, exercita o valor real `false`), mais 4 em `BookingSelector.test.tsx` provando que a revisão não oferece botão funcional, nunca chama `fetch`, e que `BookingConfirmation`/hold countdown/`payment-pix`/voucher continuam inatingíveis. Os testes que dependem de reserva bem-sucedida foram movidos para `BookingSelector.booking.test.tsx` (mockando a flag `true`) e `route.test.ts`/`BookingSelector.payment.test.tsx` passaram a mockar `BOOKING_CHECKOUT_ENABLED: true` explicitamente para continuar exercitando o resto do pipeline.
+
+285 testes no total. `npm run typecheck`, `lint` e `build` verdes. Verificação adicional: `curl` real contra o dev server local, `POST /api/bookings` bem-formado (Origin correto, todos os headers certos) — `422 BOOKING_CHECKOUT_NOT_ENABLED` em menos de 1 segundo, tempo incompatível com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s). Documentado em [docs/DECISIONS.md](../DECISIONS.md) (ADR-013), [docs/SECURITY.md](../SECURITY.md) (nova seção 16), [docs/PAYMENTS.md](../PAYMENTS.md), [docs/RESERVAS-SERVER-TO-SERVER.md](../RESERVAS-SERVER-TO-SERVER.md), [docs/ARCHITECTURE.md](../ARCHITECTURE.md). **Commit local em `main`, não pushado, não deployado. `BOOKING_CHECKOUT_ENABLED = false`, `PAYMENTS_UI_ENABLED = false`, R$ 0,00 movimentado.**
+
+---
+
 ## 2026-09-02 — Fechamento dos achados MEDIUM/LOW da revisão final da branch de checkout
 
 Revisão final completa de `feature/booking-checkout` (`6d37661..dfb8a5a`) encontrou zero BLOCKER/HIGH e dois achados menores — fechados nesta entrada, sem tocar em contrato, feature flags, ou qualquer coisa fora do escopo dos dois achados:
