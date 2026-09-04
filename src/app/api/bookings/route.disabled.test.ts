@@ -106,6 +106,13 @@ describe('trava server-side: BOOKING_CHECKOUT_ENABLED (valor real do código, n�
     expect(body.error.code).toBe('BOOKING_CHECKOUT_NOT_ENABLED');
   });
 
+  it('achado de auditoria corrigido: Cache-Control nunca é public (nem quando desligada) — no-store sempre', async () => {
+    const res = await POST(makeWellFormedRequest());
+    const cacheControl = res.headers.get('cache-control') ?? '';
+    expect(cacheControl).toContain('no-store');
+    expect(cacheControl).not.toContain('public');
+  });
+
   it('mesmo sem IP confiável, a trava de checkout ainda é o motivo da rejeição (roda antes do cálculo de IP/HMAC)', async () => {
     const request = new Request('https://toursflow.com.br/api/bookings', {
       method: 'POST',

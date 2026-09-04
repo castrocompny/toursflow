@@ -98,6 +98,18 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
     expect(getNauticFlowBookingStatus).not.toHaveBeenCalled();
   });
 
+  it('achado de auditoria corrigido: Cache-Control nunca é public em POST nem GET (nem quando desligado) — no-store sempre', async () => {
+    const postRes = await POST(makeWellFormedPostRequest(), { params: { bookingId: BOOKING_ID } });
+    const postCacheControl = postRes.headers.get('cache-control') ?? '';
+    expect(postCacheControl).toContain('no-store');
+    expect(postCacheControl).not.toContain('public');
+
+    const getRes = await GET(makeWellFormedGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const getCacheControl = getRes.headers.get('cache-control') ?? '';
+    expect(getCacheControl).toContain('no-store');
+    expect(getCacheControl).not.toContain('public');
+  });
+
   it('a trava é a PRIMEIRA checagem — nem uma origem inválida chega a ser avaliada antes dela (mesmo resultado, mesmo motivo)', async () => {
     const request = makeWellFormedPostRequest({ origin: 'https://site-malicioso.exemplo' });
     const res = await POST(request, { params: { bookingId: BOOKING_ID } });

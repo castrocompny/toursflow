@@ -1,3 +1,5 @@
+import { NextResponse } from 'next/server';
+
 /**
  * Guards HTTP compartilhados por toda rota de escrita/leitura protegida
  * do ToursFlow (`/api/bookings`, `/api/bookings/[bookingId]/payment`).
@@ -5,6 +7,24 @@
  * rota precisou exatamente da mesma proteção — nenhuma mudança de
  * comportamento, só compartilhamento.
  */
+
+/**
+ * `NextResponse.json()` com `Cache-Control: private, no-store` sempre
+ * explícito — nunca depender do default do Next.js/Vercel (que é
+ * `public, max-age=0, must-revalidate` para uma Route Handler que não
+ * configura cache: `public` autoriza caches compartilhados/CDN/proxy a
+ * guardar a resposta, o que nunca é aceitável para uma rota que devolve
+ * dado específico de uma reserva/pagamento (preço, `holdExpiresAt`,
+ * status, QR/copia-e-cola do Pix). `no-store` cobre tanto sucesso quanto
+ * erro — usar em toda resposta de `/api/bookings` e
+ * `/api/bookings/[bookingId]/payment`, sem exceção. Achado da auditoria
+ * de segurança (Fase 1, MEDIUM-2), corrigido na Fase 2.
+ */
+export function noStoreJson(body: unknown, init: { status: number }): NextResponse {
+  const response = NextResponse.json(body, init);
+  response.headers.set('Cache-Control', 'private, no-store, max-age=0');
+  return response;
+}
 
 /**
  * Hosts oficiais do ToursFlow, além do host da própria requisição (que já

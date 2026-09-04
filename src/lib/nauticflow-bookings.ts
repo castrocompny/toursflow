@@ -1,6 +1,7 @@
 import 'server-only';
 import type { BookingRequestInput, NauticFlowBookingResponseData } from '@/types/booking';
 import { BookingApiError, isKnownBookingErrorCode } from './booking-errors';
+import { getBookingErrorMessage } from './booking-error-messages';
 
 /**
  * Único ponto que fala com `POST /api/marketplace/bookings` do NauticFlow.
@@ -28,7 +29,7 @@ interface NauticFlowBookingSuccessEnvelope {
 }
 
 interface NauticFlowBookingErrorEnvelope {
-  error?: { code?: string; message?: string };
+  error?: { code?: string };
 }
 
 export interface NauticFlowBookingResult {
@@ -107,9 +108,12 @@ export async function createNauticFlowBooking(
   if (!response.ok) {
     const errorBody = (body ?? {}) as NauticFlowBookingErrorEnvelope;
     const code = isKnownBookingErrorCode(errorBody.error?.code) ? errorBody.error!.code! : 'INTERNAL_ERROR';
-    const message = errorBody.error?.message || 'Não foi possível concluir a reserva.';
-    // Preserva o status e o código do NauticFlow — nunca vira 500 genérico.
-    throw new BookingApiError(response.status, code, message);
+    // Preserva o status e o código do NauticFlow (nunca vira 500 genérico),
+    // mas NUNCA o `message` bruto do upstream — só o catálogo local seguro,
+    // pelo mesmo `code` já saneado por whitelist. O NauticFlow é um sistema
+    // externo: uma mensagem verbosa/de debug dele (stack, SQL, hostname
+    // interno) nunca deve alcançar o navegador.
+    throw new BookingApiError(response.status, code, getBookingErrorMessage(code));
   }
 
   const success = body as NauticFlowBookingSuccessEnvelope | null;

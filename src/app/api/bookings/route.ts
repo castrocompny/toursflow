@@ -1,12 +1,11 @@
 import 'server-only';
-import { NextResponse } from 'next/server';
 import { BookingApiError } from '@/lib/booking-errors';
 import { getBookingErrorMessage } from '@/lib/booking-error-messages';
 import { validateBookingInput, validateIdempotencyKey } from '@/lib/booking-validation';
 import { getTrustedClientIp } from '@/lib/client-ip';
 import { createNauticFlowBooking } from '@/lib/nauticflow-bookings';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
-import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, readBodyWithLimit } from '@/lib/http-guards';
+import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, noStoreJson, readBodyWithLimit } from '@/lib/http-guards';
 import { BOOKING_CHECKOUT_ENABLED } from '@/lib/feature-flags';
 
 /**
@@ -97,16 +96,16 @@ export async function POST(request: Request) {
 
     const result = await createNauticFlowBooking(input.data, idempotency.data, clientKey);
 
-    const response = NextResponse.json({ data: result.data }, { status: result.status });
+    const response = noStoreJson({ data: result.data }, { status: result.status });
     if (result.replayed) response.headers.set('Idempotency-Replayed', 'true');
     return response;
   } catch (error) {
     if (error instanceof BookingApiError) {
-      return NextResponse.json(error.toResponseBody(), { status: error.status });
+      return noStoreJson(error.toResponseBody(), { status: error.status });
     }
     // Nunca deixar um erro não mapeado vazar stack trace/detalhe interno ao navegador.
     console.error('[api/bookings] erro não mapeado', error);
-    return NextResponse.json(
+    return noStoreJson(
       { error: { code: 'INTERNAL_ERROR', message: 'Erro inesperado ao processar a reserva.' } },
       { status: 500 },
     );

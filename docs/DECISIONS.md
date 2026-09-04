@@ -596,3 +596,13 @@ com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
   reserva/hold já pronta e testada, mas a flag continua `false`; ligar é
   decisão de negócio (prontidão operacional para acompanhar holds), não
   técnica. Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md).
+- **SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE** (pendência formal
+  aberta em 2026-09-04, LOW-2 da auditoria de segurança — ver
+  [AUDITORIA-SEGURANCA-FASE1.md](AUDITORIA-SEGURANCA-FASE1.md)): migrar
+  de Next.js 14.2.5 (fora do ciclo de suporte ativo) para uma versão
+  suportada (15 Maintenance LTS ou 16 Active LTS). Não é uma correção
+  pontual — exige análise dedicada de breaking changes entre majors,
+  suíte de testes completa rodada contra a versão nova, e um deploy
+  separado desta correção. Deliberadamente não feito nas Fases 1/2 desta
+  auditoria (`npm audit fix`/`npm update next`/`npm install next@latest`
+  não foram usados de propósito).

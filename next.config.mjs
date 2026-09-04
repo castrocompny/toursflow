@@ -15,6 +15,14 @@ const nextConfig = {
     ],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
+    // Recomendação oficial do Next.js ao ligar `dangerouslyAllowSVG`:
+    // "particularly important... to prevent scripts embedded in the image
+    // from executing" — `contentDispositionType: attachment` já cobre o
+    // vetor principal (força download em vez de renderizar inline ao
+    // navegar direto pra URL da imagem), esta CSP é a camada adicional de
+    // defesa em profundidade recomendada junto. Achado de auditoria de
+    // segurança (Fase 1, MEDIUM-3), corrigido na Fase 2.
+    contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",
   },
   // Headers de segurança de baixo risco (Fase 2, 2026-08-28) — nenhum
   // depende do fluxo de reserva. CSP fica deliberadamente de fora: exigiria

@@ -716,3 +716,52 @@ describe('POST /api/bookings', () => {
     });
   });
 });
+
+describe('Cache-Control (achado de auditoria corrigido, MEDIUM-2): nunca public/s-maxage, sempre no-store', () => {
+  beforeEach(() => {
+    vi.mocked(createNauticFlowBooking).mockReset();
+    vi.stubEnv('TOURSFLOW_API_SECRET', TEST_SECRET);
+    vi.stubEnv('VERCEL', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function assertNoStore(res: Response) {
+    const cacheControl = res.headers.get('cache-control') ?? '';
+    expect(cacheControl).toContain('no-store');
+    expect(cacheControl).not.toContain('public');
+    expect(cacheControl).not.toContain('s-maxage');
+  }
+
+  const successData = {
+    bookingId: 'b1',
+    status: 'pendente',
+    holdExpiresAt: '2026-09-01T12:15:00Z',
+    tour: { slug: 't', name: 'T' },
+    departure: { id: VALID_UUID, departsAt: '2026-09-01T12:00:00Z' },
+    quantity: 2,
+    priceType: 'por_pessoa',
+    priceCents: 15000,
+    totalCents: 30000,
+    currency: 'BRL',
+  };
+
+  it('sucesso (201, criação de reserva)', async () => {
+    vi.mocked(createNauticFlowBooking).mockResolvedValue({ status: 201, replayed: false, data: successData });
+    const res = await POST(makeRequest(validPayload, { 'idempotency-key': IDEMPOTENCY_KEY }));
+    assertNoStore(res);
+  });
+
+  it('erro de validação (payload inválido, 400)', async () => {
+    const res = await POST(makeRequest({ quantity: 2 }, { 'idempotency-key': IDEMPOTENCY_KEY }));
+    assertNoStore(res);
+  });
+
+  it('erro do upstream mockado (INSUFFICIENT_CAPACITY, 409)', async () => {
+    vi.mocked(createNauticFlowBooking).mockRejectedValue(new BookingApiError(409, 'INSUFFICIENT_CAPACITY', 'Sem vagas.'));
+    const res = await POST(makeRequest(validPayload, { 'idempotency-key': IDEMPOTENCY_KEY }));
+    assertNoStore(res);
+  });
+});

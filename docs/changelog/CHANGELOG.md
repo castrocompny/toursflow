@@ -14,6 +14,22 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-04 — Security Hardening Fase 2: 3 achados MEDIUM + 1 LOW da auditoria corrigidos (local only, sem deploy)
+
+Auditoria de segurança externa (Fase 1, `docs/AUDITORIA-SEGURANCA-FASE1.md`) encontrou zero CRITICAL/HIGH, 3 MEDIUM e 2 LOW contra o commit já em produção (`3ea9f30`). Nesta entrada, corrigidos MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 — LOW-2 (Next.js 14.2.5 unsupported) deixado aberto de propósito, virou pendência formal "SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE" em `docs/DECISIONS.md`.
+
+**MEDIUM-1 (upstream error leakage):** `src/lib/nauticflow-bookings.ts`/`src/lib/nauticflow-payments.ts` não leem mais `error.message` do NauticFlow (nem o tipo do envelope declara esse campo) — a mensagem devolvida ao navegador vem sempre do catálogo local (`getBookingErrorMessage`/`getPaymentErrorMessage`), pelo `code` já saneado. 4 testes novos com mensagem fictícia contendo "PASSWORD" provando que o texto arbitrário nunca chega ao cliente, para código conhecido e desconhecido.
+
+**MEDIUM-2 (Cache-Control público):** novo helper `noStoreJson()` (`src/lib/http-guards.ts`) aplicado em toda resposta (sucesso e erro) de `POST /api/bookings` e `POST`/`GET /api/bookings/[bookingId]/payment` — `Cache-Control: private, no-store, max-age=0` sempre explícito, nunca o default do Next.js. 9 testes novos cobrindo booking/payment OFF, sucesso, erro de validação e erro de upstream.
+
+**MEDIUM-3 (SVG sem CSP de imagem):** `next.config.mjs` ganhou `images.contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;"` — recomendação oficial do Next.js para uso de `dangerouslyAllowSVG`.
+
+**LOW-1 (.gitignore incompleto):** `.env*.local` trocado por `.env*` + `!.env.example` — cobre `.env`/`.env.production`/`.env.development` etc., verificado com `git check-ignore`.
+
+303 testes no total (285 + 18 novos). `npm run typecheck`, `lint` e `build` verdes. `npm audit` continua reportando as mesmas advisories de antes (não endereçadas nesta rodada, Next.js não foi tocado). Reconfirmado sem regressão: `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`, os dois gates continuam fail-closed (verificado contra dev server local), `TOURSFLOW_API_SECRET`/`X-ToursFlow-Client-Key` continuam server-only, `amount` nunca vem do browser. **Nenhum push, nenhum deploy, nenhum dado real criado, R$ 0,00 movimentado.**
+
+---
+
 ## 2026-09-02 — Deploy automático confirmado: checkout/pagamento publicados com os dois gates verificados em produção
 
 `main` (`217c5bc`) pushado para `origin/main` — Vercel disparou o deploy automático via integração GitHub. Publica toda a infraestrutura das entradas anteriores desta data (reserva/hold real, wiring completo do pagamento Pix, e os dois rollout gates) — **nenhum fluxo transacional foi tornado acessível ao público nesta publicação**: `BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` continuam `false`.

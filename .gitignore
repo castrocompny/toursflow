@@ -1,7 +1,12 @@
 node_modules
 .next
 out
-.env*.local
+# Achado de auditoria de segurança (Fase 1, LOW-1): `.env*.local` sozinho
+# não cobria um `.env`/`.env.production`/`.env.development` sem o sufixo
+# `.local` — corrigido para cobrir qualquer variante de `.env*`, com
+# exceção explícita de `.env.example` (nunca tem segredo real).
+.env*
+!.env.example
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts

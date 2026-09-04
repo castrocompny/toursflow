@@ -1,6 +1,7 @@
 import 'server-only';
 import type { NauticFlowBookingPaymentView } from '@/types/payment';
 import { PaymentApiError, isKnownPaymentErrorCode } from './payment-errors';
+import { getPaymentErrorMessage } from './payment-error-messages';
 
 /**
  * Único ponto que fala com o payment endpoint do NauticFlow. Lê
@@ -19,7 +20,7 @@ interface NauticFlowPaymentSuccessEnvelope {
 }
 
 interface NauticFlowPaymentErrorEnvelope {
-  error?: { code?: string; message?: string };
+  error?: { code?: string };
 }
 
 async function callNauticFlow(
@@ -70,9 +71,12 @@ async function callNauticFlow(
   if (!response.ok) {
     const errorBody = (responseBody ?? {}) as NauticFlowPaymentErrorEnvelope;
     const code = isKnownPaymentErrorCode(errorBody.error?.code) ? errorBody.error!.code! : 'INTERNAL_ERROR';
-    const message = errorBody.error?.message || 'Não foi possível processar o pagamento.';
-    // Preserva o status e o código do NauticFlow — nunca vira 500 genérico.
-    throw new PaymentApiError(response.status, code, message);
+    // Preserva o status e o código do NauticFlow (nunca vira 500 genérico),
+    // mas NUNCA o `message` bruto do upstream — só o catálogo local seguro,
+    // pelo mesmo `code` já saneado por whitelist. O NauticFlow é um sistema
+    // externo: uma mensagem verbosa/de debug dele (stack, SQL, hostname
+    // interno) nunca deve alcançar o navegador.
+    throw new PaymentApiError(response.status, code, getPaymentErrorMessage(code));
   }
 
   const success = responseBody as NauticFlowPaymentSuccessEnvelope | null;

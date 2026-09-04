@@ -1,5 +1,4 @@
 import 'server-only';
-import { NextResponse } from 'next/server';
 import { PaymentApiError } from '@/lib/payment-errors';
 import { getPaymentErrorMessage } from '@/lib/payment-error-messages';
 import {
@@ -10,7 +9,7 @@ import {
 import { getTrustedClientIp } from '@/lib/client-ip';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
 import { createNauticFlowPayment, getNauticFlowBookingStatus } from '@/lib/nauticflow-payments';
-import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, readBodyWithLimit } from '@/lib/http-guards';
+import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, noStoreJson, readBodyWithLimit } from '@/lib/http-guards';
 import { PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
 
 /**
@@ -47,11 +46,11 @@ function throwIfPaymentsDisabled(): void {
 
 function toErrorResponse(error: unknown, logPrefix: string) {
   if (error instanceof PaymentApiError) {
-    return NextResponse.json(error.toResponseBody(), { status: error.status });
+    return noStoreJson(error.toResponseBody(), { status: error.status });
   }
   // Nunca deixar um erro não mapeado vazar stack trace/detalhe interno ao navegador.
   console.error(logPrefix, error);
-  return NextResponse.json(
+  return noStoreJson(
     { error: { code: 'INTERNAL_ERROR', message: 'Erro inesperado ao processar o pagamento.' } },
     { status: 500 },
   );
@@ -109,7 +108,7 @@ export async function POST(request: Request, { params }: RouteParams) {
     if (!method.ok) throw method.error;
 
     const result = await createNauticFlowPayment(bookingId.data, idempotency.data, clientKey);
-    return NextResponse.json({ data: result }, { status: 201 });
+    return noStoreJson({ data: result }, { status: 201 });
   } catch (error) {
     return toErrorResponse(error, '[api/bookings/[bookingId]/payment POST] erro não mapeado');
   }
@@ -141,7 +140,7 @@ export async function GET(request: Request, { params }: RouteParams) {
     const clientKey = createToursFlowClientKey(clientIp);
 
     const result = await getNauticFlowBookingStatus(bookingId.data, clientKey);
-    return NextResponse.json({ data: result }, { status: 200 });
+    return noStoreJson({ data: result }, { status: 200 });
   } catch (error) {
     return toErrorResponse(error, '[api/bookings/[bookingId]/payment GET] erro não mapeado');
   }

@@ -383,6 +383,19 @@ incompatível com uma tentativa real de rede ao NauticFlow. Detalhe
 completo: [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md),
 [ADR-013](DECISIONS.md#adr-013--booking-rollout-gate-booking_checkout_enabled).
 
+## 17. Endurecimentos da auditoria de segurança Fase 1/2 (2026-09-04)
+
+Auditoria de segurança externa (Fase 1, `docs/AUDITORIA-SEGURANCA-FASE1.md`) encontrou zero CRITICAL/HIGH e 3 MEDIUM + 2 LOW — os 3 MEDIUM e 1 LOW foram corrigidos na Fase 2, mesmo dia:
+
+- **Upstream error leakage (MEDIUM-1):** `nauticflow-bookings.ts`/`nauticflow-payments.ts` **nunca mais leem** `error.message` do NauticFlow — o tipo do envelope de erro nem declara mais esse campo. A mensagem enviada ao navegador vem sempre de `getBookingErrorMessage(code)`/`getPaymentErrorMessage(code)` (catálogo local), pelo `code` já saneado por whitelist. Antes desta correção, uma mensagem verbosa/de debug do NauticFlow (stack, SQL, hostname interno) chegaria verbatim ao navegador, mesmo com `code` corretamente saneado — provado com teste usando mensagem fictícia contendo "PASSWORD".
+- **Cache-Control público em rotas transacionais (MEDIUM-2):** `POST /api/bookings` e `POST`/`GET /api/bookings/[bookingId]/payment` agora sempre devolvem `Cache-Control: private, no-store, max-age=0` (novo helper `noStoreJson()` em `http-guards.ts`), nunca o default do Next.js (`public, max-age=0, must-revalidate`). Relevante porque essas rotas devolverão dado por-reserva (preço, `holdExpiresAt`, QR/copia-e-cola do Pix) assim que `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` forem ligadas — `public` autorizaria caches compartilhados a guardar esse dado.
+- **SVG sem CSP de imagem (MEDIUM-3):** `next.config.mjs` ganhou `images.contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;"` — recomendação oficial do Next.js ao usar `dangerouslyAllowSVG: true`, camada adicional além do já existente `contentDispositionType: attachment`.
+- **`.gitignore` incompleto (LOW-1):** passou de `.env*.local` para `.env*` com `!.env.example` — cobre `.env`/`.env.production`/`.env.development` etc., não só variantes `.local`.
+
+**Deixado aberto de propósito:** Next.js 14.2.5 fora do ciclo de suporte ativo (LOW-2) — upgrade de major version é uma Fase 3 própria (framework upgrade), fora do escopo de correções pontuais. `npm audit` continua reportando as mesmas advisories de antes desta rodada — nenhuma delas foi endereçada aqui, deliberadamente.
+
+18 testes novos: 4 em `nauticflow-bookings.test.ts`/`nauticflow-payments.test.ts` (mensagem arbitrária do upstream não vaza, código conhecido e desconhecido), 9 de `Cache-Control` (booking/payment, OFF/sucesso/erro de validação/erro de upstream, todos com `no-store` e sem `public`/`s-maxage`).
+
 ## Testes de segurança relevantes
 
 - `booking-validation.test.ts` — whitelist do payload, rejeição de campo
@@ -456,7 +469,7 @@ completo: [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md),
   válida, um `rerender()` do pai não gera novo `POST` nem nova key, e o
   voucher só aparece depois do polling confirmar `paid`.
 
-`npm test` roda todos (285 testes ao todo no projeto, cobrindo também
+`npm test` roda todos (303 testes ao todo no projeto, cobrindo também
 catálogo/UI, não só segurança).
 
 **Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**

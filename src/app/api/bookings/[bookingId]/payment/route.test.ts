@@ -298,3 +298,48 @@ describe('GET /api/bookings/[bookingId]/payment (status/polling)', () => {
     expect(getNauticFlowBookingStatus).not.toHaveBeenCalled();
   });
 });
+
+describe('Cache-Control (achado de auditoria corrigido, MEDIUM-2): nunca public/s-maxage, sempre no-store', () => {
+  beforeEach(() => {
+    vi.mocked(createNauticFlowPayment).mockReset();
+    vi.mocked(getNauticFlowBookingStatus).mockReset();
+    vi.stubEnv('TOURSFLOW_API_SECRET', TEST_SECRET);
+    vi.stubEnv('VERCEL', '');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  function assertNoStore(res: Response) {
+    const cacheControl = res.headers.get('cache-control') ?? '';
+    expect(cacheControl).toContain('no-store');
+    expect(cacheControl).not.toContain('public');
+    expect(cacheControl).not.toContain('s-maxage');
+  }
+
+  it('sucesso (201, criação de Pix)', async () => {
+    vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
+    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    assertNoStore(res);
+  });
+
+  it('erro de validação (paymentMethod inválido, 400)', async () => {
+    const res = await POST(makePostRequest({ paymentMethod: 'boleto' }), { params: { bookingId: BOOKING_ID } });
+    assertNoStore(res);
+  });
+
+  it('erro do upstream mockado (PAYMENT_SERVICE_UNAVAILABLE, 503)', async () => {
+    vi.mocked(createNauticFlowPayment).mockRejectedValue(
+      new PaymentApiError(503, 'PAYMENT_SERVICE_UNAVAILABLE', 'Não foi possível se comunicar.'),
+    );
+    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    assertNoStore(res);
+  });
+
+  it('GET com sucesso (status paid)', async () => {
+    vi.mocked(getNauticFlowBookingStatus).mockResolvedValue({ ...successView, payment: { status: 'paid', method: 'pix' } });
+    const res = await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    assertNoStore(res);
+  });
+});

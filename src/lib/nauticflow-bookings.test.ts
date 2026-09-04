@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BookingRequestInput } from '@/types/booking';
 import { BookingApiError } from './booking-errors';
+import { getBookingErrorMessage } from './booking-error-messages';
 import { createNauticFlowBooking } from './nauticflow-bookings';
 
 const input: BookingRequestInput = {
@@ -222,5 +223,46 @@ describe('createNauticFlowBooking', () => {
       status: 500,
       code: 'INTERNAL_ERROR',
     });
+  });
+
+  it('achado de auditoria corrigido: mensagem arbitrária do upstream (code conhecido) NUNCA chega ao navegador — só a mensagem local curada', async () => {
+    const upstreamSecretLookingMessage = 'INTERNAL DATABASE PASSWORD abc123';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ error: { code: 'INSUFFICIENT_CAPACITY', message: upstreamSecretLookingMessage } }, { status: 409 }),
+      ),
+    );
+    await expect(createNauticFlowBooking(input, IDEMPOTENCY_KEY, CLIENT_KEY)).rejects.toMatchObject({
+      status: 409,
+      code: 'INSUFFICIENT_CAPACITY',
+      message: getBookingErrorMessage('INSUFFICIENT_CAPACITY'),
+    });
+    try {
+      await createNauticFlowBooking(input, IDEMPOTENCY_KEY, CLIENT_KEY);
+    } catch (error) {
+      expect((error as BookingApiError).message).not.toContain(upstreamSecretLookingMessage);
+      expect((error as BookingApiError).message).not.toContain('PASSWORD');
+    }
+  });
+
+  it('achado de auditoria corrigido: código desconhecido + mensagem arbitrária do upstream vira INTERNAL_ERROR com mensagem genérica segura, nunca o texto arbitrário', async () => {
+    const upstreamSecretLookingMessage = 'INTERNAL DATABASE PASSWORD abc123';
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        jsonResponse({ error: { code: 'ALGO_NUNCA_VISTO', message: upstreamSecretLookingMessage } }, { status: 500 }),
+      ),
+    );
+    await expect(createNauticFlowBooking(input, IDEMPOTENCY_KEY, CLIENT_KEY)).rejects.toMatchObject({
+      status: 500,
+      code: 'INTERNAL_ERROR',
+      message: getBookingErrorMessage('INTERNAL_ERROR'),
+    });
+    try {
+      await createNauticFlowBooking(input, IDEMPOTENCY_KEY, CLIENT_KEY);
+    } catch (error) {
+      expect((error as BookingApiError).message).not.toContain(upstreamSecretLookingMessage);
+    }
   });
 });
