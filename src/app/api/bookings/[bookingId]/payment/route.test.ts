@@ -75,7 +75,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   it('cria Pix corretamente: chama o client server-only com bookingId/idempotencyKey/clientKey, devolve 201', async () => {
     vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
 
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
     expect(res.status).toBe(201);
     const body = await res.json();
@@ -94,7 +94,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
 
     const forjada = 'f'.repeat(64);
     await POST(makePostRequest({ paymentMethod: 'pix' }, { 'x-toursflow-client-key': forjada }), {
-      params: { bookingId: BOOKING_ID },
+      params: Promise.resolve({ bookingId: BOOKING_ID }),
     });
 
     const [, , sentClientKey] = vi.mocked(createNauticFlowPayment).mock.calls[0];
@@ -105,14 +105,14 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   it('nunca aceita amount no corpo — mesmo se o cliente mandar, não é repassado', async () => {
     vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
 
-    await POST(makePostRequest({ paymentMethod: 'pix', amount: 999999 }), { params: { bookingId: BOOKING_ID } });
+    await POST(makePostRequest({ paymentMethod: 'pix', amount: 999999 }), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
     expect(createNauticFlowPayment).toHaveBeenCalledTimes(1);
     // A assinatura de createNauticFlowPayment nem aceita amount — a prova estrutural é o client server-only não tomar esse parâmetro.
   });
 
   it('rejeita paymentMethod diferente de "pix" com PAYMENT_METHOD_NOT_SUPPORTED, sem chamar o NauticFlow', async () => {
-    const res = await POST(makePostRequest({ paymentMethod: 'boleto' }), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest({ paymentMethod: 'boleto' }), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('PAYMENT_METHOD_NOT_SUPPORTED');
@@ -125,7 +125,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
       headers: { 'content-type': 'application/json', host: 'toursflow.com.br', 'x-forwarded-for': TEST_IP },
       body: JSON.stringify({ paymentMethod: 'pix' }),
     });
-    const res = await POST(request, { params: { bookingId: BOOKING_ID } });
+    const res = await POST(request, { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('INVALID_IDEMPOTENCY_KEY');
@@ -133,7 +133,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   });
 
   it('rejeita bookingId com formato inválido (não-UUID) com BOOKING_NOT_FOUND', async () => {
-    const res = await POST(makePostRequest(), { params: { bookingId: 'não-é-um-uuid' } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: 'não-é-um-uuid' }) });
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error.code).toBe('BOOKING_NOT_FOUND');
@@ -141,7 +141,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   });
 
   it('rejeita Content-Type diferente de application/json com 415', async () => {
-    const res = await POST(makePostRequest({}, { 'content-type': 'text/plain' }), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest({}, { 'content-type': 'text/plain' }), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(415);
     expect(createNauticFlowPayment).not.toHaveBeenCalled();
   });
@@ -158,7 +158,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
       },
       body: JSON.stringify({ paymentMethod: 'pix' }),
     });
-    const res = await POST(request, { params: { bookingId: BOOKING_ID } });
+    const res = await POST(request, { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(403);
     expect(createNauticFlowPayment).not.toHaveBeenCalled();
   });
@@ -180,7 +180,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   it.each(nauticFlowErrorCases)('preserva erro do NauticFlow: $status $code', async ({ status, code }) => {
     vi.mocked(createNauticFlowPayment).mockRejectedValue(new PaymentApiError(status, code as never, 'mensagem'));
 
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(status);
     const body = await res.json();
     expect(body.error.code).toBe(code);
@@ -191,7 +191,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
       new PaymentApiError(422, 'PAYMENT_PROVIDER_NOT_ENABLED', 'Pagamento não habilitado.'),
     );
 
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.code).toBe('PAYMENT_PROVIDER_NOT_ENABLED');
@@ -202,7 +202,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
     vi.mocked(createNauticFlowPayment).mockRejectedValue(
       new PaymentApiError(503, 'PAYMENT_SERVICE_UNAVAILABLE', 'Não foi possível se comunicar.'),
     );
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('PAYMENT_SERVICE_UNAVAILABLE');
@@ -210,7 +210,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
 
   it('erro inesperado (não PaymentApiError) vira 500 genérico, sem stack trace', async () => {
     vi.mocked(createNauticFlowPayment).mockRejectedValue(new Error('algo interno explodiu'));
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(500);
     const body = await res.json();
     expect(body.error.code).toBe('INTERNAL_ERROR');
@@ -223,7 +223,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
       headers: { 'content-type': 'application/json', host: 'toursflow.com.br', 'idempotency-key': IDEMPOTENCY_KEY },
       body: JSON.stringify({ paymentMethod: 'pix' }),
     });
-    const res = await POST(request, { params: { bookingId: BOOKING_ID } });
+    const res = await POST(request, { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(503);
     const body = await res.json();
     expect(body.error.code).toBe('CLIENT_IP_UNAVAILABLE');
@@ -257,7 +257,7 @@ describe('GET /api/bookings/[bookingId]/payment (status/polling)', () => {
       payment: { status: status as never, method: 'pix' },
     });
 
-    const res = await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.payment.status).toBe(status);
@@ -265,14 +265,14 @@ describe('GET /api/bookings/[bookingId]/payment (status/polling)', () => {
 
   it('nunca cria pagamento — só consulta (não chama createNauticFlowPayment)', async () => {
     vi.mocked(getNauticFlowBookingStatus).mockResolvedValue(successView);
-    await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(createNauticFlowPayment).not.toHaveBeenCalled();
     expect(getNauticFlowBookingStatus).toHaveBeenCalledTimes(1);
   });
 
   it('calcula client key server-side, mesmo padrão do POST', async () => {
     vi.mocked(getNauticFlowBookingStatus).mockResolvedValue(successView);
-    await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     const [sentBookingId, sentClientKey] = vi.mocked(getNauticFlowBookingStatus).mock.calls[0];
     expect(sentBookingId).toBe(BOOKING_ID);
     expect(sentClientKey).toBe(createToursFlowClientKey(TEST_IP));
@@ -280,7 +280,7 @@ describe('GET /api/bookings/[bookingId]/payment (status/polling)', () => {
 
   it('401 UNAUTHORIZED preservado do NauticFlow', async () => {
     vi.mocked(getNauticFlowBookingStatus).mockRejectedValue(new PaymentApiError(401, 'UNAUTHORIZED', 'Não autorizado.'));
-    const res = await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(401);
     const body = await res.json();
     expect(body.error.code).toBe('UNAUTHORIZED');
@@ -288,12 +288,12 @@ describe('GET /api/bookings/[bookingId]/payment (status/polling)', () => {
 
   it('RATE_LIMITED preservado do NauticFlow', async () => {
     vi.mocked(getNauticFlowBookingStatus).mockRejectedValue(new PaymentApiError(429, 'RATE_LIMITED', 'Muitas tentativas.'));
-    const res = await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(429);
   });
 
   it('bookingId inválido -> 400 BOOKING_NOT_FOUND, sem chamar o NauticFlow', async () => {
-    const res = await GET(makeGetRequest(), { params: { bookingId: 'não-é-um-uuid' } });
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: 'não-é-um-uuid' }) });
     expect(res.status).toBe(400);
     expect(getNauticFlowBookingStatus).not.toHaveBeenCalled();
   });
@@ -320,12 +320,12 @@ describe('Cache-Control (achado de auditoria corrigido, MEDIUM-2): nunca public/
 
   it('sucesso (201, criação de Pix)', async () => {
     vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     assertNoStore(res);
   });
 
   it('erro de validação (paymentMethod inválido, 400)', async () => {
-    const res = await POST(makePostRequest({ paymentMethod: 'boleto' }), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest({ paymentMethod: 'boleto' }), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     assertNoStore(res);
   });
 
@@ -333,13 +333,13 @@ describe('Cache-Control (achado de auditoria corrigido, MEDIUM-2): nunca public/
     vi.mocked(createNauticFlowPayment).mockRejectedValue(
       new PaymentApiError(503, 'PAYMENT_SERVICE_UNAVAILABLE', 'Não foi possível se comunicar.'),
     );
-    const res = await POST(makePostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     assertNoStore(res);
   });
 
   it('GET com sucesso (status paid)', async () => {
     vi.mocked(getNauticFlowBookingStatus).mockResolvedValue({ ...successView, payment: { status: 'paid', method: 'pix' } });
-    const res = await GET(makeGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await GET(makeGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     assertNoStore(res);
   });
 });

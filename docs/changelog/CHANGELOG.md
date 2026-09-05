@@ -14,6 +14,26 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-04 — Security Hardening Fase 3: upgrade Next.js 14.2.5 → 15.5.24 + React 19 (branch `security/next15-upgrade`, local only, sem deploy)
+
+Fecha o último achado (LOW-2) da auditoria de segurança (`docs/AUDITORIA-SEGURANCA-FASE1.md`): Next.js estava em versão fora do ciclo de suporte ativo. Upgrade controlado, target explícito Next 15.5.24 (Maintenance LTS) — **não** Next 16 (Active LTS, avaliação separada, "Fase 4"). Motivo: reduzir o risco de um salto direto 14→16, e 15.5.24 já inclui os fixes de segurança atuais da série 15.
+
+**Versões:** `next` 14.2.5 → 15.5.24 (pin exato mantido), `eslint-config-next` acompanhou para 15.5.24, `react`/`react-dom` 18.3.1 → 19.2.8, `@types/react`/`@types/react-dom` 18.x → 19.2.18/19.2.7. Todas as instalações resolveram sem `--force`/`--legacy-peer-deps` — nenhum conflito real de peer dependency.
+
+**Única breaking change real, encontrada pelo próprio `next build` (erro de tipo, não adivinhada):** `params`/`searchParams` de página e o segundo argumento de Route Handler passaram a ser `Promise` no Next 15. Corrigido em 5 arquivos: `src/app/destinos/[slug]/page.tsx`, `src/app/passeios/page.tsx`, `src/app/passeios/[destino]/page.tsx`, `src/app/passeios/[destino]/[slug]/page.tsx`, `src/app/api/bookings/[bookingId]/payment/route.ts` (+ os dois arquivos de teste dessa rota, ajustando os fixtures para `Promise.resolve({...})`) — cada `params`/`searchParams` agora é `await`ado explicitamente antes do primeiro uso, nunca lido de forma síncrona.
+
+**Auditado e confirmado ausente no projeto** (nenhuma mudança necessária): `middleware.ts`, Server Actions (`'use server'`), `cookies()`/`headers()`/`draftMode()`, servidor customizado, `rewrites()`/i18n, `forwardRef`, `useFormState`/`useActionState`, `ReactDOM.render`, `propTypes`/`defaultProps`. Todo `fetch()` do data layer (`src/data/sources/nauticflow-source.ts`) já declarava `cache: 'no-store'` ou `next: { revalidate }` explicitamente em cada chamada — a mudança do Next 15 no default de cache do `fetch()` não teve nenhum efeito, porque o projeto nunca dependeu do default implícito. `next/image` (`dangerouslyAllowSVG`/`contentDispositionType`/`contentSecurityPolicy`/`remotePatterns`, ver Fase 2) continua válido sem alteração.
+
+**`next lint` migrado para `eslint .`:** `next lint` está deprecado e será removido no Next 16 (aviso explícito ao rodar antes da migração). `package.json`: `"lint": "eslint ."` — mesma config (`next/core-web-vitals`), zero regra desligada para fazer passar.
+
+**Regressão de segurança reconfirmada sem alteração** (dev server local, nunca produção): `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`; os dois gates continuam fail-closed (`422` antes de qualquer upstream); `Cache-Control: private, no-store, max-age=0` continua em toda resposta de booking/payment (MEDIUM-2 intacto); `TOURSFLOW_API_SECRET`/`X-ToursFlow-Client-Key` continuam server-only; `amount` nunca vem do browser. Verificação de UI via Playwright (local): página de passeio real abre e hidrata sem erro de console, fluxo chega até a revisão sem nenhum botão "Confirmar reserva" e sem nenhuma requisição a `/api/bookings`.
+
+**`npm audit` antes → depois:** as 33 advisories específicas do Next 14.2.5 (documentadas uma a uma na Fase 1) desapareceram todas. Resta só um `postcss` transitivo interno do Next (build-time, processa CSS autoral, não explorável remotamente nesta arquitetura) — só desaparece de vez com um futuro upgrade para Next 16, registrado como pendência formal separada ("Fase 4", não iniciada, ver `docs/DECISIONS.md`).
+
+303 testes continuam passando (nenhum teste alterado além dos fixtures de `params` citados acima), `npx tsc --noEmit`/`npm run lint`/`npx next build` verdes. **Nenhum push, nenhum merge, nenhum deploy, nenhum dado real criado, R$ 0,00 movimentado.**
+
+---
+
 ## 2026-09-04 — Security Hardening Fase 2: 3 achados MEDIUM + 1 LOW da auditoria corrigidos (local only, sem deploy)
 
 Auditoria de segurança externa (Fase 1, `docs/AUDITORIA-SEGURANCA-FASE1.md`) encontrou zero CRITICAL/HIGH, 3 MEDIUM e 2 LOW contra o commit já em produção (`3ea9f30`). Nesta entrada, corrigidos MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 — LOW-2 (Next.js 14.2.5 unsupported) deixado aberto de propósito, virou pendência formal "SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE" em `docs/DECISIONS.md`.

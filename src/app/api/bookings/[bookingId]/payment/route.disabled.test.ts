@@ -72,7 +72,7 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
   });
 
   it('POST bem-formado (headers e body corretos) falha fechado, sem chamar o NauticFlow', async () => {
-    const res = await POST(makeWellFormedPostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makeWellFormedPostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -81,7 +81,7 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
   });
 
   it('POST não vaza detalhe técnico nem menciona a flag/variável de ambiente na mensagem', async () => {
-    const res = await POST(makeWellFormedPostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makeWellFormedPostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     const body = await res.json();
     const message = body.error.message.toLowerCase();
     expect(message).not.toContain('payments_ui_enabled');
@@ -90,7 +90,7 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
   });
 
   it('GET bem-formado também falha fechado, sem chamar o NauticFlow (decisão documentada: GET não tem uso legítimo com a flag off)', async () => {
-    const res = await GET(makeWellFormedGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await GET(makeWellFormedGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
     expect(res.status).toBe(422);
     const body = await res.json();
@@ -99,12 +99,12 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
   });
 
   it('achado de auditoria corrigido: Cache-Control nunca é public em POST nem GET (nem quando desligado) — no-store sempre', async () => {
-    const postRes = await POST(makeWellFormedPostRequest(), { params: { bookingId: BOOKING_ID } });
+    const postRes = await POST(makeWellFormedPostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     const postCacheControl = postRes.headers.get('cache-control') ?? '';
     expect(postCacheControl).toContain('no-store');
     expect(postCacheControl).not.toContain('public');
 
-    const getRes = await GET(makeWellFormedGetRequest(), { params: { bookingId: BOOKING_ID } });
+    const getRes = await GET(makeWellFormedGetRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     const getCacheControl = getRes.headers.get('cache-control') ?? '';
     expect(getCacheControl).toContain('no-store');
     expect(getCacheControl).not.toContain('public');
@@ -112,7 +112,7 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
 
   it('a trava é a PRIMEIRA checagem — nem uma origem inválida chega a ser avaliada antes dela (mesmo resultado, mesmo motivo)', async () => {
     const request = makeWellFormedPostRequest({ origin: 'https://site-malicioso.exemplo' });
-    const res = await POST(request, { params: { bookingId: BOOKING_ID } });
+    const res = await POST(request, { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
     // Se a checagem de Origin rodasse primeiro, o erro seria 403
     // INVALID_REQUEST. Continua sendo a trava de pagamento — prova que
@@ -131,7 +131,7 @@ describe('trava server-side: PAYMENTS_UI_ENABLED (valor real do código, não mo
     vi.unstubAllEnvs();
     vi.stubEnv('VERCEL', '');
     // Propositalmente sem TOURSFLOW_API_SECRET.
-    const res = await POST(makeWellFormedPostRequest(), { params: { bookingId: BOOKING_ID } });
+    const res = await POST(makeWellFormedPostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     expect(res.status).toBe(422);
     const body = await res.json();
     expect(body.error.code).toBe('PAYMENT_PROVIDER_NOT_ENABLED');

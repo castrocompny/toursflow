@@ -57,7 +57,8 @@ function toErrorResponse(error: unknown, logPrefix: string) {
 }
 
 interface RouteParams {
-  params: { bookingId: string };
+  /** Next.js 15: `params` de Route Handler passou a ser assíncrono — sempre `await` antes de usar. */
+  params: Promise<{ bookingId: string }>;
 }
 
 export async function POST(request: Request, { params }: RouteParams) {
@@ -80,7 +81,8 @@ export async function POST(request: Request, { params }: RouteParams) {
       throw new PaymentApiError(413, 'INVALID_REQUEST', 'Corpo da requisição excede o tamanho permitido.');
     }
 
-    const bookingId = validateBookingId(params.bookingId);
+    const { bookingId: rawBookingId } = await params;
+    const bookingId = validateBookingId(rawBookingId);
     if (!bookingId.ok) throw bookingId.error;
 
     // IP confiável e HMAC calculados aqui, sempre server-side — nunca a
@@ -131,7 +133,8 @@ export async function GET(request: Request, { params }: RouteParams) {
       throw new PaymentApiError(403, 'INVALID_REQUEST', 'Origem não permitida.');
     }
 
-    const bookingId = validateBookingId(params.bookingId);
+    const { bookingId: rawBookingId } = await params;
+    const bookingId = validateBookingId(rawBookingId);
     if (!bookingId.ok) throw bookingId.error;
 
     const clientIp = getTrustedClientIp(request, () => {

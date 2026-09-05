@@ -14,10 +14,11 @@ import type { TourFilters } from '@/types';
 const PAGE_SIZE = 20;
 
 interface PageProps {
-  searchParams: Record<string, string | string[] | undefined>;
+  /** Next.js 15: `searchParams` de página passou a ser assíncrono — sempre `await` antes de usar. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
-function readFilters(searchParams: PageProps['searchParams']): TourFilters {
+function readFilters(searchParams: Record<string, string | string[] | undefined>): TourFilters {
   const get = (key: string) => {
     const value = searchParams[key];
     return Array.isArray(value) ? value[0] : value;
@@ -38,7 +39,7 @@ function readFilters(searchParams: PageProps['searchParams']): TourFilters {
 }
 
 export async function generateMetadata({ searchParams }: PageProps): Promise<Metadata> {
-  const filters = readFilters(searchParams);
+  const filters = readFilters(await searchParams);
   const hasFilters = Boolean(filters.destination || filters.category || filters.date || filters.people);
 
   const base = pageMetadata({
@@ -54,7 +55,7 @@ export async function generateMetadata({ searchParams }: PageProps): Promise<Met
 }
 
 export default async function ToursPage({ searchParams }: PageProps) {
-  const filters = readFilters(searchParams);
+  const filters = readFilters(await searchParams);
 
   const [tourResult, destinations, categories] = await Promise.all([
     listTours(filters),

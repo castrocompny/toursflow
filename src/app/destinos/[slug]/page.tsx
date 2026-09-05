@@ -11,7 +11,8 @@ import { pageMetadata } from '@/lib/seo';
 import { routes } from '@/lib/routes';
 
 interface PageProps {
-  params: { slug: string };
+  /** Next.js 15: `params` de página passou a ser assíncrono — sempre `await` antes de usar. */
+  params: Promise<{ slug: string }>;
 }
 
 export async function generateStaticParams() {
@@ -20,7 +21,8 @@ export async function generateStaticParams() {
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const destination = await getDestination(params.slug);
+  const { slug } = await params;
+  const destination = await getDestination(slug);
   if (!destination) return {};
 
   return pageMetadata({
@@ -32,7 +34,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function DestinationPage({ params }: PageProps) {
-  const destination = await getDestination(params.slug);
+  const { slug } = await params;
+  const destination = await getDestination(slug);
   if (!destination) notFound();
 
   const [tourResult, destinations] = await Promise.all([

@@ -19,7 +19,8 @@ import { pageMetadata, toSafeJsonLdScript } from '@/lib/seo';
 import { site } from '@/lib/site';
 
 interface PageProps {
-  params: { destino: string; slug: string };
+  /** Next.js 15: `params` de página passou a ser assíncrono — sempre `await` antes de usar. */
+  params: Promise<{ destino: string; slug: string }>;
 }
 
 /**
@@ -34,7 +35,8 @@ interface PageProps {
 export const dynamic = 'force-dynamic';
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {
-  const tour = await getTour(params.destino, params.slug);
+  const { destino, slug } = await params;
+  const tour = await getTour(destino, slug);
   if (!tour) return {};
 
   return pageMetadata({
@@ -46,7 +48,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function TourPage({ params }: PageProps) {
-  const tour = await getTour(params.destino, params.slug);
+  const { destino, slug } = await params;
+  const tour = await getTour(destino, slug);
   if (!tour) notFound();
 
   const [relatedResult, departures] = await Promise.all([

@@ -8,6 +8,10 @@ Escopo: auditoria controlada, **nenhuma correção aplicada nesta rodada**. Auto
 
 MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 (abaixo) foram corrigidos e testados nesta rodada — detalhe de cada correção junto do achado original. **LOW-2 (Next.js 14.2.5 unsupported) permanece aberto de propósito** — upgrade de major version fica para uma **Fase 3 — Framework Upgrade** dedicada (análise de breaking changes, testes completos, deploy separado), não incluída aqui. Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada; nenhum dado real foi criado; nenhum push/deploy foi feito.
 
+## Fase 3 — Framework upgrade Next 14 → Next 15.5.24 (2026-09-04, branch `security/next15-upgrade`, local only, sem deploy)
+
+**LOW-2 corrigido.** Next.js `14.2.5` → `15.5.24` (Maintenance LTS — Next 16 Active LTS avaliado separadamente, Fase 4), React `18.3.1` → `19.2.8`. Breaking change real encontrada e corrigida: `params`/`searchParams` de página e de Route Handler passaram a ser `Promise` (5 arquivos ajustados: as 4 páginas dinâmicas + a rota de pagamento). Nenhum outro breaking change encontrado — sem middleware/Server Actions/`forwardRef`/`useFormState`/`ReactDOM.render`/`propTypes` no projeto, e todo `fetch()` do data layer já declarava `cache`/`next.revalidate` explicitamente (semântica de cache do Next 15 não teve efeito). `next lint` (deprecado, será removido no Next 16) migrado para `eslint .` direto — mesma config (`next/core-web-vitals`), sem nenhuma regra desligada. `npm audit`: as 33 advisories específicas do Next 14 desapareceram; resta só o `postcss` transitivo interno do Next (2 vulnerabilidades, precisa do Next 16 para sumir de vez — fora do escopo desta fase, vira pendência formal "Fase 4"). 303 testes continuam passando sem nenhuma alteração de código de teste/componente além dos 5 arquivos de `params`. Detalhe completo abaixo, na seção LOW-2.
+
 Estado confirmado no momento da auditoria:
 - `BOOKING_CHECKOUT_ENABLED = false`
 - `PAYMENTS_UI_ENABLED = false`
@@ -112,7 +116,21 @@ Estado confirmado no momento da auditoria:
 
 ### LOW-2 — Next.js 14.2.5: versão fora do suporte, patches não chegam automaticamente
 
-**Status: ABERTO, intencionalmente, nesta rodada.** Upgrade de major version do Next.js exige análise dedicada de breaking changes, suíte de testes completa e deploy separado — tratado como **SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE** (pendência formal, ver `docs/DECISIONS.md`). Não usados `npm audit fix`, `npm update next` nem `npm install next@latest` nesta rodada, conforme instrução.
+**Status: CORRIGIDO (Fase 3, 2026-09-04, branch `security/next15-upgrade`, local only, sem deploy).** Next.js `14.2.5` → `15.5.24` (Maintenance LTS, versão exata pinada — `eslint-config-next` acompanhou), React `18.3.1` → `19.2.8` (`@types/react`/`@types/react-dom` atualizados junto). Next 16 (Active LTS) deliberadamente **não** usado nesta fase — avaliação separada, ver "Fase 4" abaixo.
+
+**Breaking change real encontrada e corrigida:** `params`/`searchParams` de página e o segundo argumento de Route Handler passaram a ser `Promise` no Next 15 — 5 arquivos ajustados (`src/app/destinos/[slug]/page.tsx`, `src/app/passeios/page.tsx`, `src/app/passeios/[destino]/page.tsx`, `src/app/passeios/[destino]/[slug]/page.tsx`, `src/app/api/bookings/[bookingId]/payment/route.ts` + os dois arquivos de teste dessa rota). Descoberta pelo próprio `next build` (erro de tipo), não adivinhada — cada `params`/`searchParams` agora é `await`ado explicitamente antes do primeiro uso.
+
+**Nenhum outro breaking change encontrado:** auditados e ausentes no projeto — `middleware.ts`, `'use server'` (Server Actions), `cookies()`/`headers()`/`draftMode()`, servidor customizado, `rewrites()`/i18n, `forwardRef`, `useFormState`/`useActionState`, `ReactDOM.render`, `propTypes`/`defaultProps`, import de `act()` fora de `@testing-library/react`. Todo `fetch()` do data layer (`src/data/sources/nauticflow-source.ts`) já declarava `cache: 'no-store'` ou `next: { revalidate }` explicitamente em cada chamada — a mudança do Next 15 no default de cache do `fetch()` (deixou de cachear implicitamente) não teve nenhum efeito aqui, porque o projeto nunca dependeu do default implícito.
+
+**`next lint` migrado para `eslint .`:** `next lint` está deprecado e será removido no Next 16 (aviso explícito ao rodar). `package.json`: `"lint": "eslint ."` — mesma config (`.eslintrc.json`, `next/core-web-vitals`), zero regra desligada, `npm run lint` continua limpo.
+
+**Regressão de segurança confirmada sem alteração:** os dois gates (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`, ambos `false`) continuam fail-closed, `Cache-Control: private, no-store, max-age=0` continua em toda resposta de booking/payment, `TOURSFLOW_API_SECRET`/`X-ToursFlow-Client-Key` continuam server-only, `amount` nunca vem do browser, CSP de imagem (MEDIUM-3) intacta — tudo verificado contra o dev server local pós-upgrade. Verificação de UI via Playwright (local): página de passeio abre, hidrata sem erro de console, chega até a revisão sem nenhum botão "Confirmar reserva", zero requisição a `/api/bookings`.
+
+**`npm audit` antes → depois:** as 33 advisories específicas do Next 14.2.5 (tabela acima) **desapareceram todas**. Resta só `postcss` transitivo interno do Next (`node_modules/next/node_modules/postcss`), mesma análise de antes (build-time, CSS autoral, não explorável remotamente) — precisa do Next 16 para desaparecer de vez.
+
+**Fase 4 (pendência formal, não iniciada):** Next 15 → Next 16 (Active LTS), só depois de estabilizar esta Fase 3 em produção. Ver `docs/DECISIONS.md`.
+
+303 testes continuam passando, `npx tsc --noEmit`/`npm run lint`/`npx next build` verdes — nenhuma mudança de teste ou componente além dos 5 arquivos de `params`/`searchParams` listados acima.
 
 **Arquivo:** `package.json` (`"next": "14.2.5"`, pin exato, sem `^`)
 
@@ -156,6 +174,8 @@ Estado confirmado no momento da auditoria:
 
 ## Conclusão
 
-Zero CRITICAL, zero HIGH. Três MEDIUM e dois LOW identificados na Fase 1. **Na Fase 2 (2026-09-04): MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 corrigidos e testados** (18 testes novos no total, 303 testes no projeto, typecheck/lint/build verdes). **LOW-2 (Next.js unsupported) permanece aberto de propósito**, tratado como pendência formal para uma Fase 3 de upgrade de framework — fora do escopo de uma correção pontual.
+Zero CRITICAL, zero HIGH. Três MEDIUM e dois LOW identificados na Fase 1. **Fase 2 (2026-09-04): MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 corrigidos e testados.** **Fase 3 (2026-09-04, branch `security/next15-upgrade`): LOW-2 também corrigido** — Next.js 14.2.5 → 15.5.24, React 18.3.1 → 19.2.8, único breaking change real (`params`/`searchParams` assíncronos) identificado e corrigido, 33 advisories do Next 14 eliminadas do `npm audit`. **Todos os 5 achados da Fase 1 estão corrigidos.** 303 testes, typecheck/lint/build verdes em todas as três fases.
 
-Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada nesta rodada; nenhum dado real foi criado; nenhum push/deploy foi feito. As correções (MEDIUM-1/2 em particular) fecham lacunas que só se tornariam reais no momento em que uma dessas flags for ligada — a postura de segurança para esse rollout futuro está agora mais completa.
+Pendência formal restante, não bloqueadora: **Fase 4** (Next 15 → Next 16 Active LTS, avaliação futura separada) — elimina o último resíduo de `npm audit` (`postcss` transitivo interno do Next, já classificado como não explorável remotamente nesta arquitetura).
+
+Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada em nenhuma das três fases; nenhum dado real foi criado; nenhum push/deploy foi feito.

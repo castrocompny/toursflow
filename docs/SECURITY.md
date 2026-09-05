@@ -313,9 +313,13 @@ exatamente 1 chamada a `/api/bookings`.
 
 `npm audit` acusou vulnerabilidades conhecidas do Next.js 14.2.5 na
 auditoria pré-integração de 2026-08-25 (ver
-[AUDITORIA-PRE-INTEGRACAO.md](AUDITORIA-PRE-INTEGRACAO.md)). **Upgrade do
-Next.js ainda não foi feito** — registrado como pendente, não como
-resolvido.
+[AUDITORIA-PRE-INTEGRACAO.md](AUDITORIA-PRE-INTEGRACAO.md)). **Resolvido
+em 2026-09-04 (Fase 3, ver seção 17 abaixo):** upgrade para Next.js
+15.5.24 + React 19.2.8 elimina as 33 advisories específicas do Next 14 —
+resta só um `postcss` transitivo interno do Next, não explorável
+remotamente nesta arquitetura (build-time, CSS autoral), que só some de
+vez com um futuro upgrade para Next 16 (Fase 4, pendência formal
+separada).
 
 ## 15. Rota de pagamento falha fechada server-side — não só ausência de botão (ADR-012)
 
@@ -392,9 +396,9 @@ Auditoria de segurança externa (Fase 1, `docs/AUDITORIA-SEGURANCA-FASE1.md`) en
 - **SVG sem CSP de imagem (MEDIUM-3):** `next.config.mjs` ganhou `images.contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;"` — recomendação oficial do Next.js ao usar `dangerouslyAllowSVG: true`, camada adicional além do já existente `contentDispositionType: attachment`.
 - **`.gitignore` incompleto (LOW-1):** passou de `.env*.local` para `.env*` com `!.env.example` — cobre `.env`/`.env.production`/`.env.development` etc., não só variantes `.local`.
 
-**Deixado aberto de propósito:** Next.js 14.2.5 fora do ciclo de suporte ativo (LOW-2) — upgrade de major version é uma Fase 3 própria (framework upgrade), fora do escopo de correções pontuais. `npm audit` continua reportando as mesmas advisories de antes desta rodada — nenhuma delas foi endereçada aqui, deliberadamente.
-
 18 testes novos: 4 em `nauticflow-bookings.test.ts`/`nauticflow-payments.test.ts` (mensagem arbitrária do upstream não vaza, código conhecido e desconhecido), 9 de `Cache-Control` (booking/payment, OFF/sucesso/erro de validação/erro de upstream, todos com `no-store` e sem `public`/`s-maxage`).
+
+**Fase 3 (2026-09-04, branch `security/next15-upgrade`): LOW-2 também corrigido.** Next.js `14.2.5` → `15.5.24` (Maintenance LTS), React `18.3.1` → `19.2.8`. Única breaking change real: `params`/`searchParams` de página e Route Handler passaram a ser `Promise` — corrigido em 5 arquivos (as 4 páginas dinâmicas do catálogo + a rota de pagamento), descoberto pelo próprio `next build`. Nenhum outro breaking change (sem middleware/Server Actions/`forwardRef`/`useFormState`/`ReactDOM.render`; todo `fetch()` do data layer já declarava `cache`/`next.revalidate` explicitamente). `next lint` (deprecado, será removido no Next 16) migrado para `eslint .` direto, mesma config, zero regra desligada. `npm audit`: as 33 advisories específicas do Next 14 desapareceram — resta só o `postcss` transitivo interno do Next (build-time, CSS autoral, não explorável remotamente aqui), que só desaparece de vez com Next 16 (Fase 4, pendência formal separada, não iniciada). Regressão de segurança reconfirmada sem alteração: os dois gates, `Cache-Control: no-store`, secrets server-only, CSP de imagem — todos intactos pós-upgrade.
 
 ## Testes de segurança relevantes
 
@@ -529,7 +533,7 @@ verdade.
 - Proteção CSRF é best-effort (seção 5) — reforçada na Fase 2 com
   `Sec-Fetch-Site` e testada explicitamente contra hosts oficiais/hosts
   atacantes, mas continua não sessão-based.
-- Next.js 14.2.5 com CVEs conhecidos, upgrade pendente.
+- ~~Next.js 14.2.5 com CVEs conhecidos, upgrade pendente.~~ **Feito** — Next.js 15.5.24 desde 2026-09-04 (Fase 3). Next 16 (Active LTS) permanece pendente, avaliação futura separada (Fase 4).
 - **`X-ToursFlow-Client-Key`: implementação e comportamento do lado
   ToursFlow comprovados por teste automatizado real (seção 2 acima); o
   que continua sem comprovação é o lado NauticFlow — nenhum E2E

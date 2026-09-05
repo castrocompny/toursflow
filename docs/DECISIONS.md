@@ -596,13 +596,18 @@ com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
   reserva/hold já pronta e testada, mas a flag continua `false`; ligar é
   decisão de negócio (prontidão operacional para acompanhar holds), não
   técnica. Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md).
-- **SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE** (pendência formal
-  aberta em 2026-09-04, LOW-2 da auditoria de segurança — ver
-  [AUDITORIA-SEGURANCA-FASE1.md](AUDITORIA-SEGURANCA-FASE1.md)): migrar
-  de Next.js 14.2.5 (fora do ciclo de suporte ativo) para uma versão
-  suportada (15 Maintenance LTS ou 16 Active LTS). Não é uma correção
-  pontual — exige análise dedicada de breaking changes entre majors,
-  suíte de testes completa rodada contra a versão nova, e um deploy
-  separado desta correção. Deliberadamente não feito nas Fases 1/2 desta
-  auditoria (`npm audit fix`/`npm update next`/`npm install next@latest`
-  não foram usados de propósito).
+- ~~**SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE**~~ **Feito (2026-09-04,
+  branch `security/next15-upgrade`, local only, ainda não mergeado/
+  deployado)** — Next.js 14.2.5 → 15.5.24 (Maintenance LTS), React 18.3.1
+  → 19.2.8. Único breaking change real: `params`/`searchParams` de página
+  e Route Handler viraram `Promise` (5 arquivos ajustados). `npm audit`:
+  as 33 advisories do Next 14 desapareceram. Detalhe completo em
+  [AUDITORIA-SEGURANCA-FASE1.md](AUDITORIA-SEGURANCA-FASE1.md).
+- **SECURITY HARDENING FASE 4 — NEXT 16 (ACTIVE LTS)** (pendência formal,
+  não iniciada): migrar de Next 15.5.24 para Next 16 — só depois de
+  estabilizar a Fase 3 em produção. Elimina o último resíduo do `npm
+  audit` (`postcss` transitivo interno do Next, já classificado como não
+  explorável remotamente nesta arquitetura). Mesma exigência da Fase 3:
+  análise dedicada de breaking changes, suíte completa, deploy separado —
+  não usar `npm audit fix`/`npm update next`/`npm install next@latest` às
+  cegas.

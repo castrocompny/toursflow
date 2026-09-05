@@ -48,8 +48,8 @@ real, zero chamada feita ao NauticFlow. Ver [PAYMENTS.md](PAYMENTS.md).
 
 | Camada | Tecnologia |
 |---|---|
-| Framework | Next.js 14.2.5 (App Router, Server Components) |
-| UI | React 18.3, TypeScript strict |
+| Framework | Next.js 15.5.24 (App Router, Server Components) |
+| UI | React 19.2, TypeScript strict |
 | Estilo | Tailwind CSS 3.4 |
 | Ícones | lucide-react |
 | Fontes | Bricolage Grotesque (display) + Instrument Sans (corpo), via Google Fonts `<link>` em `layout.tsx` |
