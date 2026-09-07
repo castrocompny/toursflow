@@ -596,18 +596,25 @@ com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
   reserva/hold já pronta e testada, mas a flag continua `false`; ligar é
   decisão de negócio (prontidão operacional para acompanhar holds), não
   técnica. Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md).
-- ~~**SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE**~~ **Feito (2026-09-04,
-  branch `security/next15-upgrade`, local only, ainda não mergeado/
-  deployado)** — Next.js 14.2.5 → 15.5.24 (Maintenance LTS), React 18.3.1
-  → 19.2.8. Único breaking change real: `params`/`searchParams` de página
-  e Route Handler viraram `Promise` (5 arquivos ajustados). `npm audit`:
-  as 33 advisories do Next 14 desapareceram. Detalhe completo em
+- ~~**SECURITY HARDENING FASE 3 — FRAMEWORK UPGRADE**~~ **Feito e publicado
+  em produção (2026-09-04 local, 2026-09-07 em produção — `main`
+  `f8472b6`, Node Vercel 24.x confirmado no dashboard)** — Next.js
+  14.2.5 → 15.5.24 (Maintenance LTS), React 18.3.1 → 19.2.8. Único
+  breaking change real: `params`/`searchParams` de página e Route
+  Handler viraram `Promise` (5 arquivos ajustados). `npm audit`: as 33
+  advisories do Next 14 desapareceram. Detalhe completo em
   [AUDITORIA-SEGURANCA-FASE1.md](AUDITORIA-SEGURANCA-FASE1.md).
 - **SECURITY HARDENING FASE 4 — NEXT 16 (ACTIVE LTS)** (pendência formal,
-  não iniciada): migrar de Next 15.5.24 para Next 16 — só depois de
-  estabilizar a Fase 3 em produção. Elimina o último resíduo do `npm
-  audit` (`postcss` transitivo interno do Next, já classificado como não
+  não iniciada): migrar de Next 15.5.24 para Next 16 — a Fase 3 já está
+  estabilizada em produção. Elimina o último resíduo do `npm audit`
+  (`postcss` transitivo interno do Next, já classificado como não
   explorável remotamente nesta arquitetura). Mesma exigência da Fase 3:
   análise dedicada de breaking changes, suíte completa, deploy separado —
   não usar `npm audit fix`/`npm update next`/`npm install next@latest` às
   cegas.
+- **REAL PAYMENT E2E** (pendência formal, não iniciada): primeira chamada
+  real ao endpoint de pagamento — condicionada a mecanismo de
+  cleanup/estorno definido antes (mesma ressalva do booking, ADR-009) e a
+  decisão explícita de negócio para ligar `BOOKING_CHECKOUT_ENABLED`/
+  `PAYMENTS_UI_ENABLED`. Infraestrutura já pronta e publicada; falta só a
+  decisão e o mecanismo de segurança operacional.

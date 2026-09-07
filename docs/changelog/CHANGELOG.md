@@ -14,6 +14,26 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-07 — Deploy em produção confirmado: Next.js 15.5.24 + React 19.2.8 + Security Hardening Fases 2 e 3
+
+`main` (`f8472b6`) mergeada (fast-forward, sem conflito) a partir de `security/next15-upgrade` e pushada para `origin/main` — Vercel disparou o deploy automático. Publica em produção tudo das duas entradas anteriores desta seção: os 4 achados corrigidos da auditoria de segurança (MEDIUM-1/2/3, LOW-1) e o upgrade de framework (Next 14.2.5 → 15.5.24, React 18.3.1 → 19.2.8). **Nenhum fluxo transacional foi tornado acessível ao público** — `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+
+**Node em produção (Vercel):** confirmado manualmente no dashboard (Settings → General → Node.js Version) — `24.x`, compatível com o requisito do Next 15.5.24 (`^18.18.0 || ^19.8.0 || >=20.0.0`) e com o Node local (`24.18.0`) usado durante todo o desenvolvimento/testes desta série de fases.
+
+**Verificado em produção real (`https://toursflow.com.br`), depois do deploy refletir:**
+- `GET /`, `/passeios`, `/robots.txt`, `/sitemap.xml` e uma página real de passeio (`/passeios/buzios/teste-integracao-toursflow-90f2bc`) → todos `200`.
+- Canonical `https://toursflow.com.br` presente, sitemap com as URLs esperadas, `robots.txt` correto.
+- Security headers presentes: `Strict-Transport-Security`, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`.
+- `POST /api/bookings` bem-formado → `422 BOOKING_CHECKOUT_NOT_ENABLED`, `Cache-Control: private, no-store, max-age=0`.
+- `POST`/`GET /api/bookings/{bookingId-dummy}/payment` bem-formados → `422 PAYMENT_PROVIDER_NOT_ENABLED`, mesmo `Cache-Control`.
+- Nenhum hold, nenhum pagamento, nenhuma cobrança criada; nenhum segredo exposto.
+
+**Financeiro:** `MARKETPLACE_PAYMENTS_ENABLED`/`MARKETPLACE_WITHDRAWAL_PAYOUT_ENABLED` do NauticFlow continuam fora do controle/alcance desta sessão (nenhuma tentativa de alterá-los) — o gate `PAYMENTS_UI_ENABLED` do lado ToursFlow neutraliza o risco independentemente do estado deles (ADR-012, defesa em profundidade). **R$ 0,00 movimentado.**
+
+**Próxima etapa (fora desta entrada):** REAL PAYMENT E2E — primeira chamada real ao endpoint de pagamento, condicionada a mecanismo de cleanup/estorno definido antes (mesma ressalva do booking, ADR-009) e decisão explícita de negócio para ligar `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`.
+
+---
+
 ## 2026-09-04 — Security Hardening Fase 3: upgrade Next.js 14.2.5 → 15.5.24 + React 19 (branch `security/next15-upgrade`, local only, sem deploy)
 
 Fecha o último achado (LOW-2) da auditoria de segurança (`docs/AUDITORIA-SEGURANCA-FASE1.md`): Next.js estava em versão fora do ciclo de suporte ativo. Upgrade controlado, target explícito Next 15.5.24 (Maintenance LTS) — **não** Next 16 (Active LTS, avaliação separada, "Fase 4"). Motivo: reduzir o risco de um salto direto 14→16, e 15.5.24 já inclui os fixes de segurança atuais da série 15.

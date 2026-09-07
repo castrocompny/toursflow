@@ -8,7 +8,7 @@ Escopo: auditoria controlada, **nenhuma correção aplicada nesta rodada**. Auto
 
 MEDIUM-1, MEDIUM-2, MEDIUM-3 e LOW-1 (abaixo) foram corrigidos e testados nesta rodada — detalhe de cada correção junto do achado original. **LOW-2 (Next.js 14.2.5 unsupported) permanece aberto de propósito** — upgrade de major version fica para uma **Fase 3 — Framework Upgrade** dedicada (análise de breaking changes, testes completos, deploy separado), não incluída aqui. Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada; nenhum dado real foi criado; nenhum push/deploy foi feito.
 
-## Fase 3 — Framework upgrade Next 14 → Next 15.5.24 (2026-09-04, branch `security/next15-upgrade`, local only, sem deploy)
+## Fase 3 — Framework upgrade Next 14 → Next 15.5.24 (2026-09-04, branch `security/next15-upgrade`; publicado em produção em 2026-09-07)
 
 **LOW-2 corrigido.** Next.js `14.2.5` → `15.5.24` (Maintenance LTS — Next 16 Active LTS avaliado separadamente, Fase 4), React `18.3.1` → `19.2.8`. Breaking change real encontrada e corrigida: `params`/`searchParams` de página e de Route Handler passaram a ser `Promise` (5 arquivos ajustados: as 4 páginas dinâmicas + a rota de pagamento). Nenhum outro breaking change encontrado — sem middleware/Server Actions/`forwardRef`/`useFormState`/`ReactDOM.render`/`propTypes` no projeto, e todo `fetch()` do data layer já declarava `cache`/`next.revalidate` explicitamente (semântica de cache do Next 15 não teve efeito). `next lint` (deprecado, será removido no Next 16) migrado para `eslint .` direto — mesma config (`next/core-web-vitals`), sem nenhuma regra desligada. `npm audit`: as 33 advisories específicas do Next 14 desapareceram; resta só o `postcss` transitivo interno do Next (2 vulnerabilidades, precisa do Next 16 para sumir de vez — fora do escopo desta fase, vira pendência formal "Fase 4"). 303 testes continuam passando sem nenhuma alteração de código de teste/componente além dos 5 arquivos de `params`. Detalhe completo abaixo, na seção LOW-2.
 
@@ -116,7 +116,7 @@ Estado confirmado no momento da auditoria:
 
 ### LOW-2 — Next.js 14.2.5: versão fora do suporte, patches não chegam automaticamente
 
-**Status: CORRIGIDO (Fase 3, 2026-09-04, branch `security/next15-upgrade`, local only, sem deploy).** Next.js `14.2.5` → `15.5.24` (Maintenance LTS, versão exata pinada — `eslint-config-next` acompanhou), React `18.3.1` → `19.2.8` (`@types/react`/`@types/react-dom` atualizados junto). Next 16 (Active LTS) deliberadamente **não** usado nesta fase — avaliação separada, ver "Fase 4" abaixo.
+**Status: CORRIGIDO (Fase 3, 2026-09-04, branch `security/next15-upgrade`; publicado em produção em 2026-09-07, Node Vercel 24.x confirmado no dashboard).** Next.js `14.2.5` → `15.5.24` (Maintenance LTS, versão exata pinada — `eslint-config-next` acompanhou), React `18.3.1` → `19.2.8` (`@types/react`/`@types/react-dom` atualizados junto). Next 16 (Active LTS) deliberadamente **não** usado nesta fase — avaliação separada, ver "Fase 4" abaixo.
 
 **Breaking change real encontrada e corrigida:** `params`/`searchParams` de página e o segundo argumento de Route Handler passaram a ser `Promise` no Next 15 — 5 arquivos ajustados (`src/app/destinos/[slug]/page.tsx`, `src/app/passeios/page.tsx`, `src/app/passeios/[destino]/page.tsx`, `src/app/passeios/[destino]/[slug]/page.tsx`, `src/app/api/bookings/[bookingId]/payment/route.ts` + os dois arquivos de teste dessa rota). Descoberta pelo próprio `next build` (erro de tipo), não adivinhada — cada `params`/`searchParams` agora é `await`ado explicitamente antes do primeiro uso.
 
@@ -178,4 +178,4 @@ Zero CRITICAL, zero HIGH. Três MEDIUM e dois LOW identificados na Fase 1. **Fas
 
 Pendência formal restante, não bloqueadora: **Fase 4** (Next 15 → Next 16 Active LTS, avaliação futura separada) — elimina o último resíduo de `npm audit` (`postcss` transitivo interno do Next, já classificado como não explorável remotamente nesta arquitetura).
 
-Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada em nenhuma das três fases; nenhum dado real foi criado; nenhum push/deploy foi feito.
+Nenhuma das duas feature flags (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`) foi alterada em nenhuma das três fases; nenhum dado real foi criado. **Atualização (2026-09-07):** `main` (`f8472b6`, contendo as três fases) foi pushada e publicada em produção — smoke completo (home/passeios/robots/sitemap/página de passeio, security headers, os dois gates, `Cache-Control`) verificado ao vivo contra `https://toursflow.com.br`, ambas as flags confirmadas `false` em produção, R$ 0,00 movimentado. Detalhe no changelog, entrada de 2026-09-07.
