@@ -181,6 +181,7 @@ interface NauticFlowDepartureDTO {
   departsAt: string;
   priceCents: number;
   priceType: string;
+  availableSpots: number;
   soldOut: boolean;
 }
 
@@ -417,12 +418,20 @@ function mapTourDetail(
 }
 
 function mapDeparture(dto: NauticFlowDepartureDTO, tourId: string): Departure {
+  // Defensivo mesmo com o contrato confirmado (mesmo padrão do resto do
+  // arquivo): nunca repassa um valor NaN/undefined/negativo pro resto do
+  // app caso a API responda algo inesperado.
+  const availableSpots =
+    typeof dto.availableSpots === 'number' && Number.isFinite(dto.availableSpots)
+      ? Math.max(0, Math.round(dto.availableSpots))
+      : 0;
   return {
     id: dto.id,
     tourId,
     departsAt: dto.departsAt,
     price: centsToReais(dto.priceCents),
     priceType: mapPriceType(dto.priceType),
+    availableSpots,
     soldOut: Boolean(dto.soldOut),
   };
 }

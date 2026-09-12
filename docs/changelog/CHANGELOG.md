@@ -14,6 +14,24 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-12 — Vagas disponíveis: `Departure.availableSpots` (contrato público do NauticFlow), teto visual na quantidade
+
+Lacuna real encontrada em Production (relatada pelo lado NauticFlow): uma reserva de balcão de 2 passageiros já reduzia a ocupação corretamente no NauticFlow, mas a API pública só devolvia `soldOut` binário — o ToursFlow não tinha como mostrar "8 vagas disponíveis", só esgotado sim/não. NauticFlow passou a expor `availableSpots` (vagas reais, `max(capacity - booked, 0)`, calculado no servidor a partir da MESMA regra de ocupação já usada — confirmada/pendente-com-hold-válido — nunca a capacidade total da embarcação, que continua interna). Ver DOCUMENTACAO.md do NauticFlow, seção 133, para o lado servidor.
+
+**`src/types/index.ts`**: `Departure` ganhou `availableSpots: number`. **`src/data/sources/nauticflow-source.ts`**: `NauticFlowDepartureDTO`/`mapDeparture` repassam o campo com o mesmo tratamento defensivo do resto do arquivo (nunca `NaN`/`undefined`/negativo). `listDepartures()` continua `no-store` — não tocado.
+
+**`src/lib/booking-selection.ts`**: `clampQuantity(value, maxAvailable?)` ganhou um segundo parâmetro opcional — informado, vira teto visual; omitido, mantém o comportamento antigo sem teto (preserva os testes que dependiam disso). `canContinueBooking` passou a recusar quando `quantity > departure.availableSpots`. **Isto é só conveniência de UI** — a proteção real contra overbooking continua sendo `INSUFFICIENT_CAPACITY` do NauticFlow (RPC/gatilho de capacidade, não tocados nesta tarefa); o cenário "turista A vê 1 vaga, turista B compra antes" continua recusado pelo backend do jeito que já era.
+
+**`src/components/tours/BookingSelector.tsx`**: cada card de saída disponível mostra "N vaga(s) disponível(is)" (ícone `Users`, discreto — singular pra 1, plural pra 2+, omitido quando esgotada porque o badge "Esgotado" já cobre esse caso). Mesmo texto repetido perto do seletor "Quantas pessoas?" após selecionar. Botão "+" agora desabilita ao atingir `availableSpots` (antes não tinha teto nenhum); trocar de saída reajusta a quantidade pro teto da nova saída escolhida. `src/data/sources/mock-source.ts` (dev local) varia `availableSpots` (8/1/0) pra exercitar singular/plural/esgotado sem precisar de dado real.
+
+**Testes**: fixtures de `Departure` em 6 arquivos ganharam `availableSpots` (campo obrigatório agora); novos testes cobrindo `clampQuantity` com teto informado/omitido/inválido, `canContinueBooking` recusando acima do teto e aceitando no limite exato, card mostrando singular/plural, botão "+" desabilitando no teto, e reajuste de quantidade ao trocar de saída. **313 testes passando** (24 arquivos), zero regressão nos testes antigos (a fixture-base ganhou um `availableSpots` alto o bastante pra não afetar nenhum teste que dependia de "sem teto").
+
+`npm run typecheck`/`lint`/`test`/`build` limpos.
+
+**Não verificado nesta sessão** (sem ferramenta de navegador): observação visual real do card/seletor num navegador — validado por 313 testes automatizados reais (Vitest) + a validação funcional real da consulta SQL do lado NauticFlow (ver DOCUMENTACAO.md dele, seção 133). Concorrência real (duas compras simultâneas de verdade) não foi re-testada — o mecanismo é infraestrutura pré-existente, não tocada nesta tarefa.
+
+**Não tocado**: pagamentos, Asaas, comissão, `submitBooking`/`create_marketplace_booking`, hold/PIX, qualquer parte do frontend fora do necessário pra exibir disponibilidade.
+
 ## 2026-09-12 — Catálogo sem cache velho: `no-store` em listTours/getTour + atualização em tempo real de aba aberta
 
 Duas garantias pedidas: (A) nenhuma requisição nova pode receber catálogo antigo do NauticFlow; (B) uma aba do ToursFlow já aberta deve atualizar sozinha quando um passeio for publicado/despublicado/editado. Detalhe completo da decisão em [ADR-014](../DECISIONS.md#adr-014--atualização-em-tempo-real-do-catálogo-tabela-singleton-de-versão--postgres-changes-não-broadcast).

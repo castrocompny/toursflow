@@ -62,7 +62,9 @@ function syntheticDepartures(tour: TourWithRelations): Departure[] {
       departsAt: date.toISOString(),
       price: tour.priceFrom,
       priceType: tour.priceType,
-      // A última saída simulada aparece esgotada, só para a UI ter os dois estados em dev.
+      // A última saída simulada aparece esgotada, a do meio com 1 vaga (só
+      // pra UI ter os três estados -- singular, plural, esgotado -- em dev.
+      availableSpots: index === 2 ? 0 : index === 1 ? 1 : 8,
       soldOut: index === 2,
     };
   });

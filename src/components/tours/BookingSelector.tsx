@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Calendar, Clock, Minus, Plus } from 'lucide-react';
+import { Calendar, Clock, Minus, Plus, Users } from 'lucide-react';
 import type { Departure } from '@/types';
 import { formatDepartureDateTime, formatPrice, priceTypeLabel } from '@/lib/format';
 import {
@@ -32,6 +32,13 @@ import { PixPayment } from './PixPayment';
 import { BookingVoucher } from './BookingVoucher';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
+
+/** 1 -> singular; 2+ -> plural; 0 (ou menos) -> esgotado. Nunca mostra valor negativo. */
+function availabilityLabel(spots: number): string {
+  if (spots <= 0) return 'Esgotado';
+  if (spots === 1) return '1 vaga disponível';
+  return `${spots} vagas disponíveis`;
+}
 
 // Client real (chama só as rotas do próprio ToursFlow, nunca o
 // NauticFlow/Asaas diretamente) — a proteção contra uso em produção é
@@ -64,11 +71,15 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * confirmação mostra `priceCents`/`totalCents` REAIS devolvidos pelo
  * NauticFlow, nunca o total estimado calculado no cliente.
  *
- * A API pública não envia capacidade numérica restante — só `soldOut`
- * binário. Por isso não existe "restam N vagas". Também não há teto
- * máximo de quantidade: o contrato do NauticFlow não define nenhum
- * (só o mínimo de 1 é uma regra real, ver `booking-selection.ts`) — quem
- * decide se a quantidade é aceitável é o NauticFlow, na hora da reserva.
+ * A API pública agora envia `availableSpots` (vagas reais restantes,
+ * calculadas no NauticFlow — nunca a capacidade total da embarcação, que
+ * continua interna) além de `soldOut`. A UI mostra essa disponibilidade e
+ * usa `availableSpots` como teto VISUAL da quantidade (ver
+ * `booking-selection.ts`), mas isso é só conveniência: o NauticFlow segue
+ * sendo quem decide de fato se a quantidade é aceitável no momento exato da
+ * reserva (recusa com `INSUFFICIENT_CAPACITY` se a vaga já tiver sido
+ * consumida por outra compra concorrente entre o carregamento da página e a
+ * submissão).
  *
  * Nem todo `priceType` é vendável (ver `isSellablePriceType`): saídas
  * `starting_from` (catálogo, NauticFlow `a_partir_de`) ou `per_boat` (sem
@@ -129,10 +140,14 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
   function handleSelectDeparture(departure: Departure) {
     if (departure.soldOut || !isSellablePriceType(departure.priceType)) return;
     setSelectedDepartureId(departure.id);
+    // reajusta a quantidade pro teto da NOVA saída escolhida (uma saída
+    // anterior podia ter mais vagas que esta) -- nunca deixa uma quantidade
+    // já inválida escondida atrás de "Continuar" desabilitado sem motivo.
+    setQuantity((current) => clampQuantity(current, departure.availableSpots));
   }
 
   function handleQuantityChange(next: number) {
-    setQuantity(clampQuantity(next));
+    setQuantity(clampQuantity(next, selectedDeparture?.availableSpots));
   }
 
   function handleContinue() {
@@ -326,6 +341,12 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
                   {formatPrice(departure.price)}{' '}
                   <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
                 </span>
+                {!isDisabled ? (
+                  <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
+                    <Users size={13} aria-hidden />
+                    {availabilityLabel(departure.availableSpots)}
+                  </span>
+                ) : null}
               </button>
             </li>
           );
@@ -366,6 +387,7 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
                 type="number"
                 inputMode="numeric"
                 min={MIN_BOOKING_QUANTITY}
+                max={selectedDeparture.availableSpots}
                 value={quantity}
                 onChange={(event) => handleQuantityChange(Number(event.target.value))}
                 aria-label="Quantidade de pessoas"
@@ -375,12 +397,17 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
                 type="button"
                 aria-label="Aumentar quantidade de pessoas"
                 onClick={() => handleQuantityChange(quantity + 1)}
+                disabled={quantity >= selectedDeparture.availableSpots}
                 className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/15 text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <Plus size={16} aria-hidden />
               </button>
             </div>
           </div>
+          <p className="mt-2 inline-flex items-center gap-1.5 text-xs text-ink-muted">
+            <Users size={13} aria-hidden />
+            {availabilityLabel(selectedDeparture.availableSpots)}
+          </p>
 
           <dl className="mt-4 space-y-2 border-t border-ink/10 pt-4 text-sm">
             <div className="flex justify-between gap-4">

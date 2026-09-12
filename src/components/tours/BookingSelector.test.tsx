@@ -26,13 +26,21 @@ const available: Departure = {
   departsAt: '2026-10-11T17:00:00+00:00',
   price: 150,
   priceType: 'per_person',
+  availableSpots: 10,
   soldOut: false,
 };
 
-const soldOut: Departure = { ...available, id: 'dep-2', departsAt: '2026-10-18T17:00:00+00:00', soldOut: true };
+const soldOut: Departure = {
+  ...available,
+  id: 'dep-2',
+  departsAt: '2026-10-18T17:00:00+00:00',
+  availableSpots: 0,
+  soldOut: true,
+};
 const perGroup: Departure = { ...available, id: 'dep-3', priceType: 'per_group', price: 200 };
 const startingFrom: Departure = { ...available, id: 'dep-4', priceType: 'starting_from', price: 100 };
 const perBoat: Departure = { ...available, id: 'dep-5', priceType: 'per_boat', price: 1200 };
+const oneSpotLeft: Departure = { ...available, id: 'dep-6', departsAt: '2026-10-25T17:00:00+00:00', availableSpots: 1 };
 
 describe('BookingSelector', () => {
   it('estado vazio quando não há nenhuma saída', () => {
@@ -262,6 +270,54 @@ describe('BookingSelector', () => {
 
     expect(isDisabled(departureButton)).toBe(true);
     expect(screen.getByText(/reserva online para este tipo de passeio ainda não está disponível/i)).toBeTruthy();
+  });
+
+  it('mostra "N vagas disponíveis" no card de uma saída disponível', () => {
+    render(<BookingSelector departures={[available]} />);
+    expect(screen.getByText('10 vagas disponíveis')).toBeTruthy();
+  });
+
+  it('mostra singular "1 vaga disponível" quando resta só uma', () => {
+    render(<BookingSelector departures={[oneSpotLeft]} />);
+    expect(screen.getByText('1 vaga disponível')).toBeTruthy();
+  });
+
+  it('mostra a disponibilidade também perto do seletor de quantidade, após selecionar', () => {
+    render(<BookingSelector departures={[available]} />);
+    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    fireEvent.click(departureButton);
+    expect(screen.getAllByText('10 vagas disponíveis').length).toBeGreaterThan(0);
+  });
+
+  it('botão "+" desabilita ao atingir availableSpots (não deixa passar do teto)', () => {
+    render(<BookingSelector departures={[oneSpotLeft]} />);
+    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    fireEvent.click(departureButton);
+
+    const increment = screen.getByRole('button', { name: /aumentar quantidade/i });
+    const input = screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement;
+
+    expect(input.value).toBe('1');
+    expect(isDisabled(increment)).toBe(true);
+
+    fireEvent.click(increment); // não deve fazer nada, já está no teto
+    expect(input.value).toBe('1');
+  });
+
+  it('trocar para uma saída com menos vagas reajusta a quantidade pro novo teto', () => {
+    render(<BookingSelector departures={[available, oneSpotLeft]} />);
+    const buttons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+    const availableButton = buttons[0];
+    const oneSpotButton = buttons[1];
+
+    fireEvent.click(availableButton);
+    fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
+    fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
+    expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('3');
+
+    fireEvent.click(oneSpotButton);
+    expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('1');
+    expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(false);
   });
 
   it('mistura de saídas: só a vendável pode ser selecionada', () => {

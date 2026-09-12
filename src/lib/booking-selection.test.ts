@@ -15,13 +15,17 @@ const perPerson: Departure = {
   departsAt: '2026-10-11T17:00:00+00:00',
   price: 150,
   priceType: 'per_person',
+  // Alto de propósito nos testes que já existiam (500, 999, 100000) —
+  // continuam exercitando "sem teto quando maxAvailable não é informado".
+  availableSpots: 999999,
   soldOut: false,
 };
 
 const perGroup: Departure = { ...perPerson, id: 'd2', priceType: 'per_group', price: 200 };
 const perBoat: Departure = { ...perPerson, id: 'd3', priceType: 'per_boat', price: 1200 };
 const startingFrom: Departure = { ...perPerson, id: 'd4', priceType: 'starting_from', price: 100 };
-const soldOutDeparture: Departure = { ...perPerson, id: 'd5', soldOut: true };
+const soldOutDeparture: Departure = { ...perPerson, id: 'd5', soldOut: true, availableSpots: 0 };
+const lowAvailability: Departure = { ...perPerson, id: 'd6', availableSpots: 1 };
 
 describe('clampQuantity', () => {
   it('mantém valores válidos dentro do intervalo', () => {
@@ -48,9 +52,25 @@ describe('clampQuantity', () => {
     expect(clampQuantity(2.7)).toBe(3);
   });
 
-  it('não impõe teto máximo — não existe limite oficial no contrato do NauticFlow', () => {
+  it('não impõe teto máximo quando maxAvailable não é informado', () => {
     expect(clampQuantity(999)).toBe(999);
     expect(clampQuantity(100000)).toBe(100000);
+  });
+
+  it('usa maxAvailable (availableSpots) como teto visual quando informado', () => {
+    expect(clampQuantity(5, 8)).toBe(5);
+    expect(clampQuantity(20, 8)).toBe(8);
+    expect(clampQuantity(1, 8)).toBe(1);
+  });
+
+  it('maxAvailable inválido (0, negativo, NaN) não é usado como teto', () => {
+    expect(clampQuantity(5, 0)).toBe(5);
+    expect(clampQuantity(5, -3)).toBe(5);
+    expect(clampQuantity(5, NaN)).toBe(5);
+  });
+
+  it('respeita MIN_BOOKING_QUANTITY mesmo com maxAvailable baixo', () => {
+    expect(clampQuantity(0, 1)).toBe(MIN_BOOKING_QUANTITY);
   });
 });
 
@@ -121,8 +141,16 @@ describe('canContinueBooking', () => {
     expect(canContinueBooking(perPerson, 1.5)).toBe(false);
   });
 
-  it('true com quantidade alta — sem teto fictício', () => {
+  it('true com quantidade alta — sem teto fictício quando a saída tem muitas vagas', () => {
     expect(canContinueBooking(perPerson, 500)).toBe(true);
+  });
+
+  it('false quando a quantidade excede availableSpots (impede overbooking visual)', () => {
+    expect(canContinueBooking(lowAvailability, 2)).toBe(false);
+  });
+
+  it('true quando a quantidade é exatamente igual a availableSpots', () => {
+    expect(canContinueBooking(lowAvailability, 1)).toBe(true);
   });
 });
 

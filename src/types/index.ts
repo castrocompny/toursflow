@@ -107,6 +107,13 @@ export interface Departure {
   departsAt: string;
   price: number;
   priceType: PriceType;
+  /**
+   * Vagas restantes calculadas pelo NauticFlow (nunca a capacidade total da
+   * embarcação, que o contrato público não expõe) -- sempre >= 0. `soldOut`
+   * é derivado deste valor pelo próprio NauticFlow (`availableSpots <= 0`),
+   * nunca uma segunda regra calculada aqui.
+   */
+  availableSpots: number;
   soldOut: boolean;
 }
 

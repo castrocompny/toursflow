@@ -41,6 +41,7 @@ const available: Departure = {
   departsAt: '2026-10-11T17:00:00+00:00',
   price: 150,
   priceType: 'per_person',
+  availableSpots: 10,
   soldOut: false,
 };
 

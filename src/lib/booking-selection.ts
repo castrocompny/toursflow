@@ -13,17 +13,26 @@ import type { Departure, PriceType } from '@/types';
 export const MIN_BOOKING_QUANTITY = 1;
 
 /**
- * Sem teto máximo de propósito: o contrato real do NauticFlow
- * (`booking-validation.ts`, `docs/RESERVAS-SERVER-TO-SERVER.md`) não define
- * nenhum limite oficial de quantity — quem decide se uma quantidade é
- * aceitável é o NauticFlow (capacidade real da saída). Um teto aqui seria
- * uma regra de negócio inventada pelo ToursFlow. Sempre um inteiro
+ * Não existe teto "de contrato" fixo — mas desde que a API pública passou a
+ * expor `availableSpots` (vagas reais, calculadas no NauticFlow a partir de
+ * `departures.capacity` menos ocupação), a UI usa esse número como teto
+ * VISUAL de conveniência: evita o turista tentar reservar mais do que
+ * existe. `maxAvailable` é opcional (omitido = sem teto, comportamento
+ * antigo) porque nem todo chamador conhece uma saída específica com dado
+ * fresco. Isso NUNCA substitui a validação real — o NauticFlow segue sendo
+ * quem decide de fato, recusando com `INSUFFICIENT_CAPACITY` se a
+ * quantidade exceder a capacidade real no momento exato da reserva (a UI só
+ * evita o turista chegar até lá sabendo que vai falhar). Sempre um inteiro
  * >= MIN_BOOKING_QUANTITY — nunca 0, negativo, fracionário, NaN ou Infinity.
  */
-export function clampQuantity(value: number): number {
+export function clampQuantity(value: number, maxAvailable?: number): number {
   if (!Number.isFinite(value)) return MIN_BOOKING_QUANTITY;
   const rounded = Math.round(value);
-  return Math.max(MIN_BOOKING_QUANTITY, rounded);
+  const floored = Math.max(MIN_BOOKING_QUANTITY, rounded);
+  if (typeof maxAvailable === 'number' && Number.isFinite(maxAvailable) && maxAvailable >= MIN_BOOKING_QUANTITY) {
+    return Math.min(floored, maxAvailable);
+  }
+  return floored;
 }
 
 /**
@@ -57,7 +66,14 @@ export function calculateEstimatedTotal(departure: Departure, quantity: number):
 export function canContinueBooking(departure: Departure | null, quantity: number): boolean {
   if (!departure || departure.soldOut) return false;
   if (!isSellablePriceType(departure.priceType)) return false;
-  return Number.isInteger(quantity) && quantity >= MIN_BOOKING_QUANTITY;
+  if (!Number.isInteger(quantity) || quantity < MIN_BOOKING_QUANTITY) return false;
+  // Impede continuar se a quantidade já escolhida ficou maior que a
+  // disponibilidade real (ex.: dado se atualizou depois de um
+  // INSUFFICIENT_CAPACITY e a vaga que o turista via não existe mais) —
+  // "impedir de forma segura" em vez de silenciosamente deixar passar; o
+  // NauticFlow recusaria de qualquer forma, isto só evita a tentativa.
+  if (quantity > departure.availableSpots) return false;
+  return true;
 }
 
 export function sortDeparturesByDate(departures: Departure[]): Departure[] {
