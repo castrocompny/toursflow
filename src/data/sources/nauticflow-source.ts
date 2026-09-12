@@ -37,8 +37,14 @@ import { centsToReais } from '@/lib/format';
 import { categoriesVitrine, genericCategoryVitrine } from '@/data/vitrine/categories';
 import { destinationsVitrine, genericDestinationVitrine } from '@/data/vitrine/destinations';
 
-/** Conteúdo (passeios, destinos, categorias) — muda pouco, cache moderado. */
-const CONTENT_REVALIDATE_SECONDS = 300;
+/**
+ * Taxonomia (destinos, categorias) — muda raramente, cache moderado ainda
+ * faz sentido aqui. Passeios (listTours/getTour) NÃO usam mais isto --
+ * publicar/despublicar/editar no NauticFlow precisa refletir na próxima
+ * requisição, nunca esperar até 5 minutos de ISR (ver DOCUMENTACAO.md /
+ * docs/DECISAO-REALTIME-CATALOGO.md).
+ */
+const TAXONOMY_REVALIDATE_SECONDS = 300;
 
 class NotFoundError extends Error {}
 
@@ -81,6 +87,17 @@ async function fetchJson<T>(
         : { next: { revalidate: options.revalidate } }),
     });
   } catch (error) {
+    // O Next.js sinaliza "esta rota precisa ser dinâmica" (fetch no-store
+    // durante uma tentativa de pré-renderização estática, ex.: build ou
+    // generateStaticParams) lançando um erro especial com
+    // `digest === 'DYNAMIC_SERVER_USAGE'` -- precisa atravessar sem ser
+    // embrulhado, senão o Next perde o sinal, trata como falha de rede de
+    // verdade e quebra o build em vez de simplesmente renderizar a rota
+    // sob demanda (foi exatamente o que aconteceu ao trocar listTours()/
+    // getTour() de ISR pra no-store, ver DOCUMENTACAO.md).
+    if (error instanceof Error && (error as { digest?: unknown }).digest === 'DYNAMIC_SERVER_USAGE') {
+      throw error;
+    }
     throw new DataSourceError(`Falha de rede ao chamar a API do NauticFlow (${path})`, { cause: error });
   } finally {
     clearTimeout(timeout);
@@ -418,7 +435,7 @@ async function listDestinations(): Promise<Destination[]> {
   const response = await fetchJson<ListEnvelope<NauticFlowDestinationDTO>>(
     '/api/public/destinations',
     undefined,
-    { revalidate: CONTENT_REVALIDATE_SECONDS },
+    { revalidate: TAXONOMY_REVALIDATE_SECONDS },
   );
   return response.data.map(mapDestinationDTO);
 }
@@ -432,7 +449,7 @@ async function listCategories(): Promise<Category[]> {
   const response = await fetchJson<ListEnvelope<NauticFlowCategoryDTO>>(
     '/api/public/categories',
     undefined,
-    { revalidate: CONTENT_REVALIDATE_SECONDS },
+    { revalidate: TAXONOMY_REVALIDATE_SECONDS },
   );
   return response.data.map(mapCategoryDTO);
 }
@@ -456,6 +473,12 @@ async function listTours(filters: TourFilters = {}): Promise<TourListResult> {
   // aceitos na URL (mesmo tratamento honesto já usado para `date`: não
   // filtram, mas também não escondem resultado nenhum), nunca buscamos
   // tudo para filtrar isso em JS.
+  // Catálogo (publicar/despublicar/editar no NauticFlow) precisa refletir na
+  // PRÓXIMA requisição, nunca esperar um intervalo de ISR -- no-store, não
+  // cache moderado. Isso também tira esta rota de renderização estática
+  // automaticamente (Next.js trata qualquer fetch no-store como sinal de
+  // dynamic rendering) -- por isso nenhuma página que chama listTours()
+  // precisa de `export const dynamic = 'force-dynamic'` próprio.
   const response = await fetchJson<ListEnvelope<NauticFlowTourListItemDTO>>(
     '/api/public/tours',
     {
@@ -464,7 +487,7 @@ async function listTours(filters: TourFilters = {}): Promise<TourListResult> {
       page: filters.page,
       limit: filters.limit,
     },
-    { revalidate: CONTENT_REVALIDATE_SECONDS },
+    { revalidate: false },
   );
 
   return {
@@ -483,10 +506,12 @@ async function getTour(destinationSlug: string, tourSlug: string): Promise<TourW
   try {
     // Confirmado contra payload real: o detalhe também vem envelopado em
     // `{ data: {...} }`, igual às listagens — não é o objeto direto.
+    // Mesmo motivo de listTours() acima -- edição/despublicação de um
+    // passeio já publicado precisa aparecer na próxima requisição, sem ISR.
     const response = await fetchJson<{ data: NauticFlowTourDetailDTO }>(
       `/api/public/tours/${encodeURIComponent(tourSlug)}`,
       undefined,
-      { revalidate: CONTENT_REVALIDATE_SECONDS },
+      { revalidate: false },
     );
     dto = response.data;
   } catch (error) {
