@@ -618,3 +618,96 @@ com uma tentativa real de rede ao NauticFlow (timeout configurado é 8s).
   decisão explícita de negócio para ligar `BOOKING_CHECKOUT_ENABLED`/
   `PAYMENTS_UI_ENABLED`. Infraestrutura já pronta e publicada; falta só a
   decisão e o mecanismo de segurança operacional.
+- **CONFIGURAR `NEXT_PUBLIC_NAUTICFLOW_SUPABASE_URL`/`NEXT_PUBLIC_
+  NAUTICFLOW_SUPABASE_ANON_KEY` em Production (Vercel)** (pendência
+  formal) — sem isso, `CatalogRefresh` (ADR-014) simplesmente não assina
+  nada (retorno antecipado silencioso, sem erro), o site funciona 100%
+  normal, só sem o empurrão automático de aba já aberta. Ver ADR-014.
+
+---
+
+## ADR-014 — Atualização em tempo real do catálogo: tabela singleton de versão + Postgres Changes, não Broadcast
+
+**Contexto:** `listTours()`/`getTour()` usavam `next: { revalidate: 300 }`
+(ISR) — publicar/despublicar/editar um passeio no NauticFlow podia levar
+até 5 minutos pra aparecer no ToursFlow. Precisávamos de duas garantias
+separadas: (A) nenhuma requisição NOVA pode receber catálogo velho; (B)
+uma aba já aberta deve atualizar sozinha quando algo for publicado.
+
+**Decisão -- parte 1 (garantia A):** `listTours()`/`getTour()` passaram a
+usar `cache: 'no-store'` em vez de `revalidate: 300`. `listDestinations()`/
+`listCategories()` continuam em 300s (taxonomia muda raramente).
+`listFeaturedTours()` herda `no-store` por chamar `listTours()` por
+dentro. Isso já torna `/`, `/passeios`, `/passeios/[destino]` e
+`/destinos` dinamicamente renderizadas por requisição, sem precisar de
+`export const dynamic = 'force-dynamic'` em nenhuma delas.
+
+**Decisão -- parte 2 (garantia B):** um componente client global
+(`CatalogRefresh`, `src/components/realtime/CatalogRefresh.tsx`, montado
+no `RootLayout`) assina `UPDATE` via Supabase Realtime (Postgres Changes,
+não Broadcast) numa tabela mínima do NauticFlow --
+`public.marketplace_catalog_state` (só `id`/`version`/`updated_at`,
+NENHUM dado de passeio/operador/cliente/pagamento) -- e chama
+`router.refresh()` (debounce de 400ms) quando a versão muda. O bump da
+versão é feito por triggers SQL no NauticFlow (não por uma chamada
+explícita em cada Server Action) -- ver ADR/DOCUMENTACAO do NauticFlow,
+migration `0069_marketplace_catalog_realtime_state.sql`.
+
+**Motivo de Postgres Changes, NÃO Broadcast:** a primeira ideia avaliada
+foi Supabase Realtime Broadcast com canal privado (`config.private =
+true` + policy de Authorization pra `anon`) -- descartada ANTES de
+implementar, porque Broadcast privado exige cliente autenticado (JWT de
+sessão), e o visitante do ToursFlow nunca tem sessão nenhuma no Supabase
+do NauticFlow (é sempre `anon` puro, sem login). Sem prova de que isso
+funcionaria de ponta a ponta pra um cliente `anon` sem sessão, a decisão
+foi trocar pra Postgres Changes (o MESMO mecanismo que o NauticFlow já
+usa em produção pra `vessels`/`clients`/`partners`/`departures`/
+`reservations`/`tours`, só que sempre pra `authenticated` com RLS por
+empresa -- este é o primeiro uso pra `anon` puro) sobre uma tabela nova,
+mínima, com RLS deliberadamente simples (`for select to anon, authenticated
+using (true)`, nenhum INSERT/UPDATE/DELETE liberado pra ninguém fora do
+próprio banco).
+
+**Prova real, antes de escrever este componente (pedido explícito):** um
+script Node usando `@supabase/supabase-js` com SÓ a anon key (sem
+nenhuma sessão) assinou `postgres_changes` em `marketplace_catalog_state`
+contra o Supabase de STAGING do NauticFlow e recebeu o evento real
+(`version: 0 -> 1`) depois de um bump disparado via SQL puro -- ver
+DOCUMENTACAO.md do NauticFlow. Só depois dessa prova real o componente
+`CatalogRefresh` foi escrito.
+
+**Secrets:** `NEXT_PUBLIC_NAUTICFLOW_SUPABASE_URL`/`NEXT_PUBLIC_
+NAUTICFLOW_SUPABASE_ANON_KEY` NÃO são segredos novos -- são os MESMOS
+dois valores já públicos no bundle do navegador do próprio NauticFlow
+(prefixo `NEXT_PUBLIC_`, protegidos por RLS/policy no banco, nunca por
+sigilo). `TOURSFLOW_API_SECRET` não entra nesta arquitetura em nenhum
+momento -- não existe endpoint HTTP novo entre os dois projetos, o sinal
+inteiro trafega pelo Realtime do Supabase do NauticFlow.
+
+**Alternativas rejeitadas:**
+- Broadcast privado com Authorization pra `anon` -- ver motivo acima
+  (exige sessão, visitante nunca tem).
+- Broadcast público (sem Authorization nenhuma) -- rejeitado por deixar
+  qualquer cliente com a anon key (pública por natureza) capaz de emitir
+  um evento de "catálogo mudou" arbitrário nesse canal (não vazaria dado
+  nenhum, mas violaria o requisito explícito de "nenhum cliente arbitrário
+  pode forçar refresh").
+- Webhook NauticFlow -> endpoint do ToursFlow + Server-Sent Events --
+  rejeitado por exigir estado (quais navegadores estão conectados) num
+  runtime serverless (Vercel) sem um broker externo -- teria reinventado
+  o que o Supabase Realtime já faz, ou exigido um serviço pago novo
+  (Redis pub/sub, por exemplo), contra a preferência explícita de não
+  adicionar infraestrutura paga só pra isso.
+- Polling do navegador -- rejeitado, pedido explícito de não usar.
+
+**Consequências:** a garantia B (aba já aberta) depende de o navegador
+conseguir abrir uma conexão websocket direta com o Supabase do
+NauticFlow -- se isso falhar (rede instável, Realtime fora do ar), o
+componente simplesmente não atualiza a aba sozinha; a garantia A (nunca
+mostrar dado velho numa requisição nova) continua 100% intacta
+independente disso, porque não depende do Realtime en nada. Falta de
+`NEXT_PUBLIC_NAUTICFLOW_SUPABASE_URL`/`_ANON_KEY` em Production
+(pendência registrada acima) tem o mesmo efeito -- degrada pra "site
+normal, sem auto-refresh de aba aberta", nunca pra "mostra dado errado".
+
+---
