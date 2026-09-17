@@ -139,16 +139,19 @@ scripts/
 
 ## 5. Rotas (App Router)
 
+Desde a remoção do ISR de `listTours`/`getTour` (commit `0f0696a`, ver ADR-014), praticamente todo o catálogo é renderizado por requisição (`ƒ` no output do `next build`). Isso foi confirmado tanto pela tabela de rotas do build quanto pelo `.next/prerender-manifest.json` (cuja lista `routes` — verdadeiramente congelada em build — hoje só contém `/icon.svg`, `/robots.txt` e `/_not-found`).
+
 | Rota | Tipo | Origem dos dados | Observações |
 |---|---|---|---|
-| `/` | estática (ISR) | catálogo real (ou mock em dev) | Hero, `SearchBar`, destinos, passeios em destaque, categorias |
+| `/` | **dinâmica** (por requisição) | `listFeaturedTours`, `listDestinations`, `listCategories` | Hero, `SearchBar`, destinos, passeios em destaque, categorias. Dinâmica porque `listFeaturedTours`/`listTours` usam `no-store` |
 | `/passeios` | dinâmica (lê `searchParams`) | `listTours(filters)`, paginado | `destino`/`categoria` filtram de verdade (query param real na API); `data`/`pessoas`/`q` aceitos na URL mas sem suporte na API — avisado ao usuário, nunca escondido |
 | `/passeios/[destino]` | redirect | — | 307 para `/destinos/[destino]` |
 | `/passeios/[destino]/[slug]` | **dinâmica** (`export const dynamic = 'force-dynamic'`) | `getTour`, `listDepartures` | Sem `generateStaticParams`: a disponibilidade (`listDepartures`, `no-store`) não pode ser pré-renderizada em build — decisão registrada em [DECISIONS.md](DECISIONS.md) |
-| `/destinos`, `/destinos/[slug]` | estática (ISR) | `listDestinations`, `listTours` | |
+| `/destinos` | **dinâmica** (por requisição) | `listDestinations`, `listTours({ limit: 100 })` | Dinâmica pelo mesmo motivo: `listTours` é `no-store` |
+| `/destinos/[slug]` | **dinâmica na prática**, apesar do rótulo `●` do build | `getDestination`, `listTours` | Usa `generateStaticParams` só para conhecer os slugs em build; o conteúdo em si não é congelado — não aparece em `routes` no `prerender-manifest.json` porque o `no-store` de `listTours`/`getTour` força renderização por requisição mesmo nessa rota |
 | `/api/bookings` | Route Handler, `POST` only | — | Cria reserva/hold real — chamado por `BookingReview` (`onConfirm`) só quando `BOOKING_CHECKOUT_ENABLED` está ligada; falha fechada server-side com a flag off (ADR-013), mesmo por chamada manual |
 | `/api/bookings/[bookingId]/payment` | Route Handler, `POST`/`GET` | — | Criar/consultar pagamento Pix — server-only; wiring completo mas **inatingível pela UI hoje** (`PAYMENTS_UI_ENABLED === false`, ver [PAYMENTS.md](PAYMENTS.md)) |
-| `/sitemap.xml`, `/robots.txt` | gerados | `listDestinations`, `listTourPaths` | |
+| `/sitemap.xml`, `/robots.txt` | gerados | `listDestinations`, `listTourPaths` | `/robots.txt` é genuinamente estático; `/sitemap.xml` roda por requisição (chama `listTourPaths`, que depende de `listTours`) |
 
 `src/lib/routes.ts` é a única fonte de verdade para montar URLs de página — nenhum componente concatena string de rota manualmente.
 
@@ -184,7 +187,7 @@ Escolhido automaticamente pela env var — nenhum componente sabe qual está ati
 
 Consome `GET /api/public/tours`, `/tours/[slug]`, `/tours/[slug]/departures`, `/destinations`, `/categories` do NauticFlow (sem autenticação — API pública). Mapeamento defensivo DTO → tipos internos, incluindo `mapPriceType()` (ver [PRICE-TYPES.md](PRICE-TYPES.md)) e enriquecimento de destino/categoria com os metadados de vitrine (`src/data/vitrine/`) que a API não fornece.
 
-**Cache:** conteúdo (tours, destinos, categorias, detalhe) usa `next: { revalidate: 300 }` (ISR, 5 min). Disponibilidade (`listDepartures`) usa `cache: 'no-store'` — sempre fresca. Sem revalidação sob demanda (`revalidateTag`) ainda — publicar/despublicar um passeio no NauticFlow pode levar até 5 min para refletir no catálogo, mas uma tentativa de reserva sempre revalida no NauticFlow (nunca reserva um passeio já suspenso).
+**Cache (atualizado — commit `0f0696a`, ver [ADR-014](DECISIONS.md#adr-014--atualização-em-tempo-real-do-catálogo-tabela-singleton-de-versão--postgres-changes-não-broadcast), que supera a decisão original do [ADR-002](DECISIONS.md#adr-002--cache-dividido-conteúdo-com-isr-disponibilidade-sempre-fresca)):** `listTours`, `getTour` e `listDepartures` usam `cache: 'no-store'` — sempre frescos, sem ISR. Só `listDestinations()`/`listCategories()` (taxonomia, muda raramente) ainda usam `next: { revalidate: TAXONOMY_REVALIDATE_SECONDS }` (300s). Isso elimina a janela de até 5 min de defasagem que existia para tours/detalhe; o preço de renderizar praticamente todo o catálogo por requisição é aceito porque a origem (API pública do NauticFlow) responde rápido o suficiente e o ganho de sempre mostrar `soldOut`/`availableSpots` corretos supera o custo. Para quem já está com uma aba aberta, `CatalogRefresh` (`src/components/realtime/CatalogRefresh.tsx`) assina Postgres Changes no Supabase do NauticFlow (tabela singleton `public.marketplace_catalog_state`, só `id`/`version`/`updated_at`, sem dado de tour/cliente/pagamento) com a anon key pública do NauticFlow (mesmo valor já exposto no bundle do navegador dele — não é segredo novo) e chama `router.refresh()` (debounce de 400ms) quando a versão muda — sem precisar de polling.
 
 ### 6.4 Mock (`src/data/sources/mock-source.ts` + `src/data/mock/`)
 
@@ -192,7 +195,7 @@ Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'publish
 
 ## 7. Tipos de domínio
 
-- `src/types/index.ts`: `Tour`, `TourWithRelations`, `Departure` (saída real — id, data/hora, preço, `priceType`, `soldOut`), `PriceType` (4 valores, ver [PRICE-TYPES.md](PRICE-TYPES.md)), `Operator`, `Destination`, `Category`, `BoardingPoint`, `TourListResult` (paginação).
+- `src/types/index.ts`: `Tour`, `TourWithRelations`, `Departure` (saída real — id, data/hora, preço, `priceType`, `soldOut`, **`availableSpots`**: vagas reais vindas do NauticFlow, `max(capacity - booked, 0)`, mapeado defensivamente em `mapDeparture()` para nunca virar `NaN`/negativo — usado só como conveniência de UI, `clampQuantity()`/`canContinueBooking`; a proteção real contra overbooking continua sendo o `INSUFFICIENT_CAPACITY` do NauticFlow), `PriceType` (4 valores, ver [PRICE-TYPES.md](PRICE-TYPES.md)), `Operator`, `Destination`, `Category`, `BoardingPoint`, `TourListResult` (paginação).
 - `src/types/booking.ts`: contratos de reserva — `BookingRequestInput`, `NauticFlowBookingResponseData`, `BookingErrorCode` (deliberadamente separado dos tipos de catálogo, ver [DECISIONS.md](DECISIONS.md)).
 - `rating?`, `boardingPoint.latitude/longitude?`, `Operator.slug/state/verified?` são opcionais de propósito: a API real não garante esses campos, e a UI nunca inventa valor pra eles.
 
@@ -201,9 +204,10 @@ Só ativo em dev local sem `NAUTICFLOW_API_URL`. Filtra por `status === 'publish
 | Pasta | Componentes | Responsabilidade |
 |---|---|---|
 | `tours/` | `TourCard`, `TourGrid`, `TourGallery`, `TourItinerary`, `TourChecklist`, `BoardingLocation`, **`BookingSelector`**, **`CustomerForm`**, **`BookingReview`**, **`BookingConfirmation`**, **`PixPayment`**, **`BookingVoucher`** | `BookingSelector` (`'use client'`) orquestra até 6 steps: seleção → `CustomerForm` → `BookingReview` (sabe chamar `POST /api/bookings` de verdade, atrás de `BOOKING_CHECKOUT_ENABLED === false` — hoje inatingível pela UI real) → `BookingConfirmation` (hold, countdown, preço real) → `PixPayment`/`BookingVoucher` (wiring real contra `/api/bookings/[bookingId]/payment`, atrás de `PAYMENTS_UI_ENABLED === false` — também inatingíveis). Ver [RESERVAS-SERVER-TO-SERVER.md](RESERVAS-SERVER-TO-SERVER.md) e [PAYMENTS.md](PAYMENTS.md) |
+| `realtime/` | **`CatalogRefresh`** | Montado globalmente em `layout.tsx` (`'use client'`). Assina Postgres Changes no Supabase do NauticFlow (tabela singleton `marketplace_catalog_state`, só leitura, anon key pública) e chama `router.refresh()` (debounce 400ms) quando a versão muda — atualiza sozinha uma aba já aberta quando um passeio é publicado/editado/despublicado. Ver [ADR-014](DECISIONS.md#adr-014--atualização-em-tempo-real-do-catálogo-tabela-singleton-de-versão--postgres-changes-não-broadcast) |
 | `layout/`, `search/`, `destinations/`, `categories/`, `ui/`, `brand/` | — | Inalterados desde a fase de catálogo |
 
-9 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview`, `BookingConfirmation`, `PixPayment`, `BookingVoucher` — todo o resto é Server Component.
+10 Client Components no projeto: `SearchBar`, `FilterBar`, `TourGallery`, `BookingSelector`, `CustomerForm`, `BookingReview`, `BookingConfirmation`, `PixPayment`, `BookingVoucher`, `CatalogRefresh` — todo o resto é Server Component.
 
 ## 9. Camada de reservas (server-only) — conectada na Fase 3
 
@@ -251,7 +255,10 @@ Inalterado desde a fase de catálogo — `tailwind.config.ts`: cores `ink`/`sea`
 
 ## 14. Testes
 
-Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, fluxo completo de reserva (componente, via `@testing-library/react`) tanto com `BOOKING_CHECKOUT_ENABLED` real (`false`, `BookingSelector.test.tsx`) quanto mockada `true` para o pipeline completo (`BookingSelector.booking.test.tsx`), validação/máscara/checksum de CPF, Idempotency-Key, submissão real (`booking-submission.ts`), countdown de hold, wiring completo do fluxo Pix (rota `/api/bookings/[bookingId]/payment`, `ToursFlowPaymentClient`, `PixPayment`/`BookingVoucher`, glue de integração em `BookingSelector.payment.test.tsx` — ver [PAYMENTS.md](PAYMENTS.md)). `npm test` roda tudo — 303 testes.
+Ver seção "Testes" em [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes) para os testes com foco em segurança. Cobertura geral: validação/whitelist/erros do backend de reserva, IP/HMAC, mapeamento de price type, fluxo completo de reserva (componente, via `@testing-library/react`) tanto com `BOOKING_CHECKOUT_ENABLED` real (`false`, `BookingSelector.test.tsx`) quanto mockada `true` para o pipeline completo (`BookingSelector.booking.test.tsx`), validação/máscara/checksum de CPF, Idempotency-Key, submissão real (`booking-submission.ts`), countdown de hold, wiring completo do fluxo Pix (rota `/api/bookings/[bookingId]/payment`, `ToursFlowPaymentClient`, `PixPayment`/`BookingVoucher`, glue de integração em `BookingSelector.payment.test.tsx` — ver [PAYMENTS.md](PAYMENTS.md)). `npm test` roda tudo — 313 testes, 24 arquivos (312 passando/1 falhando nesta
+máquina por incompatibilidade de ambiente — Node v26 vs. polyfill de
+`localStorage` do jsdom, não regressão de código; ver detalhe em
+[SECURITY.md](SECURITY.md#testes-de-segurança-relevantes)).
 
 **Achado corrigido nesta fase (Fase 3):** `vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Isso significa que **todo componente React testado com `@testing-library/react`
 (`BookingSelector.test.tsx` desde a Fase 1) nunca rodou de fato via `npm test`** em nenhuma fase anterior, apesar de relatórios anteriores terem reportado "todos os testes passando" — o comando saía com sucesso porque simplesmente não encontrava esses arquivos, não porque eles passavam. Corrigido para `src/**/*.test.{ts,tsx}` (mais `oxc: { jsx: { runtime: 'automatic' } }`, necessário para o parser da Vite 8/rolldown reconhecer JSX em teste). Ao rodar de verdade pela primeira vez, 3 bugs reais (e até então invisíveis) apareceram nos próprios testes — nenhum no código de produção — e foram corrigidos: duas queries ambíguas (`getByLabelText`/`getByText` casando mais de um elemento) e uma máscara de e-mail com contagem de asteriscos errada na asserção. Detalhe completo: [SECURITY.md](SECURITY.md#testes-de-segurança-relevantes).

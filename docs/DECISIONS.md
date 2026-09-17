@@ -35,6 +35,8 @@ como correto (reflete produção), documentado em
 
 ## ADR-002 — Cache dividido: conteúdo com ISR, disponibilidade sempre fresca
 
+> **SUPERSEDED BY [ADR-014](#adr-014--atualização-em-tempo-real-do-catálogo-tabela-singleton-de-versão--postgres-changes-não-broadcast).** Mantido abaixo como registro histórico da decisão original — não reflete mais o código atual. `listTours()`/`getTour()` deixaram de usar ISR e hoje são `cache: 'no-store'` como `listDepartures()` já era; só `listDestinations()`/`listCategories()` (taxonomia) ainda usam `next: { revalidate: 300 }`. Ver ADR-014 para o motivo e o mecanismo que substituiu a janela de defasagem de 5 min (atualização em tempo real via Supabase Realtime).
+
 **Contexto:** dados de catálogo (nome, descrição, fotos) mudam pouco;
 disponibilidade de saída (`soldOut`, vagas) muda a cada reserva e nunca
 pode estar desatualizada.

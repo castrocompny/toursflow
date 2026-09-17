@@ -473,8 +473,14 @@ Auditoria de segurança externa (Fase 1, `docs/AUDITORIA-SEGURANCA-FASE1.md`) en
   válida, um `rerender()` do pai não gera novo `POST` nem nova key, e o
   voucher só aparece depois do polling confirmar `paid`.
 
-`npm test` roda todos (303 testes ao todo no projeto, cobrindo também
-catálogo/UI, não só segurança).
+`npm test` roda todos (313 testes ao todo no projeto, 24 arquivos, cobrindo
+também catálogo/UI, não só segurança). **Validação de 2026-09-16:** 312/313
+passando nesta máquina — 1 teste (`BookingSelector.booking.test.tsx`, "nenhuma
+PII em URL/localStorage/sessionStorage...") falha por incompatibilidade entre
+o Node instalado localmente (v26) e o polyfill de `localStorage` do jsdom
+(`--localstorage-file` não fornecido), não por regressão de código — nenhum
+arquivo de código foi alterado nesta rodada de correção de documentação. Vale
+reconfirmar em CI/outro ambiente antes de assumir 313/313 como fato.
 
 **Achado de integridade dos testes (2026-08-28, corrigido nesta fase):**
 `vitest.config.ts` incluía só `src/**/*.test.ts` — nunca `*.test.tsx`. Na

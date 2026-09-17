@@ -1,7 +1,7 @@
 # Pagamento (Pix) — contrato real, wiring completo, publicado atrás de feature flag
 
 Data: 2026-09-02
-Status: **contrato real confirmado e implementado ponta a ponta (tipos, rotas internas, client server-only, client do navegador, UI, testes) — código publicado em `main`/produção (`217c5bc`), gate server-side confirmado ao vivo contra `https://toursflow.com.br` (`422 PAYMENT_PROVIDER_NOT_ENABLED`, sem chamada upstream). Nenhuma chamada real ao NauticFlow foi feita — `MARKETPLACE_PAYMENTS_ENABLED` está desligada lá e `PAYMENTS_UI_ENABLED` está travada em `false` no ToursFlow.** Fluxo transacional continua inatingível ao público.
+Status: **contrato real confirmado e implementado ponta a ponta (tipos, rotas internas, client server-only, client do navegador, UI, testes) — código publicado em `main`/produção (`217c5bc`), gate server-side confirmado ao vivo contra `https://toursflow.com.br` (`422 PAYMENT_PROVIDER_NOT_ENABLED`, sem chamada upstream). Nenhuma chamada real ao NauticFlow foi feita a partir do ToursFlow.** O estado das flags financeiras do NauticFlow em Production (`MARKETPLACE_PAYMENTS_ENABLED`, `MARKETPLACE_PAYMENTS_MODE`, `MARKETPLACE_WITHDRAWAL_PAYOUT_ENABLED`) deve ser confirmado diretamente no ambiente antes de qualquer E2E financeiro — não deve ser assumido a partir desta documentação ou de sessões anteriores. O ToursFlow permanece protegido por `PAYMENTS_UI_ENABLED = false` independentemente desse estado. Fluxo transacional continua inatingível ao público.
 
 ## Contrato real do NauticFlow
 
@@ -18,9 +18,11 @@ Content-Type: application/json
 ```
 
 **Nunca envia `amount`** — o NauticFlow recalcula o valor a partir da
-reserva (`bookingId`). Com `MARKETPLACE_PAYMENTS_ENABLED` desligada (hoje),
-falha com `PAYMENT_PROVIDER_NOT_ENABLED` antes de criar qualquer
-tentativa/cobrança.
+reserva (`bookingId`). Se `MARKETPLACE_PAYMENTS_ENABLED` estiver desligada
+no NauticFlow, a chamada falha com `PAYMENT_PROVIDER_NOT_ENABLED` antes de
+criar qualquer tentativa/cobrança — o estado atual dessa flag em Production
+deve ser confirmado diretamente no ambiente do NauticFlow, não assumido a
+partir desta documentação.
 
 ### Consultar status (polling)
 
