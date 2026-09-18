@@ -9,7 +9,7 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
 
   return (
     <footer className="mt-24 border-t border-ink/10 bg-ink text-white">
-      <div className="shell grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="shell grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-3">
         <div>
           <LogoLockup size={36} onDark />
           <p className="mt-4 max-w-xs text-sm text-white/70">
@@ -59,22 +59,6 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
             </li>
           </ul>
         </nav>
-
-        <div>
-          <h2 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white/60">
-            Para operadores
-          </h2>
-          <p className="mt-4 text-sm text-white/70">
-            Quem opera passeios usa o NauticFlow para gerenciar embarcações, saídas e reservas, e
-            publica no {site.name} para vender direto ao turista.
-          </p>
-          <a
-            href="https://nauticflow.com.br"
-            className="mt-4 inline-flex rounded-full bg-white/10 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-white/20"
-          >
-            Conhecer o NauticFlow
-          </a>
-        </div>
       </div>
 
       <div className="border-t border-white/10">

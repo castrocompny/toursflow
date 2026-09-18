@@ -14,6 +14,20 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Remoção da comunicação voltada a operadores do frontend público (branch `frontend/mobile-booking-ux`)
+
+Decisão de posicionamento: o site público do ToursFlow passa a ser 100% voltado ao turista — nenhuma comunicação/CTA comercial dirigida a operadores fica visível na experiência pública. Se um fluxo de entrada para operador for necessário no futuro, ele deve viver separado do site principal, não misturado com a vitrine do turista.
+
+Removido (conteúdo promocional, não a menção neutra a "operador" que já existe em todo o site pra descrever quem opera cada passeio — essa parte foi mantida intacta):
+
+- **`src/components/layout/Header.tsx`**: link "Sou operador" (`href="https://nauticflow.com.br"`) removido do `<nav>` principal.
+- **`src/components/layout/Footer.tsx`**: coluna inteira "Para operadores" (texto sobre o NauticFlow + botão "Conhecer o NauticFlow") removida; grid do rodapé ajustado de `lg:grid-cols-4` para `lg:grid-cols-3` pra manter as 3 colunas restantes (logo, Destinos, Navegar) visualmente equilibradas, sem coluna vazia.
+- **`src/app/page.tsx`** (home): seção inteira "Para operadores" / "Opera passeios? Publique sua agenda no ToursFlow" / CTA "Conhecer o NauticFlow" removida (ficava entre "Categorias" e o bloco final "Escolha a experiência"). Nenhum CTA substituto adicionado no lugar.
+
+Mantido de propósito (não é promocional, é conteúdo normal de marketplace pro turista): "Sobre o operador" na página do passeio, "Operadores locais verificados" no hero da home, "Fale com o operador" no fluxo de reserva/`BookingReview`, bio de operador em `src/data/mock/operators.mock.ts`, e o disclaimer legal do rodapé ("Passeios operados por empresas independentes...").
+
+`npm run typecheck`/`lint`/`test` (388 testes, 27 arquivos — nenhum cobria o texto removido, então nenhum teste precisou mudar)/`build` limpos. Confirmado por grep que nenhuma ocorrência de "Sou operador"/"Para operadores"/"Opera passeios"/"Publique sua agenda"/"Conhecer o NauticFlow"/`nauticflow.com.br` restou no frontend público.
+
 ## 2026-09-12 — Vagas disponíveis: `Departure.availableSpots` (contrato público do NauticFlow), teto visual na quantidade
 
 Lacuna real encontrada em Production (relatada pelo lado NauticFlow): uma reserva de balcão de 2 passageiros já reduzia a ocupação corretamente no NauticFlow, mas a API pública só devolvia `soldOut` binário — o ToursFlow não tinha como mostrar "8 vagas disponíveis", só esgotado sim/não. NauticFlow passou a expor `availableSpots` (vagas reais, `max(capacity - booked, 0)`, calculado no servidor a partir da MESMA regra de ocupação já usada — confirmada/pendente-com-hold-válido — nunca a capacidade total da embarcação, que continua interna). Ver DOCUMENTACAO.md do NauticFlow, seção 133, para o lado servidor.

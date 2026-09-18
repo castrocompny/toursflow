@@ -127,25 +127,6 @@ export default async function HomePage() {
         </div>
       </Section>
 
-      <section className="shell pb-6">
-        <div className="grid items-center gap-8 rounded-card bg-foam p-8 sm:p-12 lg:grid-cols-[1.4fr_1fr]">
-          <div>
-            <p className="eyebrow">Para operadores</p>
-            <h2 className="mt-2 text-3xl font-bold">
-              Opera passeios? Publique sua agenda no ToursFlow
-            </h2>
-            <p className="mt-3 max-w-xl text-ink-muted">
-              Quem gerencia embarcações, saídas e reservas no NauticFlow publica os passeios aqui e
-              alcança o turista que ainda não conhece a sua empresa.
-            </p>
-          </div>
-          <a href="https://nauticflow.com.br" className="btn-primary w-full sm:w-auto lg:justify-self-end">
-            Conhecer o NauticFlow
-            <ArrowRight size={17} aria-hidden />
-          </a>
-        </div>
-      </section>
-
       <section className="shell py-14">
         <div className="grid gap-8 sm:grid-cols-3">
           {[

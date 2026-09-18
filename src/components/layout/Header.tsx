@@ -21,12 +21,6 @@ export function Header() {
               {item.label}
             </Link>
           ))}
-          <a
-            href="https://nauticflow.com.br"
-            className="hidden rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink transition-colors hover:border-ink/40 sm:inline-flex"
-          >
-            Sou operador
-          </a>
         </nav>
       </div>
     </header>
