@@ -25,8 +25,18 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
   const mainCategory = tour.categories[0];
 
   return (
-    <article className="group relative flex h-full flex-col overflow-hidden rounded-card border border-ink/10 bg-white shadow-card transition-shadow duration-200 hover:shadow-lift">
-      <div className="relative aspect-[4/3] overflow-hidden bg-foam">
+    <article className="group flex h-full flex-col overflow-hidden rounded-card border border-ink/10 bg-white shadow-card transition-shadow duration-200 hover:shadow-lift">
+      {/* Link real e independente — nunca um stretched-link (`after:absolute
+          after:inset-0`) cobrindo o card inteiro. Cada alvo de toque (imagem,
+          título, "Ver passeio") é o seu próprio `<Link>`, sem nenhum
+          sobrepondo outro — no touch, tocar em qualquer um dos três navega,
+          sem depender de um overlay invisível que pudesse perder a
+          prioridade de toque pro botão visível por cima dele. */}
+      <Link
+        href={href}
+        aria-label={`Ver passeio ${tour.name}`}
+        className="relative block aspect-[4/3] overflow-hidden bg-foam"
+      >
         {cover ? (
           <Image
             src={cover.url}
@@ -47,14 +57,12 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
             {mainCategory.name}
           </span>
         ) : null}
-      </div>
+      </Link>
 
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-display text-lg font-bold leading-snug">
-            <Link href={href} className="after:absolute after:inset-0 after:content-['']">
-              {tour.name}
-            </Link>
+            <Link href={href}>{tour.name}</Link>
           </h3>
           <Rating rating={tour.rating} />
         </div>
@@ -91,7 +99,7 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
           </div>
           <Link
             href={href}
-            className="relative z-10 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition active:scale-95 group-hover:bg-sea"
+            className="rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition active:scale-95 group-hover:bg-sea"
           >
             Ver passeio
           </Link>
