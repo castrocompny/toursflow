@@ -21,6 +21,8 @@ import { site } from '@/lib/site';
 interface PageProps {
   /** Next.js 15: `params` de página passou a ser assíncrono — sempre `await` antes de usar. */
   params: Promise<{ destino: string; slug: string }>;
+  /** `pessoas` chega opcionalmente de `/passeios?pessoas=N` (ver `TourCard`) — só uma dica de quantidade inicial pro `BookingSelector`, nunca um filtro. */
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }
 
 /**
@@ -47,16 +49,25 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   });
 }
 
-export default async function TourPage({ params }: PageProps) {
+export default async function TourPage({ params, searchParams }: PageProps) {
   const { destino, slug } = await params;
   const tour = await getTour(destino, slug);
   if (!tour) notFound();
 
-  const [relatedResult, departures] = await Promise.all([
+  const [relatedResult, departures, resolvedSearchParams] = await Promise.all([
     listTours({ destination: tour.destinationSlug, limit: 4 }),
     listDepartures(tour.slug),
+    searchParams,
   ]);
   const related = relatedResult.tours.filter((item) => item.id !== tour.id).slice(0, 3);
+
+  // Só uma dica de quantidade inicial pro BookingSelector (ex.: vindo de
+  // `/passeios?pessoas=4`) — nunca um filtro real de disponibilidade; a
+  // saída escolhida sempre reajusta pra baixo via `clampQuantity` se tiver
+  // menos vagas do que isso.
+  const pessoasRaw = resolvedSearchParams.pessoas;
+  const pessoasValue = Number(Array.isArray(pessoasRaw) ? pessoasRaw[0] : pessoasRaw);
+  const initialQuantityHint = Number.isFinite(pessoasValue) && pessoasValue > 0 ? pessoasValue : undefined;
 
   const structuredData = {
     '@context': 'https://schema.org',
@@ -152,7 +163,7 @@ export default async function TourPage({ params }: PageProps) {
               Datas e horários disponíveis
             </h2>
             <div className="mt-6">
-              <BookingSelector departures={departures} />
+              <BookingSelector departures={departures} initialQuantityHint={initialQuantityHint} />
             </div>
           </section>
 

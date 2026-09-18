@@ -110,7 +110,7 @@ export default async function ToursPage({ searchParams }: PageProps) {
 
       <div className="mt-8">
         {tours.length > 0 ? (
-          <TourGrid tours={tours} />
+          <TourGrid tours={tours} peopleParam={filters.people} />
         ) : (
           <EmptyState
             title="Nenhum passeio com esses filtros"

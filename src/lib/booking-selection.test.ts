@@ -5,6 +5,8 @@ import {
   calculateEstimatedTotal,
   canContinueBooking,
   clampQuantity,
+  groupDeparturesByDate,
+  isGroupAvailable,
   isSellablePriceType,
   sortDeparturesByDate,
 } from './booking-selection';
@@ -162,5 +164,55 @@ describe('sortDeparturesByDate', () => {
     const sorted = sortDeparturesByDate(input);
     expect(sorted.map((d) => d.id)).toEqual(['earlier', 'later']);
     expect(input.map((d) => d.id)).toEqual(['later', 'earlier']); // input intocado
+  });
+});
+
+describe('groupDeparturesByDate', () => {
+  // Dois horários no MESMO dia civil em America/Sao_Paulo (09h/15h UTC ->
+  // 06h/12h em Brasília, ainda 11/out nos dois casos).
+  const morning: Departure = { ...perPerson, id: 'morning', departsAt: '2026-10-11T09:00:00Z' };
+  const afternoon: Departure = { ...perPerson, id: 'afternoon', departsAt: '2026-10-11T15:00:00Z' };
+  // Depois da meia-noite UTC mas ainda 11/out em Brasília (UTC-3) — prova
+  // que o agrupamento usa o fuso certo, não a data UTC crua.
+  const lateUtcSameDay: Departure = { ...perPerson, id: 'late-utc', departsAt: '2026-10-12T01:00:00Z' };
+  const nextDay: Departure = { ...perPerson, id: 'next-day', departsAt: '2026-10-12T15:00:00Z' };
+
+  it('agrupa saídas do mesmo dia civil (fuso de Brasília) num único grupo', () => {
+    const groups = groupDeparturesByDate(sortDeparturesByDate([morning, afternoon, lateUtcSameDay]));
+    expect(groups).toHaveLength(1);
+    expect(groups[0].departures.map((d) => d.id)).toEqual(['morning', 'afternoon', 'late-utc']);
+  });
+
+  it('separa em grupos diferentes quando o dia civil muda', () => {
+    const groups = groupDeparturesByDate(sortDeparturesByDate([morning, nextDay]));
+    expect(groups).toHaveLength(2);
+    expect(groups[0].departures.map((d) => d.id)).toEqual(['morning']);
+    expect(groups[1].departures.map((d) => d.id)).toEqual(['next-day']);
+  });
+
+  it('preserva a ordem de entrada dos grupos e das saídas dentro do grupo', () => {
+    const groups = groupDeparturesByDate(sortDeparturesByDate([nextDay, morning, afternoon]));
+    expect(groups.map((g) => g.departures.map((d) => d.id))).toEqual([['morning', 'afternoon'], ['next-day']]);
+  });
+
+  it('array vazio -> nenhum grupo', () => {
+    expect(groupDeparturesByDate([])).toEqual([]);
+  });
+});
+
+describe('isGroupAvailable', () => {
+  it('true quando pelo menos uma saída do grupo é vendável e não esgotada', () => {
+    const group = { dateKey: '2026-10-11', departures: [soldOutDeparture, perPerson] };
+    expect(isGroupAvailable(group)).toBe(true);
+  });
+
+  it('false quando todas as saídas do grupo estão esgotadas', () => {
+    const group = { dateKey: '2026-10-11', departures: [soldOutDeparture, { ...soldOutDeparture, id: 'd7' }] };
+    expect(isGroupAvailable(group)).toBe(false);
+  });
+
+  it('false quando todas as saídas do grupo são de tipo não vendável (catálogo)', () => {
+    const group = { dateKey: '2026-10-11', departures: [startingFrom, perBoat] };
+    expect(isGroupAvailable(group)).toBe(false);
   });
 });

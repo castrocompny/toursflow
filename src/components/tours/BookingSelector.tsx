@@ -4,14 +4,23 @@ import { useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Calendar, Clock, Minus, Plus, Users } from 'lucide-react';
 import type { Departure } from '@/types';
-import { formatDepartureDateTime, formatPrice, priceTypeLabel } from '@/lib/format';
+import {
+  formatDepartureDateTime,
+  formatDepartureDateShort,
+  formatDepartureFullDate,
+  formatPrice,
+  priceTypeLabel,
+} from '@/lib/format';
 import {
   MIN_BOOKING_QUANTITY,
   calculateEstimatedTotal,
   canContinueBooking,
   clampQuantity,
+  groupDeparturesByDate,
+  isGroupAvailable,
   isSellablePriceType,
   sortDeparturesByDate,
+  type DepartureGroup,
 } from '@/lib/booking-selection';
 import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
 import {
@@ -49,6 +58,14 @@ const paymentClient = new ToursFlowPaymentClient();
 
 interface BookingSelectorProps {
   departures: Departure[];
+  /**
+   * Quantidade sugerida pela navegação anterior (ex.: `pessoas=4` na busca) —
+   * só um ponto de partida de UX, nunca um filtro real de disponibilidade
+   * (a API pública ainda não filtra por pessoas). Sempre passa por
+   * `clampQuantity()` — se a saída escolhida tiver menos vagas que o
+   * sugerido, a quantidade é reduzida automaticamente pro teto real.
+   */
+  initialQuantityHint?: number;
 }
 
 type Step = 'selection' | 'customer-form' | 'review' | 'confirmation' | 'payment-pix' | 'voucher';
@@ -99,10 +116,27 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * NÃO IMPLEMENTADO: pagamento (Asaas/PIX/cartão/split/webhook/voucher) —
  * o step de confirmação deixa isso explícito para o turista.
  */
-export function BookingSelector({ departures }: BookingSelectorProps) {
+export function BookingSelector({ departures, initialQuantityHint }: BookingSelectorProps) {
   const router = useRouter();
+  const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
+  const groups = useMemo(() => groupDeparturesByDate(sorted), [sorted]);
+  // Primeira DATA com disponibilidade real vem pré-selecionada (só o grupo —
+  // nunca um horário específico, e nunca cria reserva nenhuma). Se todas as
+  // datas estiverem esgotadas, cai na primeira mesmo assim, pra não deixar a
+  // tela sem nenhuma data em destaque.
+  const [selectedDateKey, setSelectedDateKey] = useState<string | null>(() => {
+    const firstAvailable = groups.find((group) => isGroupAvailable(group));
+    return (firstAvailable ?? groups[0])?.dateKey ?? null;
+  });
+  // Horário dentro da data escolhida — nunca pré-selecionado automaticamente,
+  // mesmo quando a data tem um único horário: a escolha é sempre um clique
+  // explícito do turista.
   const [selectedDepartureId, setSelectedDepartureId] = useState<string | null>(null);
-  const [quantity, setQuantity] = useState(MIN_BOOKING_QUANTITY);
+  // `initialQuantityHint` (ex.: "pessoas" vindo da busca) é só um palpite de
+  // UX — sem saída escolhida ainda não há teto de vagas real pra aplicar;
+  // `handleSelectDeparture` reaplica `clampQuantity` com `availableSpots` da
+  // saída assim que o turista escolhe um horário.
+  const [quantity, setQuantity] = useState(() => clampQuantity(initialQuantityHint ?? MIN_BOOKING_QUANTITY));
   const [customer, setCustomer] = useState<CustomerFormValues>(EMPTY_CUSTOMER_FORM_VALUES);
   const [step, setStep] = useState<Step>('selection');
   // Estado bruto ({key, fingerprint}) para resolveIdempotencyKey() decidir
@@ -132,10 +166,20 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
   // pode ser gerada de novo a cada re-render.
   const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState<string | null>(null);
 
-  const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
+  const selectedGroup = groups.find((group) => group.dateKey === selectedDateKey) ?? null;
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
   const estimatedTotal = selectedDeparture ? calculateEstimatedTotal(selectedDeparture, quantity) : null;
   const canContinue = canContinueBooking(selectedDeparture, quantity);
+
+  function handleSelectDate(group: DepartureGroup) {
+    setSelectedDateKey(group.dateKey);
+    // Trocar de data limpa o horário escolhido — o teto de vagas de um
+    // horário do dia anterior não faz sentido pra um dia diferente, e
+    // manter um `selectedDepartureId` de outra data escondido seria um
+    // estado inconsistente (card mostrando resumo de uma saída que não
+    // está mais visível na tela).
+    setSelectedDepartureId(null);
+  }
 
   function handleSelectDeparture(departure: Departure) {
     if (departure.soldOut || !isSellablePriceType(departure.priceType)) return;
@@ -296,62 +340,100 @@ export function BookingSelector({ departures }: BookingSelectorProps) {
 
   return (
     <div className="space-y-5">
-      <ul className="grid gap-3 sm:grid-cols-2">
-        {sorted.map((departure) => {
-          const { date, time } = formatDepartureDateTime(departure.departsAt);
-          const isSelected = selectedDepartureId === departure.id;
-          const sellable = isSellablePriceType(departure.priceType);
-          const isDisabled = departure.soldOut || !sellable;
-
+      {/* Faixa horizontal compacta de datas — agrupa as saídas por dia civil em vez
+          de um card gigante por saída (ver docs/ARCHITECTURE.md). `overflow-x-auto`
+          rola por touch nativamente em mobile; no desktop a mesma faixa continua
+          funcionando, só normalmente cabe tudo sem precisar rolar. */}
+      <div
+        role="group"
+        aria-label="Escolha a data"
+        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [-webkit-overflow-scrolling:touch]"
+      >
+        {groups.map((group) => {
+          const isSelected = group.dateKey === selectedDateKey;
+          const available = isGroupAvailable(group);
           return (
-            <li key={departure.id}>
-              <button
-                type="button"
-                disabled={isDisabled}
-                aria-pressed={isSelected}
-                onClick={() => handleSelectDeparture(departure)}
-                className={`flex w-full flex-col gap-2 rounded-card border p-4 text-left transition-colors ${
-                  isDisabled
-                    ? 'cursor-not-allowed border-ink/10 bg-sand opacity-60'
-                    : isSelected
-                      ? 'border-sea bg-foam'
-                      : 'border-ink/15 bg-white hover:border-sea'
-                }`}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-1.5 text-sm font-semibold capitalize text-ink">
-                    <Calendar size={14} aria-hidden />
-                    {date}
-                  </span>
-                  {departure.soldOut ? (
-                    <span className="rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
-                      Esgotado
-                    </span>
-                  ) : !sellable ? (
-                    <span className="rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
-                      Indisponível
-                    </span>
-                  ) : null}
-                </div>
-                <span className="inline-flex items-center gap-1.5 text-sm text-ink-muted">
-                  <Clock size={14} aria-hidden />
-                  {time}
-                </span>
-                <span className="font-display text-base font-bold text-ink">
-                  {formatPrice(departure.price)}{' '}
-                  <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
-                </span>
-                {!isDisabled ? (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-ink-muted">
-                    <Users size={13} aria-hidden />
-                    {availabilityLabel(departure.availableSpots)}
-                  </span>
-                ) : null}
-              </button>
-            </li>
+            <button
+              key={group.dateKey}
+              type="button"
+              disabled={!available}
+              aria-current={isSelected ? 'date' : undefined}
+              onClick={() => handleSelectDate(group)}
+              className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold capitalize transition-colors ${
+                !available
+                  ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
+                  : isSelected
+                    ? 'border-sea bg-foam text-ink'
+                    : 'border-ink/15 bg-white text-ink hover:border-sea'
+              }`}
+            >
+              {formatDepartureDateShort(group.departures[0].departsAt)}
+              {!available ? <span className="text-[10px] font-medium normal-case">Esgotado</span> : null}
+            </button>
           );
         })}
-      </ul>
+      </div>
+
+      {selectedGroup ? (
+        <div className="space-y-2">
+          <p className="inline-flex items-center gap-1.5 text-sm font-semibold capitalize text-ink">
+            <Calendar size={14} aria-hidden />
+            {formatDepartureFullDate(selectedGroup.departures[0].departsAt)}
+          </p>
+          {/* Horários do dia escolhido — uma linha compacta por horário, sem repetir
+              a data (já mostrada acima). Se houver só um horário, esta lista mostra
+              só ele, naturalmente. */}
+          <ul className="space-y-2">
+            {selectedGroup.departures.map((departure) => {
+              const { time } = formatDepartureDateTime(departure.departsAt);
+              const isSelected = selectedDepartureId === departure.id;
+              const sellable = isSellablePriceType(departure.priceType);
+              const isDisabled = departure.soldOut || !sellable;
+
+              return (
+                <li key={departure.id}>
+                  <button
+                    type="button"
+                    disabled={isDisabled}
+                    aria-pressed={isSelected}
+                    onClick={() => handleSelectDeparture(departure)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-card border px-4 py-3 text-left transition-colors ${
+                      isDisabled
+                        ? 'cursor-not-allowed border-ink/10 bg-sand opacity-60'
+                        : isSelected
+                          ? 'border-sea bg-foam'
+                          : 'border-ink/15 bg-white hover:border-sea'
+                    }`}
+                  >
+                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
+                      <Clock size={14} aria-hidden />
+                      {time}
+                    </span>
+                    <span className="font-display text-sm font-bold text-ink">
+                      {formatPrice(departure.price)}{' '}
+                      <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
+                    </span>
+                    {departure.soldOut ? (
+                      <span className="shrink-0 rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
+                        Esgotado
+                      </span>
+                    ) : !sellable ? (
+                      <span className="shrink-0 rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
+                        Indisponível
+                      </span>
+                    ) : (
+                      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-muted">
+                        <Users size={12} aria-hidden />
+                        {availabilityLabel(departure.availableSpots)}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      ) : null}
 
       {allSoldOut ? (
         <p className="rounded-card border border-dashed border-ink/20 bg-sand px-5 py-4 text-center text-sm text-ink-muted">

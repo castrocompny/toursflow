@@ -11,11 +11,17 @@ interface TourCardProps {
   tour: TourWithRelations;
   /** Primeiros cards da página carregam a imagem com prioridade (LCP). */
   priority?: boolean;
+  /**
+   * "Pessoas" já informado na busca (`/passeios?pessoas=N`) — repassado como
+   * dica de quantidade inicial na página do passeio (`BookingSelector`),
+   * nunca como filtro real (a API pública ainda não filtra por pessoas).
+   */
+  peopleParam?: number;
 }
 
-export function TourCard({ tour, priority = false }: TourCardProps) {
+export function TourCard({ tour, priority = false, peopleParam }: TourCardProps) {
   const cover = tour.images[0];
-  const href = routes.tour(tour);
+  const href = peopleParam ? `${routes.tour(tour)}?pessoas=${peopleParam}` : routes.tour(tour);
   const mainCategory = tour.categories[0];
 
   return (

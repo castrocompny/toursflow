@@ -304,20 +304,92 @@ describe('BookingSelector', () => {
     expect(input.value).toBe('1');
   });
 
-  it('trocar para uma saída com menos vagas reajusta a quantidade pro novo teto', () => {
+  it('trocar para uma saída com menos vagas (data diferente) reajusta a quantidade pro novo teto', () => {
+    // `available` (11/out) e `oneSpotLeft` (25/out) caem em datas diferentes
+    // -> aparecem como dois chips na faixa de datas, não dois botões de
+    // horário simultâneos.
     render(<BookingSelector departures={[available, oneSpotLeft]} />);
-    const buttons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
-    const availableButton = buttons[0];
-    const oneSpotButton = buttons[1];
 
+    const availableButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(availableButton);
     fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
     fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
     expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('3');
 
+    // Troca de data (25/out) -> o horário anterior some, precisa escolher de novo.
+    fireEvent.click(screen.getByRole('button', { name: /25$/ }));
+    expect(screen.queryByLabelText(/quantidade de pessoas/i)).toBeNull();
+
+    const oneSpotButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(oneSpotButton);
     expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('1');
     expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(false);
+  });
+
+  describe('agrupamento por data', () => {
+    it('mostra um chip de data por dia distinto, e os horários abaixo são só os do dia selecionado', () => {
+      render(<BookingSelector departures={[available, oneSpotLeft]} />);
+
+      // Dois chips de data (11/out selecionado por padrão, 25/out disponível).
+      expect(screen.getByRole('button', { name: /11$/ })).toBeTruthy();
+      expect(screen.getByRole('button', { name: /25$/ })).toBeTruthy();
+
+      // Só o horário de 11/out está visível como botão selecionável agora.
+      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      expect(timeButtons).toHaveLength(1);
+    });
+
+    it('data com todos os horários esgotados aparece com o chip desabilitado e rótulo "Esgotado"', () => {
+      render(<BookingSelector departures={[soldOut, available]} />);
+
+      const soldOutDateButtons = screen.getAllByRole('button').filter((el) => /esgotado/i.test(el.textContent ?? ''));
+      expect(soldOutDateButtons.length).toBeGreaterThan(0);
+      expect(isDisabled(soldOutDateButtons[0])).toBe(true);
+    });
+
+    it('a primeira data com disponibilidade real vem selecionada, pulando uma data totalmente esgotada', () => {
+      // soldOut (18/out) vem ANTES de available (11/out)? Não — precisamos de uma
+      // saída esgotada em uma data anterior à disponível pra provar o "pular".
+      const soldOutEarlier: Departure = { ...soldOut, departsAt: '2026-10-05T17:00:00+00:00' };
+      render(<BookingSelector departures={[soldOutEarlier, available]} />);
+
+      // O horário de `available` (a única data com vaga real) já aparece
+      // selecionável sem precisar clicar em nenhum chip.
+      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      expect(timeButtons).toHaveLength(1);
+      expect(isDisabled(timeButtons[0])).toBe(false);
+    });
+
+    it('nunca pré-seleciona um horário automaticamente, mesmo a data já vindo selecionada', () => {
+      render(<BookingSelector departures={[available, oneSpotLeft]} />);
+      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      expect(timeButtons[0].getAttribute('aria-pressed')).toBe('false');
+      expect(screen.queryByLabelText(/quantidade de pessoas/i)).toBeNull();
+    });
+  });
+
+  describe('initialQuantityHint (ex.: "pessoas" vindo da busca)', () => {
+    it('usa o hint como quantidade inicial quando a saída escolhida tem vagas suficientes', () => {
+      render(<BookingSelector departures={[available]} initialQuantityHint={4} />);
+      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      fireEvent.click(departureButton);
+      expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('4');
+    });
+
+    it('reajusta o hint pra baixo quando a saída escolhida tem menos vagas do que o pedido', () => {
+      render(<BookingSelector departures={[oneSpotLeft]} initialQuantityHint={4} />);
+      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      fireEvent.click(departureButton);
+      expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('1');
+    });
+
+    it('nunca cria reserva nem chama fetch só por causa do hint', () => {
+      const fetchSpy = vi.fn();
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} initialQuantityHint={4} />);
+      expect(fetchSpy).not.toHaveBeenCalled();
+      vi.unstubAllGlobals();
+    });
   });
 
   it('mistura de saídas: só a vendável pode ser selecionada', () => {

@@ -1,4 +1,5 @@
 import type { Departure, PriceType } from '@/types';
+import { departureDateKey } from '@/lib/format';
 
 /**
  * Lógica pura da seleção de reserva — separada do componente React para
@@ -78,4 +79,37 @@ export function canContinueBooking(departure: Departure | null, quantity: number
 
 export function sortDeparturesByDate(departures: Departure[]): Departure[] {
   return [...departures].sort((a, b) => new Date(a.departsAt).getTime() - new Date(b.departsAt).getTime());
+}
+
+export interface DepartureGroup {
+  dateKey: string;
+  departures: Departure[];
+}
+
+/**
+ * Agrupa saídas do mesmo dia civil (fuso de Brasília) — pensado pra UI
+ * compacta (faixa de datas + horários do dia escolhido abaixo), em vez de
+ * um card gigante por saída. Espera `departures` já ordenada
+ * (`sortDeparturesByDate`); a ordem dos grupos e das saídas dentro de cada
+ * grupo segue a ordem de entrada.
+ */
+export function groupDeparturesByDate(sortedDepartures: Departure[]): DepartureGroup[] {
+  const groups: DepartureGroup[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const departure of sortedDepartures) {
+    const key = departureDateKey(departure.departsAt);
+    const existingIndex = indexByKey.get(key);
+    if (existingIndex === undefined) {
+      indexByKey.set(key, groups.length);
+      groups.push({ dateKey: key, departures: [departure] });
+    } else {
+      groups[existingIndex].departures.push(departure);
+    }
+  }
+  return groups;
+}
+
+/** Uma data só conta como "disponível" se tiver pelo menos um horário vendável e não esgotado — usado pra escolher a data inicial e pra marcar "Esgotado" na faixa de datas. Nunca inventa disponibilidade: só lê `soldOut`/`priceType`, os mesmos campos que já vêm do NauticFlow. */
+export function isGroupAvailable(group: DepartureGroup): boolean {
+  return group.departures.some((departure) => !departure.soldOut && isSellablePriceType(departure.priceType));
 }

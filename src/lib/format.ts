@@ -78,3 +78,40 @@ export function formatDepartureDateTime(departsAtIso: string): { date: string; t
     time: departureTimeFormatter.format(instant),
   };
 }
+
+/** `en-CA` devolve `YYYY-MM-DD` direto — chave estável pra agrupar saídas do mesmo dia civil (fuso de Brasília), nunca a string localizada (que repete entre meses/anos). */
+const departureDateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Sao_Paulo',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const departureShortDateFormatter = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo',
+  weekday: 'short',
+  day: '2-digit',
+});
+
+const departureFullDateFormatter = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo',
+  day: 'numeric',
+  month: 'long',
+});
+
+export function departureDateKey(departsAtIso: string): string {
+  return departureDateKeyFormatter.format(new Date(departsAtIso));
+}
+
+/** Rótulo compacto pra faixa horizontal de datas ("Qui 17") — sem vírgula/ponto do Intl, primeira letra maiúscula. */
+export function formatDepartureDateShort(departsAtIso: string): string {
+  const parts = departureShortDateFormatter.formatToParts(new Date(departsAtIso));
+  const weekday = (parts.find((part) => part.type === 'weekday')?.value ?? '').replace(/\.$/, '');
+  const day = parts.find((part) => part.type === 'day')?.value ?? '';
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)} ${day}`;
+}
+
+/** Data por extenso sem ano ("17 de setembro") — cabeçalho acima da lista de horários de um dia já selecionado. */
+export function formatDepartureFullDate(departsAtIso: string): string {
+  return departureFullDateFormatter.format(new Date(departsAtIso));
+}
