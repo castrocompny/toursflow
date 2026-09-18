@@ -99,6 +99,11 @@ const departureFullDateFormatter = new Intl.DateTimeFormat('pt-BR', {
   month: 'long',
 });
 
+const departureWeekdayLongFormatter = new Intl.DateTimeFormat('pt-BR', {
+  timeZone: 'America/Sao_Paulo',
+  weekday: 'long',
+});
+
 export function departureDateKey(departsAtIso: string): string {
   return departureDateKeyFormatter.format(new Date(departsAtIso));
 }
@@ -116,26 +121,80 @@ export function formatDepartureFullDate(departsAtIso: string): string {
   return departureFullDateFormatter.format(new Date(departsAtIso));
 }
 
+type RelativeDay = 'today' | 'tomorrow' | 'other';
+
+/**
+ * Compara o dia civil de `departsAtIso` com o de `nowIso`, sempre em
+ * America/Sao_Paulo — base de `formatNextDepartureLabel` e
+ * `formatRelativeDepartureDate`, pra não duplicar a mesma conta de "dia
+ * seguinte" duas vezes. Meio-dia UTC como âncora pro cálculo de amanhã:
+ * sempre cai no meio do dia em Brasília (UTC-3), então somar 24h e
+ * reformatar nunca cruza uma borda de dia por causa de horário de verão.
+ */
+function classifyRelativeDay(departsAtIso: string, nowIso: string): RelativeDay {
+  const departureKey = departureDateKey(departsAtIso);
+  const todayKey = departureDateKey(nowIso);
+  if (departureKey === todayKey) return 'today';
+
+  const tomorrowKey = departureDateKeyFormatter.format(
+    new Date(new Date(`${todayKey}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000),
+  );
+  if (departureKey === tomorrowKey) return 'tomorrow';
+
+  return 'other';
+}
+
 /**
  * Rótulo da "próxima saída" ("Hoje às 15:30", "Amanhã às 09:00", "17 de
  * setembro às 15:30") — sempre relativo a `nowIso` (injetável pra teste;
  * em produção é o instante real do servidor, a rota já é dinâmica/sem
- * cache). Compara dias civis em America/Sao_Paulo, nunca UTC cru.
+ * cache).
  */
 export function formatNextDepartureLabel(departsAtIso: string, nowIso: string = new Date().toISOString()): string {
-  const departureKey = departureDateKey(departsAtIso);
-  const todayKey = departureDateKey(nowIso);
   const time = departureTimeFormatter.format(new Date(departsAtIso));
+  const relative = classifyRelativeDay(departsAtIso, nowIso);
 
-  if (departureKey === todayKey) return `Hoje às ${time}`;
-
-  // Meio-dia UTC como âncora: sempre cai no meio do dia em Brasília
-  // (UTC-3), então somar 24h e reformatar nunca cruza uma borda de dia
-  // por causa de horário de verão/fuso.
-  const tomorrowKey = departureDateKeyFormatter.format(
-    new Date(new Date(`${todayKey}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000),
-  );
-  if (departureKey === tomorrowKey) return `Amanhã às ${time}`;
-
+  if (relative === 'today') return `Hoje às ${time}`;
+  if (relative === 'tomorrow') return `Amanhã às ${time}`;
   return `${formatDepartureFullDate(departsAtIso)} às ${time}`;
+}
+
+/**
+ * Cabeçalho de data por extenso e relativo ("Hoje, quinta-feira", "Amanhã,
+ * sexta-feira", "Sábado, 19 de setembro") — usado no destaque da próxima
+ * saída e em qualquer data escolhida no `BookingSelector`. Sem horário
+ * (ver `formatNextDepartureLabel` pra isso).
+ */
+export function formatRelativeDepartureDate(
+  departsAtIso: string,
+  nowIso: string = new Date().toISOString(),
+): string {
+  const weekday = departureWeekdayLongFormatter.format(new Date(departsAtIso));
+  const relative = classifyRelativeDay(departsAtIso, nowIso);
+
+  if (relative === 'today') return `Hoje, ${weekday}`;
+  if (relative === 'tomorrow') return `Amanhã, ${weekday}`;
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${formatDepartureFullDate(departsAtIso)}`;
+}
+
+/**
+ * Horário final = `departsAt + durationMinutes` — NUNCA inventado. `null`
+ * quando `durationMinutes` está ausente/inválido (0, negativo, NaN,
+ * fracionário não faz sentido pra duração em minutos mas não é
+ * bloqueado aqui, só valores claramente inválidos são).
+ */
+export function formatDepartureEndTime(departsAtIso: string, durationMinutes: number | undefined): string | null {
+  if (!Number.isFinite(durationMinutes) || (durationMinutes as number) <= 0) return null;
+  const end = new Date(new Date(departsAtIso).getTime() + (durationMinutes as number) * 60 * 1000);
+  return departureTimeFormatter.format(end);
+}
+
+/**
+ * "09:00 às 14:00" quando `durationMinutes` é válido, senão só "09:00" —
+ * nunca um horário final inventado (ver `formatDepartureEndTime`).
+ */
+export function formatDepartureTimeRange(departsAtIso: string, durationMinutes?: number): string {
+  const start = departureTimeFormatter.format(new Date(departsAtIso));
+  const end = formatDepartureEndTime(departsAtIso, durationMinutes);
+  return end ? `${start} às ${end}` : start;
 }

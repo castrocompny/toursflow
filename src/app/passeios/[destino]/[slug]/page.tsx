@@ -204,7 +204,11 @@ export default async function TourPage({ params, searchParams }: PageProps) {
               Datas e horários disponíveis
             </h2>
             <div className="mt-6">
-              <BookingSelector departures={departures} initialQuantityHint={initialQuantityHint} />
+              <BookingSelector
+                departures={departures}
+                initialQuantityHint={initialQuantityHint}
+                durationMinutes={tour.durationMinutes}
+              />
             </div>
           </section>
 

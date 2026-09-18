@@ -5,10 +5,10 @@ import { useRouter } from 'next/navigation';
 import { Calendar, Clock, Minus, Plus, Users } from 'lucide-react';
 import type { Departure } from '@/types';
 import {
-  formatDepartureDateTime,
   formatDepartureDateShort,
-  formatDepartureFullDate,
+  formatDepartureTimeRange,
   formatPrice,
+  formatRelativeDepartureDate,
   priceTypeLabel,
 } from '@/lib/format';
 import {
@@ -45,6 +45,14 @@ import { BookingVoucher } from './BookingVoucher';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
 
+/**
+ * Progressão de quantas datas extras (além da data em destaque) aparecem em
+ * "Próximas datas" — nunca todas de uma vez (o NauticFlow pode ter dezenas
+ * de saídas futuras geradas). Cada clique em "Ver mais datas" avança um
+ * passo; o botão some quando não há mais nada a revelar.
+ */
+const DATE_REVEAL_STEPS = [3, 7, 14] as const;
+
 // Client real (chama só as rotas do próprio ToursFlow, nunca o
 // NauticFlow/Asaas diretamente) — a proteção contra uso em produção é
 // PAYMENTS_UI_ENABLED (`src/lib/feature-flags.ts`), não este client:
@@ -62,6 +70,13 @@ interface BookingSelectorProps {
    * sugerido, a quantidade é reduzida automaticamente pro teto real.
    */
   initialQuantityHint?: number;
+  /**
+   * Duração do passeio (`tour.durationMinutes`) — usada só pra calcular o
+   * horário final exibido ("09:00 às 14:00", ver `formatDepartureTimeRange`).
+   * Opcional pra não obrigar toda chamada existente a passar: ausente ou
+   * inválida, mostra só o horário de início, nunca inventa um horário final.
+   */
+  durationMinutes?: number;
 }
 
 type Step = 'selection' | 'customer-form' | 'review' | 'confirmation' | 'payment-pix' | 'voucher';
@@ -112,7 +127,7 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * NÃO IMPLEMENTADO: pagamento (Asaas/PIX/cartão/split/webhook/voucher) —
  * o step de confirmação deixa isso explícito para o turista.
  */
-export function BookingSelector({ departures, initialQuantityHint }: BookingSelectorProps) {
+export function BookingSelector({ departures, initialQuantityHint, durationMinutes }: BookingSelectorProps) {
   const router = useRouter();
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const groups = useMemo(() => groupDeparturesByDate(sorted), [sorted]);
@@ -124,6 +139,10 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
     const firstAvailable = groups.find((group) => isGroupAvailable(group));
     return (firstAvailable ?? groups[0])?.dateKey ?? null;
   });
+  // Quantas datas extras (além da "próxima saída") já foram reveladas em
+  // "Próximas datas" — índice em DATE_REVEAL_STEPS, avança 1 por clique em
+  // "Ver mais datas". Nunca mostra todas as saídas futuras de uma vez.
+  const [revealStepIndex, setRevealStepIndex] = useState(0);
   // Horário dentro da data escolhida — nunca pré-selecionado automaticamente,
   // mesmo quando a data tem um único horário: a escolha é sempre um clique
   // explícito do turista.
@@ -162,7 +181,24 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
   // pode ser gerada de novo a cada re-render.
   const [paymentIdempotencyKey, setPaymentIdempotencyKey] = useState<string | null>(null);
 
-  const selectedGroup = groups.find((group) => group.dateKey === selectedDateKey) ?? null;
+  // Índice da primeira data com disponibilidade real — vira o eyebrow
+  // "Próxima saída". -1 quando nada está disponível (tudo esgotado ou não
+  // vendável); nesse caso ainda mostramos a primeira data em destaque —
+  // sem eyebrow de "próxima saída" — pra deixar claro POR QUE (esgotado/
+  // indisponível), em vez de sumir com a informação. `allSoldOut`/
+  // `hasUnsellable` mais abaixo cobrem a mensagem geral.
+  const featuredIndex = groups.findIndex((group) => isGroupAvailable(group));
+  const displayIndex = featuredIndex === -1 ? 0 : featuredIndex;
+  const displayGroup = groups[displayIndex] ?? null;
+  const isFeaturedAvailable = featuredIndex !== -1;
+  // Só as datas DEPOIS da destacada — uma data anterior já esgotada não é
+  // "próxima" de nada, não faz sentido misturar no "Próximas datas".
+  const remainingGroups = groups.slice(displayIndex + 1);
+  const visibleRemainingCount = Math.min(DATE_REVEAL_STEPS[revealStepIndex], remainingGroups.length);
+  const canRevealMoreDates =
+    revealStepIndex < DATE_REVEAL_STEPS.length - 1 && visibleRemainingCount < remainingGroups.length;
+
+  const selectedGroup = groups.find((group) => group.dateKey === selectedDateKey) ?? displayGroup;
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
   const estimatedTotal = selectedDeparture ? calculateEstimatedTotal(selectedDeparture, quantity) : null;
   const canContinue = canContinueBooking(selectedDeparture, quantity);
@@ -175,6 +211,10 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
     // estado inconsistente (card mostrando resumo de uma saída que não
     // está mais visível na tela).
     setSelectedDepartureId(null);
+  }
+
+  function handleShowMoreDates() {
+    setRevealStepIndex((current) => Math.min(current + 1, DATE_REVEAL_STEPS.length - 1));
   }
 
   function handleSelectDeparture(departure: Departure) {
@@ -336,104 +376,124 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
 
   return (
     <div className="space-y-5">
-      {/* Faixa horizontal compacta de datas — agrupa as saídas por dia civil em vez
-          de um card gigante por saída (ver docs/ARCHITECTURE.md). `overflow-x-auto`
-          rola por touch nativamente em mobile; no desktop a mesma faixa continua
-          funcionando, só normalmente cabe tudo sem precisar rolar. */}
-      <div
-        role="group"
-        aria-label="Escolha a data"
-        className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [-webkit-overflow-scrolling:touch]"
-      >
-        {groups.map((group) => {
-          const isSelected = group.dateKey === selectedDateKey;
-          const available = isGroupAvailable(group);
-          return (
-            <button
-              key={group.dateKey}
-              type="button"
-              disabled={!available}
-              aria-current={isSelected ? 'date' : undefined}
-              onClick={() => handleSelectDate(group)}
-              className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold capitalize transition active:scale-95 ${
-                !available
-                  ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
-                  : isSelected
-                    ? 'border-sea bg-foam text-ink'
-                    : 'border-ink/15 bg-white text-ink hover:border-sea'
-              }`}
-            >
-              {formatDepartureDateShort(group.departures[0].departsAt)}
-              {!available ? <span className="text-[10px] font-medium normal-case">Esgotado</span> : null}
-            </button>
-          );
-        })}
-      </div>
+      {displayGroup && selectedGroup ? (
+        <div className="space-y-5">
+          {/* Destaque: só a data em questão (a mais próxima com disponibilidade
+              real, ou a que o turista escolheu em "Próximas datas" abaixo) — nunca
+              a agenda inteira de uma vez, mesmo que o passeio saia todos os dias. */}
+          <div className="space-y-2">
+            {isFeaturedAvailable && selectedGroup.dateKey === displayGroup.dateKey ? (
+              <p className="eyebrow">Próxima saída</p>
+            ) : null}
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-base font-semibold capitalize text-ink">
+              <Calendar size={16} aria-hidden />
+              {formatRelativeDepartureDate(selectedGroup.departures[0].departsAt)}
+            </p>
+            <p className="text-sm text-ink-muted">{formatAvailableTimesCount(countAvailableInGroup(selectedGroup))}</p>
 
-      {selectedGroup ? (
-        <div className="space-y-2">
-          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-ink">
-            <span className="inline-flex items-center gap-1.5 font-semibold capitalize">
-              <Calendar size={14} aria-hidden />
-              {formatDepartureFullDate(selectedGroup.departures[0].departsAt)}
-            </span>
-            <span aria-hidden className="text-ink-muted">
-              ·
-            </span>
-            <span className="text-ink-muted">{formatAvailableTimesCount(countAvailableInGroup(selectedGroup))}</span>
-          </p>
-          {/* Horários do dia escolhido — uma linha compacta por horário, sem repetir
-              a data (já mostrada acima). Se houver só um horário, esta lista mostra
-              só ele, naturalmente. */}
-          <ul className="space-y-2">
-            {selectedGroup.departures.map((departure) => {
-              const { time } = formatDepartureDateTime(departure.departsAt);
-              const isSelected = selectedDepartureId === departure.id;
-              const sellable = isSellablePriceType(departure.priceType);
-              const isDisabled = departure.soldOut || !sellable;
+            {/* Horários da data em destaque — mostrados uma vez por horário, nunca
+                repetindo a data (ela já está no cabeçalho acima). Se houver só um
+                horário, esta lista mostra só ele. */}
+            <ul className="space-y-2">
+              {selectedGroup.departures.map((departure) => {
+                const isSelected = selectedDepartureId === departure.id;
+                const sellable = isSellablePriceType(departure.priceType);
+                const isDisabled = departure.soldOut || !sellable;
 
-              return (
-                <li key={departure.id}>
-                  <button
-                    type="button"
-                    disabled={isDisabled}
-                    aria-pressed={isSelected}
-                    onClick={() => handleSelectDeparture(departure)}
-                    className={`flex w-full items-center justify-between gap-3 rounded-card border px-4 py-3 text-left transition active:scale-[0.98] ${
-                      isDisabled
-                        ? 'cursor-not-allowed border-ink/10 bg-sand opacity-60'
-                        : isSelected
-                          ? 'border-sea bg-foam'
-                          : 'border-ink/15 bg-white hover:border-sea'
-                    }`}
-                  >
-                    <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
-                      <Clock size={14} aria-hidden />
-                      {time}
-                    </span>
-                    <span className="font-display text-sm font-bold text-ink">
-                      {formatPrice(departure.price)}{' '}
-                      <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
-                    </span>
-                    {departure.soldOut ? (
-                      <span className="shrink-0 rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
-                        Esgotado
+                return (
+                  <li key={departure.id}>
+                    <button
+                      type="button"
+                      disabled={isDisabled}
+                      aria-pressed={isSelected}
+                      onClick={() => handleSelectDeparture(departure)}
+                      className={`flex w-full flex-col rounded-card border p-4 text-left transition active:scale-[0.98] ${
+                        isDisabled
+                          ? 'cursor-not-allowed border-ink/10 bg-sand opacity-60'
+                          : isSelected
+                            ? 'border-sea bg-foam'
+                            : 'border-ink/15 bg-white hover:border-sea'
+                      }`}
+                    >
+                      <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
+                        <Clock size={14} aria-hidden />
+                        {formatDepartureTimeRange(departure.departsAt, durationMinutes)}
                       </span>
-                    ) : !sellable ? (
-                      <span className="shrink-0 rounded-full bg-ink/10 px-2.5 py-1 text-xs font-semibold text-ink-muted">
-                        Indisponível
+                      <span className="mt-1 font-display text-base font-bold text-ink">
+                        {formatPrice(departure.price)}{' '}
+                        <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
                       </span>
-                    ) : (
-                      <span className="inline-flex shrink-0 items-center gap-1 text-xs text-ink-muted">
-                        <Users size={12} aria-hidden />
-                        {availabilityLabel(departure.availableSpots)}
+                      <span className="mt-2 flex items-center justify-between gap-3">
+                        {departure.soldOut ? (
+                          <span className="text-xs font-semibold text-ink-muted">Esgotado</span>
+                        ) : !sellable ? (
+                          <span className="text-xs font-semibold text-ink-muted">Indisponível</span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-xs text-ink-muted">
+                            <Users size={12} aria-hidden />
+                            {availabilityLabel(departure.availableSpots)}
+                          </span>
+                        )}
+                        {!isDisabled ? (
+                          <span
+                            className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-white ${
+                              isSelected ? 'bg-sea' : 'bg-ink'
+                            }`}
+                          >
+                            {isSelected ? 'Selecionado' : 'Selecionar'}
+                          </span>
+                        ) : null}
                       </span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+
+          {remainingGroups.length > 0 ? (
+            <div className="space-y-2">
+              <p className="eyebrow">Próximas datas</p>
+              <div
+                role="group"
+                aria-label="Mais datas"
+                className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 [-webkit-overflow-scrolling:touch]"
+              >
+                {remainingGroups.slice(0, visibleRemainingCount).map((group) => {
+                  const isSelected = group.dateKey === selectedDateKey;
+                  const available = isGroupAvailable(group);
+                  return (
+                    <button
+                      key={group.dateKey}
+                      type="button"
+                      disabled={!available}
+                      aria-current={isSelected ? 'date' : undefined}
+                      onClick={() => handleSelectDate(group)}
+                      className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold capitalize transition active:scale-95 ${
+                        !available
+                          ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
+                          : isSelected
+                            ? 'border-sea bg-foam text-ink'
+                            : 'border-ink/15 bg-white text-ink hover:border-sea'
+                      }`}
+                    >
+                      {formatDepartureDateShort(group.departures[0].departsAt)}
+                      {!available ? <span className="text-[10px] font-medium normal-case">Esgotado</span> : null}
+                    </button>
+                  );
+                })}
+              </div>
+              {canRevealMoreDates ? (
+                <button
+                  type="button"
+                  onClick={handleShowMoreDates}
+                  className="inline-flex items-center rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold text-ink transition active:scale-95 hover:border-ink/40"
+                >
+                  Ver mais datas
+                </button>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       ) : null}
 

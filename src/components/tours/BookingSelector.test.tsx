@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Departure } from '@/types';
 
@@ -327,16 +327,18 @@ describe('BookingSelector', () => {
   });
 
   describe('agrupamento por data', () => {
-    it('mostra um chip de data por dia distinto, e os horários abaixo são só os do dia selecionado', () => {
+    it('a data em destaque (11/out) não tem chip próprio — já vem expandida; 25/out aparece em "Próximas datas"', () => {
       render(<BookingSelector departures={[available, oneSpotLeft]} />);
 
-      // Dois chips de data (11/out selecionado por padrão, 25/out disponível).
-      expect(screen.getByRole('button', { name: /11$/ })).toBeTruthy();
-      expect(screen.getByRole('button', { name: /25$/ })).toBeTruthy();
-
-      // Só o horário de 11/out está visível como botão selecionável agora.
+      // 11/out é a data em destaque (mais próxima disponível): sem chip, já
+      // mostrando o horário como botão selecionável diretamente.
+      expect(screen.queryByRole('button', { name: /11$/ })).toBeNull();
       const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
       expect(timeButtons).toHaveLength(1);
+
+      // 25/out é a única data "depois" da destacada -> aparece como chip em "Próximas datas".
+      expect(screen.getByText('Próximas datas')).toBeTruthy();
+      expect(screen.getByRole('button', { name: /25$/ })).toBeTruthy();
     });
 
     it('data com todos os horários esgotados aparece com o chip desabilitado e rótulo "Esgotado"', () => {
@@ -379,6 +381,79 @@ describe('BookingSelector', () => {
     it('resumo da data mostra singular "1 horário disponível" quando só um horário do dia é vendável', () => {
       render(<BookingSelector departures={[available]} />);
       expect(screen.getByText('1 horário disponível')).toBeTruthy();
+    });
+
+    it('vários horários no mesmo dia viram linhas separadas, sem repetir a data (só um cabeçalho)', () => {
+      const morningSameDay: Departure = { ...available, id: 'morning', departsAt: '2026-10-11T09:00:00+00:00' };
+      render(<BookingSelector departures={[available, morningSameDay]} />);
+
+      // Só uma ocorrência do cabeçalho de data (11 de outubro é domingo).
+      expect(screen.getAllByText('Domingo, 11 de outubro')).toHaveLength(1);
+      // Mas dois horários selecionáveis.
+      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      expect(timeButtons).toHaveLength(2);
+    });
+
+    it('início + duração calcula o horário final exibido ("09:00 às 14:00" pra 300min)', () => {
+      const morning: Departure = { ...available, departsAt: '2026-10-11T12:00:00+00:00' }; // 09:00 em Brasília
+      render(<BookingSelector departures={[morning]} durationMinutes={300} />);
+      expect(screen.getByText('09:00 às 14:00')).toBeTruthy();
+    });
+
+    it('sem durationMinutes, mostra só o horário de início — nunca inventa o horário final', () => {
+      const morning: Departure = { ...available, departsAt: '2026-10-11T12:00:00+00:00' };
+      render(<BookingSelector departures={[morning]} />);
+      expect(screen.getByText('09:00')).toBeTruthy();
+      expect(screen.queryByText(/09:00 às/)).toBeNull();
+    });
+
+    describe('muitas datas futuras (progressão "Ver mais datas")', () => {
+      // Featured (11/out) + 9 datas extras em dias consecutivos (12 a 20/out) -> 9 "remainingGroups".
+      const manyDates: Departure[] = Array.from({ length: 10 }, (_, index) => ({
+        ...available,
+        id: `many-${index}`,
+        departsAt: `2026-10-${String(11 + index).padStart(2, '0')}T17:00:00+00:00`,
+      }));
+
+      function moreDatesGroup() {
+        return screen.getByRole('group', { name: /mais datas/i });
+      }
+
+      it('inicialmente só até 3 datas extras aparecem em "Próximas datas", com "Ver mais datas" visível', () => {
+        render(<BookingSelector departures={manyDates} />);
+        expect(within(moreDatesGroup()).getAllByRole('button')).toHaveLength(3);
+        expect(screen.getByRole('button', { name: /ver mais datas/i })).toBeTruthy();
+      });
+
+      it('"Ver mais datas" revela mais datas progressivamente (3 -> 7 -> resto) e some quando não há mais', () => {
+        render(<BookingSelector departures={manyDates} />);
+        const showMore = () => screen.getByRole('button', { name: /ver mais datas/i });
+        const chipCount = () => within(moreDatesGroup()).getAllByRole('button').length;
+
+        expect(chipCount()).toBe(3);
+        fireEvent.click(showMore());
+        expect(chipCount()).toBe(7);
+        fireEvent.click(showMore());
+        // 9 datas extras no total (10 saídas - 1 destacada) -> preenche tudo, sem passar de 14.
+        expect(chipCount()).toBe(9);
+        expect(screen.queryByRole('button', { name: /ver mais datas/i })).toBeNull();
+      });
+
+      it('as datas extras aparecem em ordem cronológica', () => {
+        render(<BookingSelector departures={manyDates} />);
+        fireEvent.click(screen.getByRole('button', { name: /ver mais datas/i }));
+        fireEvent.click(screen.getByRole('button', { name: /ver mais datas/i }));
+        const chipLabels = within(moreDatesGroup())
+          .getAllByRole('button')
+          .map((el) => el.textContent);
+        // 12/out até 20/out, nessa ordem (nenhuma fora de ordem).
+        expect(chipLabels).toEqual(['Seg 12', 'Ter 13', 'Qua 14', 'Qui 15', 'Sex 16', 'Sáb 17', 'Dom 18', 'Seg 19', 'Ter 20']);
+      });
+    });
+
+    it('sem "Ver mais datas" quando há poucas datas extras (menos de 3)', () => {
+      render(<BookingSelector departures={[available, oneSpotLeft]} />);
+      expect(screen.queryByRole('button', { name: /ver mais datas/i })).toBeNull();
     });
   });
 
