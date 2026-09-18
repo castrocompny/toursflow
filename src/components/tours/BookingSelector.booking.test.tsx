@@ -300,6 +300,7 @@ describe('BookingSelector — confirmação de reserva (BOOKING_CHECKOUT_ENABLED
     await confirmAndWaitFor(/sua vaga está garantida/i);
 
     expect(screen.queryByRole('button', { name: /pagar com pix/i })).toBeNull();
-    expect(screen.getByText(/pagamento será disponibilizado na próxima etapa/i)).toBeTruthy();
+    expect(screen.getByText(/pagamento online será disponibilizado em breve/i)).toBeTruthy();
+    expect(screen.queryByText(/fale com o operador/i)).toBeNull();
   });
 });

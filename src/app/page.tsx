@@ -1,11 +1,13 @@
 import Link from 'next/link';
-import { ArrowRight, Compass, MapPin, MessageCircle, ShieldCheck, Ship, Waves } from 'lucide-react';
+import { ArrowRight, ShieldCheck, Ship, Waves } from 'lucide-react';
 import { listCategories, listDestinations, listFeaturedTours, listTours } from '@/data/repository';
 import { SearchBar } from '@/components/search/SearchBar';
 import { TourGrid } from '@/components/tours/TourGrid';
 import { DestinationCard } from '@/components/destinations/DestinationCard';
 import { CategoryCard } from '@/components/categories/CategoryCard';
 import { Section } from '@/components/ui/Section';
+import { filterHomeCategories } from '@/lib/home-categories';
+import { HOW_IT_WORKS_STEPS } from '@/lib/how-it-works-steps';
 import { routes } from '@/lib/routes';
 import { pageMetadata } from '@/lib/seo';
 import { site } from '@/lib/site';
@@ -26,6 +28,11 @@ export default async function HomePage() {
     // listagem paginada usada como proxy (ver docs/AUDITORIA-PRE-INTEGRACAO.md).
     listTours({ limit: 100 }),
   ]);
+
+  // Só a apresentação na home é filtrada — `listCategories()`/`categoriesVitrine`
+  // continuam conhecendo TODAS as categorias reais (`/passeios` ainda filtra por
+  // qualquer uma delas, inclusive as escondidas aqui).
+  const homeCategories = filterHomeCategories(categories);
 
   const countByDestination = new Map<string, number>();
   allTours.tours.forEach((tour) => {
@@ -120,8 +127,10 @@ export default async function HomePage() {
         title="Que tipo de passeio você quer"
         description="Do compartilhado econômico ao privativo com roteiro livre."
       >
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {categories.map((category) => (
+        {/* Só 2 colunas até o desktop, nunca 3 — com 4 categorias em destaque, 3
+            colunas deixaria a quarta sozinha numa segunda linha. */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {homeCategories.map((category) => (
             <CategoryCard key={category.slug} category={category} />
           ))}
         </div>
@@ -134,23 +143,7 @@ export default async function HomePage() {
       <section id="como-funciona" className="scroll-mt-16 bg-foam py-14 sm:py-20">
         <div className="shell">
           <div className="grid gap-10 sm:grid-cols-3 sm:divide-x sm:divide-ink/15">
-            {[
-              {
-                title: 'Escolha a experiência',
-                text: 'Filtre por destino, tipo de embarcação e número de pessoas. Compare preço e duração lado a lado.',
-                icon: Compass,
-              },
-              {
-                title: 'Confira o embarque',
-                text: 'Todo anúncio mostra endereço, ponto de referência e antecedência recomendada antes de você decidir.',
-                icon: MapPin,
-              },
-              {
-                title: 'Fale com o operador',
-                text: 'A operação é de empresas locais. Em breve, a reserva será feita direto por aqui.',
-                icon: MessageCircle,
-              },
-            ].map((item, index) => (
+            {HOW_IT_WORKS_STEPS.map((item, index) => (
               <div key={item.title} className="group border-t border-ink/15 pt-5 sm:border-t-0 sm:px-8 sm:pt-0 sm:first:pl-0 sm:last:pr-0">
                 <div className="flex items-center gap-3">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-sea shadow-card transition-transform duration-200 group-hover:-translate-y-0.5">

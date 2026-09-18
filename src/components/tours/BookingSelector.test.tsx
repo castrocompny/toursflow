@@ -531,7 +531,7 @@ describe('BookingSelector', () => {
       vi.unstubAllGlobals();
     });
 
-    it('revisão não mostra botão funcional "Confirmar reserva", mostra o aviso de falar com o operador', () => {
+    it('revisão não mostra botão funcional "Confirmar reserva", mostra o aviso de reserva online em breve — sem instruir a contatar o operador', () => {
       const fetchSpy = vi.fn();
       vi.stubGlobal('fetch', fetchSpy);
 
@@ -539,7 +539,8 @@ describe('BookingSelector', () => {
 
       expect(screen.getByText(/revisão da reserva/i)).toBeTruthy();
       expect(screen.queryByRole('button', { name: /confirmar reserva/i })).toBeNull();
-      expect(screen.getByText(/reserva online chega em breve.*fale com o operador/i)).toBeTruthy();
+      expect(screen.getByText(/reserva online chega em breve/i)).toBeTruthy();
+      expect(screen.queryByText(/fale com o operador/i)).toBeNull();
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 

@@ -9,7 +9,7 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
 
   return (
     <footer className="mt-24 border-t border-ink/10 bg-ink text-white">
-      <div className="shell grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="shell grid gap-10 py-14 sm:grid-cols-2 lg:grid-cols-4">
         <div>
           <LogoLockup size={36} onDark />
           <p className="mt-4 max-w-xs text-sm text-white/70">
@@ -17,24 +17,9 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
           </p>
         </div>
 
-        <nav aria-label="Destinos">
+        <nav aria-label="Explorar">
           <h2 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white/60">
-            Destinos
-          </h2>
-          <ul className="mt-4 space-y-2 text-sm">
-            {destinations.map((destination) => (
-              <li key={destination.slug}>
-                <Link href={routes.destination(destination.slug)} className="text-white/80 transition-colors duration-150 hover:text-white">
-                  Passeios em {destination.name}
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </nav>
-
-        <nav aria-label="Navegar">
-          <h2 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white/60">
-            Navegar
+            Explorar
           </h2>
           <ul className="mt-4 space-y-2 text-sm">
             <li>
@@ -53,12 +38,37 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
               </Link>
             </li>
             <li>
-              <Link href={routes.category('por-do-sol')} className="text-white/80 transition-colors duration-150 hover:text-white">
-                Pôr do sol
+              <Link href={routes.category('compartilhado')} className="text-white/80 transition-colors duration-150 hover:text-white">
+                Passeios compartilhados
               </Link>
             </li>
           </ul>
         </nav>
+
+        <nav aria-label="Destinos">
+          <h2 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white/60">
+            Destinos
+          </h2>
+          <ul className="mt-4 space-y-2 text-sm">
+            {destinations.map((destination) => (
+              <li key={destination.slug}>
+                <Link href={routes.destination(destination.slug)} className="text-white/80 transition-colors duration-150 hover:text-white">
+                  Passeios em {destination.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
+
+        <div>
+          <h2 className="font-display text-sm font-bold uppercase tracking-[0.16em] text-white/60">
+            Tecnologia
+          </h2>
+          <p className="mt-4 text-sm text-white/80">
+            Um produto desenvolvido pela <span className="font-semibold text-white">Castro Compny</span>
+          </p>
+          <p className="mt-1 text-xs text-white/50">Agência de tecnologia</p>
+        </div>
       </div>
 
       <div className="border-t border-white/10">

@@ -28,7 +28,8 @@ interface BookingReviewProps {
  * clique/múltiplas submissões simultâneas.
  *
  * Sem `onConfirm` (hoje, real): mesmo estado seguro de antes da Fase 3 —
- * nenhum botão funcional, só o aviso para falar com o operador.
+ * nenhum botão funcional, só o aviso de que a reserva online chega em
+ * breve (nunca instrui o turista a contatar o operador diretamente).
  */
 export function BookingReview({
   departure,
@@ -50,7 +51,7 @@ export function BookingReview({
       <p className="mt-2 text-sm text-ink-muted">
         {onConfirm
           ? 'Confira os dados antes de confirmar a reserva.'
-          : 'Reserva online chega em breve. Por enquanto, confira o resumo abaixo e fale com o operador para confirmar.'}
+          : 'Reserva online chega em breve pelo ToursFlow. Por enquanto, confira o resumo abaixo.'}
       </p>
 
       <dl className="mt-5 space-y-2 rounded-2xl bg-sand p-4 text-sm">

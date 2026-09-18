@@ -104,7 +104,7 @@ export function BookingConfirmation({ departure, booking, onPayWithPix }: Bookin
         </button>
       ) : !expired ? (
         <p className="mt-4 rounded-2xl bg-foam px-4 py-3 text-xs text-ink-muted">
-          Pagamento será disponibilizado na próxima etapa. Por enquanto, fale com o operador para confirmar.
+          Pagamento online será disponibilizado em breve pelo ToursFlow.
         </p>
       ) : null}
     </div>

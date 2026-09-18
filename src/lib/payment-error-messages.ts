@@ -19,8 +19,7 @@ export const PAYMENT_ERROR_MESSAGES: Record<PaymentErrorCode, string> = {
   PAYMENT_IDEMPOTENCY_CONFLICT:
     'Detectamos uma tentativa anterior com dados diferentes. Atualize a página e tente novamente.',
   PAYMENT_ALREADY_ACTIVE: 'Já existe um pagamento em andamento para esta reserva.',
-  PAYMENT_PROVIDER_NOT_ENABLED:
-    'Pagamento online ainda não está disponível. Fale com o operador para confirmar sua reserva.',
+  PAYMENT_PROVIDER_NOT_ENABLED: 'Pagamento online ainda não está disponível. Volte em breve.',
   CUSTOMER_DOCUMENT_REQUIRED: 'Para pagar com Pix, informe o CPF nos dados do comprador.',
   PAYMENT_PROVIDER_ERROR: 'Não foi possível processar o pagamento agora. Tente novamente em instantes.',
   RATE_LIMITED: 'Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.',

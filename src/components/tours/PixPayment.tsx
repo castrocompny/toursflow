@@ -140,7 +140,7 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
         <h3 className="mt-2 font-display text-xl font-bold">
           {phase === 'refunded' ? 'Pagamento estornado' : 'Pagamento parcialmente estornado'}
         </h3>
-        <p className="mt-2 text-sm text-ink-muted">Fale com o operador para mais detalhes.</p>
+        <p className="mt-2 text-sm text-ink-muted">Você pode acompanhar o estorno pelo meio de pagamento utilizado.</p>
       </div>
     );
   }

@@ -14,6 +14,31 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Posicionamento "só ToursFlow": fim do "fale com o operador", footer institucional, vitrine de categorias curada (branch `frontend/mobile-booking-ux`)
+
+Três pontos de conteúdo/UX, sem tocar backend/NauticFlow nem ativar nenhuma feature flag.
+
+**1. "Fale com o operador" removido do fluxo público.** O ToursFlow é a interface principal do turista — ele nunca deveria precisar contatar o operador diretamente. Auditoria (grep por "fale com o operador"/variações, não uma auditoria geral) encontrou 7 ocorrências de texto visível ao turista, todas corrigidas:
+- **Home, "Como funciona"**: o 3º passo ("Fale com o operador" / "A operação é de empresas locais...") virou **"Tudo pelo ToursFlow"** / "Consulte disponibilidade, detalhes do passeio e informações de embarque em um só lugar." — ícone `CircleCheck` (não `MessageCircle`/`Phone`/nada que sugira atendimento que não existe). Extraído pra `src/lib/how-it-works-steps.ts` (array puro, testável) em vez de ficar inline em `page.tsx`.
+- **`BookingReview`** (revisão da reserva, mostrado quando `BOOKING_CHECKOUT_ENABLED` é `false`): "...confira o resumo abaixo e fale com o operador para confirmar" → "Reserva online chega em breve pelo ToursFlow. Por enquanto, confira o resumo abaixo."
+- **`BookingConfirmation`** (hold criado, `PAYMENTS_UI_ENABLED` `false`): "Pagamento será disponibilizado na próxima etapa. Por enquanto, fale com o operador para confirmar." → "Pagamento online será disponibilizado em breve pelo ToursFlow."
+- **`PixPayment`** (estorno, inalcançável hoje): "Fale com o operador para mais detalhes." → "Você pode acompanhar o estorno pelo meio de pagamento utilizado."
+- **`BookingSelector`** (nenhuma saída programada): "...Fale com o operador para saber a próxima disponibilidade." → "...Volte em breve para conferir novas datas."
+- **`booking-error-messages.ts`/`payment-error-messages.ts`** (`BOOKING_CHECKOUT_NOT_ENABLED`/`PAYMENT_PROVIDER_NOT_ENABLED`, códigos de erro só do backend/API interna, não alcançáveis pela UI hoje): mesma limpeza, "Volte em breve." no lugar da instrução de contato.
+- Comentários internos em `BookingSelector.tsx`/`feature-flags.ts` que citavam a mensagem antiga também atualizados (não são texto do turista, só consistência de documentação inline).
+
+**O que continua existindo, de propósito** (factual, não é CTA de contato): "Sobre o operador" na página do passeio, "Total (confirmado pelo operador)" no resumo do hold, nome/selo/descrição do operador, disclaimer legal do rodapé. Nenhum desses instrui o turista a agir — só identifica quem realiza o passeio.
+
+**Central de suporte:** não implementada nesta rodada (não existe backend/fluxo correspondente). Registrado aqui como decisão: o ToursFlow poderá ter uma Central de Ajuda própria no futuro; nenhum botão/link foi criado sem destino real.
+
+**2. Footer reorganizado**, de 3 para 4 colunas (`Footer.tsx`, grid `lg:grid-cols-4`): Logo+descrição | **Explorar** (Todos os passeios, Todos os destinos, Passeios privativos, Passeios compartilhados — substituiu "Navegar"/"Pôr do sol") | Destinos (lista real, inalterada) | **Tecnologia**, novo, com "Um produto desenvolvido pela **Castro Compny**" / "Agência de tecnologia". Texto puro, sem link — nenhuma URL oficial da Castro Compny está configurada no projeto (confirmado por grep) e a instrução foi explícita: nunca inventar link. Disclaimer legal ("Passeios operados por empresas independentes...") mantido sem alteração.
+
+**3. Vitrine de categorias da home**: "Pôr do sol" e "Outro" removidas — não representam a oferta real hoje. Filtro vive só em `src/lib/home-categories.ts` (`filterHomeCategories`, pura, testada), aplicado somente em `src/app/page.tsx`. **`categoriesVitrine` (mapa de ícone/descrição por `value`, usado por `nauticflow-source.ts`) e `listCategories()` não foram tocados** — o contrato de integração continua completo, incluindo `por_do_sol`/`outro`. Confirmado ao vivo contra a API real: `/passeios` continua oferecendo as 6 categorias no filtro (inclusive as duas escondidas da home), só a vitrine da home mostra as 4 restantes (Passeio privativo, Praias, Ilhas, Passeio compartilhado). Grid ajustado de `grid-cols-2 sm:grid-cols-3 lg:grid-cols-4` pra `grid-cols-2 lg:grid-cols-4` — com 4 categorias, 3 colunas deixaria uma sozinha numa segunda linha. `CategoryCard` ganhou um indicador "Ver passeios →" (mesmo `href` do card, nenhum link novo, nenhum dado inventado — sem número de reservas/popularidade/"mais vendido").
+
+**Testes**: `npx vitest run` (workaround Node/jsdom já documentado) — **426/426 passando, 34 arquivos** (+3 novos: `home-categories.test.ts`, `how-it-works-steps.test.ts`, `Footer.test.tsx`; mais os ajustes nos testes existentes de `BookingSelector`/`PixPayment` que checavam o texto antigo). Nenhum teste frágil de classe CSS — só comportamento/conteúdo real.
+
+`npm run typecheck`/`lint`/`build` limpos. Nenhuma mudança de backend/NauticFlow/Supabase; `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` seguem `false`; nenhum E2E real executado.
+
 ## 2026-09-18 — Identidade visual e microinterações do frontend público (branch `frontend/mobile-booking-ux`)
 
 Rodada só de polimento visual/interação — nenhuma arquitetura, regra de negócio, backend ou fluxo de reserva tocados. Paleta preservada integralmente (`tailwind.config.ts` não mudou uma linha): nenhuma cor nova, nenhum gradiente decorativo, `sun` continua restrito a CTA principal/acento (já era assim — auditado via grep antes de mexer, nenhum uso indevido encontrado).

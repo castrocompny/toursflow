@@ -7,8 +7,9 @@
  * de `PAYMENTS_UI_ENABLED`.
  *
  * Enquanto `false`: `BookingReview` não mostra o botão funcional
- * "Confirmar reserva" (mostra a mesma mensagem "fale com o operador" de
- * antes da Fase 3) — e a própria rota `POST /api/bookings` falha fechada
+ * "Confirmar reserva" (mostra só o aviso de que a reserva online chega em
+ * breve — nunca instrui o turista a contatar o operador) — e a própria
+ * rota `POST /api/bookings` falha fechada
  * por conta própria (ver `route.ts`), então nem uma chamada manual
  * (`curl`/`fetch` direto) cria um hold real. Isso decorre da mesma lição
  * do ADR-012: a ausência do botão na UI nunca é, sozinha, uma proteção —

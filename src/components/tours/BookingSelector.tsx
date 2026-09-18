@@ -89,7 +89,8 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * uma reserva real no NauticFlow (via `submitBooking()`) — **só quando
  * `BOOKING_CHECKOUT_ENABLED` está ligada** (`src/lib/feature-flags.ts`,
  * hoje `false`): sem ela, `BookingReview` não recebe `onConfirm` e mostra
- * o mesmo aviso "fale com o operador" de antes desta fase. A rota
+ * só o aviso de que a reserva online chega em breve (nunca instrui a
+ * contatar o operador diretamente). A rota
  * `/api/bookings` falha fechada por conta própria com a flag off — não
  * depende da ausência do botão (mesma lição do ADR-012).
  *
@@ -303,7 +304,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
   if (departures.length === 0) {
     return (
       <p className="rounded-card border border-dashed border-ink/20 bg-sand px-5 py-6 text-center text-sm text-ink-muted">
-        Nenhuma saída programada no momento. Fale com o operador para saber a próxima disponibilidade.
+        Nenhuma saída programada no momento. Volte em breve para conferir novas datas.
       </p>
     );
   }

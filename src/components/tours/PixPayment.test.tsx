@@ -143,7 +143,7 @@ describe('PixPayment', () => {
     const client = {
       async createPixPayment() {
         const { PaymentClientError } = await import('@/lib/payment-client');
-        throw new PaymentClientError('PAYMENT_PROVIDER_NOT_ENABLED', 'Pagamento online ainda não está disponível. Fale com o operador para confirmar sua reserva.');
+        throw new PaymentClientError('PAYMENT_PROVIDER_NOT_ENABLED', 'Pagamento online ainda não está disponível. Volte em breve.');
       },
       async getBookingPaymentStatus() {
         throw new Error('não deveria ser chamado');
