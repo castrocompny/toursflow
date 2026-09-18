@@ -32,7 +32,7 @@ export function SearchBar({ destinations, defaultDestination = '' }: SearchBarPr
   return (
     <div className="rounded-card bg-white p-3 shadow-lift sm:p-4">
       <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-[1.2fr_1fr_0.8fr_auto]">
-        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left">
+        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left transition-colors focus-within:bg-white focus-within:ring-2 focus-within:ring-sea">
           <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             <MapPin size={13} aria-hidden />
             Destino
@@ -51,7 +51,7 @@ export function SearchBar({ destinations, defaultDestination = '' }: SearchBarPr
           </select>
         </label>
 
-        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left">
+        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left transition-colors focus-within:bg-white focus-within:ring-2 focus-within:ring-sea">
           <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             <CalendarDays size={13} aria-hidden />
             Data
@@ -65,7 +65,7 @@ export function SearchBar({ destinations, defaultDestination = '' }: SearchBarPr
           />
         </label>
 
-        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left">
+        <label className="flex flex-col gap-1 rounded-2xl bg-sand px-4 py-3 text-left transition-colors focus-within:bg-white focus-within:ring-2 focus-within:ring-sea">
           <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-ink-muted">
             <Users size={13} aria-hidden />
             Pessoas

@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { ArrowRight, ShieldCheck, Ship, Waves } from 'lucide-react';
+import { ArrowRight, Compass, MapPin, MessageCircle, ShieldCheck, Ship, Waves } from 'lucide-react';
 import { listCategories, listDestinations, listFeaturedTours, listTours } from '@/data/repository';
 import { SearchBar } from '@/components/search/SearchBar';
 import { TourGrid } from '@/components/tours/TourGrid';
@@ -70,7 +70,7 @@ export default async function HomePage() {
           <ul className="mt-8 flex flex-wrap gap-x-7 gap-y-3 text-sm text-white/70">
             <li className="inline-flex items-center gap-2">
               <ShieldCheck size={16} className="text-sea-light" aria-hidden />
-              Operadores locais verificados
+              Operadores locais
             </li>
             <li className="inline-flex items-center gap-2">
               <Ship size={16} className="text-sea-light" aria-hidden />
@@ -107,7 +107,7 @@ export default async function HomePage() {
         <Section
           eyebrow="Mais procurados"
           title="Passeios em destaque"
-          description="Seleção do que mais sai nesta temporada, de operadores que já rodam com agenda cheia."
+          description="Passeios selecionados para você descobrir nesta temporada."
           action={{ label: 'Ver todos os passeios', href: routes.tours() }}
           className="bg-sand"
         >
@@ -129,34 +129,45 @@ export default async function HomePage() {
 
       {/* Alvo de "Como funciona" no header (`/#como-funciona`) — `scroll-mt-16`
           compensa a altura do header sticky (h-16) pra não ficar escondida atrás
-          dele ao rolar até aqui. */}
-      <section id="como-funciona" className="shell scroll-mt-16 py-14">
-        <div className="grid gap-8 sm:grid-cols-3">
-          {[
-            {
-              title: 'Escolha a experiência',
-              text: 'Filtre por destino, tipo de embarcação e número de pessoas. Compare preço e duração lado a lado.',
-            },
-            {
-              title: 'Confira o embarque',
-              text: 'Todo anúncio mostra endereço, ponto de referência e antecedência recomendada antes de você decidir.',
-            },
-            {
-              title: 'Fale com o operador',
-              text: 'A operação é de empresas locais. Em breve, a reserva será feita direto por aqui.',
-            },
-          ].map((item, index) => (
-            <div key={item.title} className="border-t border-ink/15 pt-5">
-              <span className="font-mono text-xs font-semibold text-sea">0{index + 1}</span>
-              <h3 className="mt-2 font-display text-lg font-bold">{item.title}</h3>
-              <p className="mt-2 text-sm text-ink-muted">{item.text}</p>
-            </div>
-          ))}
+          dele ao rolar até aqui. `bg-foam` diferencia esta seção (e o CTA final,
+          que mora no mesmo bloco) do branco liso das seções vizinhas. */}
+      <section id="como-funciona" className="scroll-mt-16 bg-foam py-14 sm:py-20">
+        <div className="shell">
+          <div className="grid gap-10 sm:grid-cols-3 sm:divide-x sm:divide-ink/15">
+            {[
+              {
+                title: 'Escolha a experiência',
+                text: 'Filtre por destino, tipo de embarcação e número de pessoas. Compare preço e duração lado a lado.',
+                icon: Compass,
+              },
+              {
+                title: 'Confira o embarque',
+                text: 'Todo anúncio mostra endereço, ponto de referência e antecedência recomendada antes de você decidir.',
+                icon: MapPin,
+              },
+              {
+                title: 'Fale com o operador',
+                text: 'A operação é de empresas locais. Em breve, a reserva será feita direto por aqui.',
+                icon: MessageCircle,
+              },
+            ].map((item, index) => (
+              <div key={item.title} className="group border-t border-ink/15 pt-5 sm:border-t-0 sm:px-8 sm:pt-0 sm:first:pl-0 sm:last:pr-0">
+                <div className="flex items-center gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white text-sea shadow-card transition-transform duration-200 group-hover:-translate-y-0.5">
+                    <item.icon size={18} aria-hidden />
+                  </span>
+                  <span className="font-mono text-xs font-semibold text-sea">0{index + 1}</span>
+                </div>
+                <h3 className="mt-3 font-display text-lg font-bold text-ink">{item.title}</h3>
+                <p className="mt-2 text-sm text-ink-muted">{item.text}</p>
+              </div>
+            ))}
+          </div>
+          <Link href={routes.tours()} className="btn-primary mt-10 active:scale-[0.98]">
+            Buscar passeios
+            <ArrowRight size={17} aria-hidden />
+          </Link>
         </div>
-        <Link href={routes.tours()} className="btn-primary mt-10">
-          Buscar passeios
-          <ArrowRight size={17} aria-hidden />
-        </Link>
       </section>
     </>
   );

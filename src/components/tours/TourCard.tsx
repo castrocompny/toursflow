@@ -25,7 +25,7 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
   const mainCategory = tour.categories[0];
 
   return (
-    <article className="group flex h-full flex-col overflow-hidden rounded-card border border-ink/10 bg-white shadow-card transition-shadow duration-200 hover:shadow-lift">
+    <article className="group flex h-full flex-col overflow-hidden rounded-card border border-ink/10 bg-white shadow-card transition duration-200 hover:-translate-y-1 hover:shadow-lift">
       {/* Link real e independente — nunca um stretched-link (`after:absolute
           after:inset-0`) cobrindo o card inteiro. Cada alvo de toque (imagem,
           título, "Ver passeio") é o seu próprio `<Link>`, sem nenhum
@@ -35,7 +35,7 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
       <Link
         href={href}
         aria-label={`Ver passeio ${tour.name}`}
-        className="relative block aspect-[4/3] overflow-hidden bg-foam"
+        className="relative block aspect-[4/3] overflow-hidden bg-foam transition active:scale-[0.99]"
       >
         {cover ? (
           <Image
@@ -62,7 +62,9 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
       <div className="flex flex-1 flex-col gap-3 p-5">
         <div className="flex items-start justify-between gap-3">
           <h3 className="font-display text-lg font-bold leading-snug">
-            <Link href={href}>{tour.name}</Link>
+            <Link href={href} className="transition-colors duration-150 hover:text-sea active:text-sea-dark">
+              {tour.name}
+            </Link>
           </h3>
           <Rating rating={tour.rating} />
         </div>

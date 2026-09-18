@@ -14,6 +14,36 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Identidade visual e microinterações do frontend público (branch `frontend/mobile-booking-ux`)
+
+Rodada só de polimento visual/interação — nenhuma arquitetura, regra de negócio, backend ou fluxo de reserva tocados. Paleta preservada integralmente (`tailwind.config.ts` não mudou uma linha): nenhuma cor nova, nenhum gradiente decorativo, `sun` continua restrito a CTA principal/acento (já era assim — auditado via grep antes de mexer, nenhum uso indevido encontrado).
+
+**Ritmo visual da home**: a seção "Como funciona" (`src/app/page.tsx`) ganhou `bg-foam` — antes era branca, igual às seções vizinhas ("Destinos", "Categorias"), quebrando a alternância branco/sand já usada em "Passeios em destaque". Sequência agora: hero (ink) → Destinos (branco) → Passeios em destaque (sand) → Categorias (branco) → Como funciona + CTA final (foam) → rodapé (ink). Estrutura e ordem das seções intocadas.
+
+**"Como funciona"**: os 3 passos ganharam ícone Lucide (`Compass`, `MapPin`, `MessageCircle` — já era dependência, nenhum novo), numeração em selo circular branco sobre `bg-foam`, e divisor fino entre colunas no desktop (`sm:divide-x`) no lugar do `border-t` genérico por item. Pequena entrada visual no hover (ícone sobe ~2px, `translate-y-0.5`). Mobile continua empilhado verticalmente, sem mudança estrutural.
+
+**`TourCard`**: cards ganharam elevação sutil no hover (`-translate-y-1` + `shadow-lift`, ~4px, 200ms) — mantendo tudo que já existia (imagem/título/"Ver passeio" como 3 `Link`s reais e independentes, mesmo `href`, `peopleParam`, zero stretched-link). Título agora reage no hover (`hover:text-sea`) — antes não tinha nenhum feedback próprio. Link da imagem ganhou `active:scale-[0.99]` pra feedback de toque no mobile.
+
+**`DestinationCard`**: mesma elevação sutil no hover (`-translate-y-1` + `shadow-lift`) somada ao zoom leve na imagem que já existia; `active:scale` de toque preservado.
+
+**`CategoryCard`**: ganhou `active:scale-[0.98]` — antes só tinha hover (`border-sea`/`bg-foam`, ambos já corretos), sem nenhum feedback de toque.
+
+**`SearchBar`**: os 3 campos (Destino/Data/Pessoas) ganharam `focus-within:ring-2 ring-sea` + fundo branco ao focar — antes o foco só aparecia no controle nativo do navegador, sem nenhum indicador customizado. Botão "Buscar passeios" já tinha `active`/hover/foco corretos (herdados de `.btn-primary`); nenhuma mudança de regra de filtro.
+
+**Datas e horários (`BookingSelector`)**: preservado 100% o modelo aprovado (faixa "Escolha a data" com janela deslizante + um único painel expandido, `availableSpots`/`soldOut`/`priceType`/`clampQuantity` intocados). Único ajuste visual: chip de data disponível ganhou `hover:bg-foam` além do `hover:border-sea` que já existia, pra bater com a combinação "sea + foam" pedida.
+
+**Paginação (`/passeios`) e links do rodapé**: `hover:bg-foam` nos botões Anterior/Próxima (antes só mudavam a borda); links do rodapé ganharam `transition-colors duration-150` (antes trocavam de cor instantaneamente, sem transição).
+
+**Copy corrigida** (sem dado real que sustentasse a afirmação anterior):
+- "Operadores locais verificados" → **"Operadores locais"** (o campo `verified` não é garantido pra todos — o selo `ShieldCheck` condicional em `tour.operator.verified` continua existindo no card do passeio, só aparece quando o operador É de fato verificado).
+- "Seleção do que mais sai nesta temporada, de operadores que já rodam com agenda cheia." → **"Passeios selecionados para você descobrir nesta temporada."** (nenhuma métrica real de "mais vendido"/"agenda cheia" existe hoje).
+
+**Scroll reveal — decisão: NÃO implementado.** Auditoria confirmou zero infraestrutura existente (nenhum `IntersectionObserver`, nenhuma lib tipo Framer Motion/AOS/GSAP no projeto). Implementar do zero exigiria converter seções hoje 100% Server Component em Client Component só por um efeito decorativo de entrada — contradiz diretamente a regra desta rodada de não converter Server→Client só por estética/hover, e o ganho visual não paga o custo de JS novo. CSS/estados de interação (hover/active/focus) cobrem a maior parte do objetivo de "vivo e moderno" sem esse custo.
+
+**Performance confirmada**: `First Load JS shared by all` continua **103kB**, idêntico a antes desta rodada — zero JS novo (todas as mudanças são classes Tailwind em Server Components já existentes, mais 2 ícones Lucide adicionais só em `page.tsx`, que já é Server Component). `package.json`/`package-lock.json` sem diff — nenhuma dependência nova. Nenhuma chamada de API nova, nenhum fetch por card, nenhum N+1.
+
+`npm run typecheck`/`lint`/`build` limpos. `npx vitest run` — **412/412 passando, 31 arquivos** — nenhum teste novo (rodada é só CSS/classe, sem comportamento novo pra cobrir; `prefers-reduced-motion` global em `globals.css` já neutraliza toda `transition-duration`/`animation-duration`, validado, não tocado).
+
 ## 2026-09-18 — Header público reorganizado: nav centralizada, "Como funciona", CTA "Buscar passeios" (branch `frontend/mobile-booking-ux`)
 
 O header antigo (`Header.tsx`) só tinha logo à esquerda e dois links (`Passeios`/`Destinos`) à direita via `justify-between` — muito espaço vazio no meio, sem CTA. Reorganizado pra 3 zonas reais (logo | nav centralizada | CTA) via `grid grid-cols-[auto_1fr_auto]`, mantendo o foco 100% turista da entrada anterior (nenhuma comunicação de operador/NauticFlow reintroduzida).

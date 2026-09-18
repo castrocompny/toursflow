@@ -418,7 +418,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
                       ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
                       : isSelected
                         ? 'border-sea bg-foam text-ink'
-                        : 'border-ink/15 bg-white text-ink hover:border-sea'
+                        : 'border-ink/15 bg-white text-ink hover:border-sea hover:bg-foam'
                   }`}
                 >
                   {formatDepartureDateShort(group.departures[0].departsAt)}

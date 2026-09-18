@@ -24,7 +24,7 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
           <ul className="mt-4 space-y-2 text-sm">
             {destinations.map((destination) => (
               <li key={destination.slug}>
-                <Link href={routes.destination(destination.slug)} className="text-white/80 hover:text-white">
+                <Link href={routes.destination(destination.slug)} className="text-white/80 transition-colors duration-150 hover:text-white">
                   Passeios em {destination.name}
                 </Link>
               </li>
@@ -38,22 +38,22 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
           </h2>
           <ul className="mt-4 space-y-2 text-sm">
             <li>
-              <Link href={routes.tours()} className="text-white/80 hover:text-white">
+              <Link href={routes.tours()} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Todos os passeios
               </Link>
             </li>
             <li>
-              <Link href={routes.destinations()} className="text-white/80 hover:text-white">
+              <Link href={routes.destinations()} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Todos os destinos
               </Link>
             </li>
             <li>
-              <Link href={routes.category('privativo')} className="text-white/80 hover:text-white">
+              <Link href={routes.category('privativo')} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Passeios privativos
               </Link>
             </li>
             <li>
-              <Link href={routes.category('por-do-sol')} className="text-white/80 hover:text-white">
+              <Link href={routes.category('por-do-sol')} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Pôr do sol
               </Link>
             </li>

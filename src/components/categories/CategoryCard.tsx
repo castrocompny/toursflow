@@ -6,7 +6,7 @@ export function CategoryCard({ category }: { category: Category }) {
   return (
     <Link
       href={routes.category(category.slug)}
-      className="flex h-full flex-col gap-2 rounded-card border border-ink/10 bg-white p-5 transition-colors hover:border-sea hover:bg-foam"
+      className="flex h-full flex-col gap-2 rounded-card border border-ink/10 bg-white p-5 transition duration-150 hover:border-sea hover:bg-foam active:scale-[0.98]"
     >
       <span className="text-2xl" aria-hidden>
         {category.icon}
