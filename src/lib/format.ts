@@ -115,3 +115,27 @@ export function formatDepartureDateShort(departsAtIso: string): string {
 export function formatDepartureFullDate(departsAtIso: string): string {
   return departureFullDateFormatter.format(new Date(departsAtIso));
 }
+
+/**
+ * Rótulo da "próxima saída" ("Hoje às 15:30", "Amanhã às 09:00", "17 de
+ * setembro às 15:30") — sempre relativo a `nowIso` (injetável pra teste;
+ * em produção é o instante real do servidor, a rota já é dinâmica/sem
+ * cache). Compara dias civis em America/Sao_Paulo, nunca UTC cru.
+ */
+export function formatNextDepartureLabel(departsAtIso: string, nowIso: string = new Date().toISOString()): string {
+  const departureKey = departureDateKey(departsAtIso);
+  const todayKey = departureDateKey(nowIso);
+  const time = departureTimeFormatter.format(new Date(departsAtIso));
+
+  if (departureKey === todayKey) return `Hoje às ${time}`;
+
+  // Meio-dia UTC como âncora: sempre cai no meio do dia em Brasília
+  // (UTC-3), então somar 24h e reformatar nunca cruza uma borda de dia
+  // por causa de horário de verão/fuso.
+  const tomorrowKey = departureDateKeyFormatter.format(
+    new Date(new Date(`${todayKey}T12:00:00Z`).getTime() + 24 * 60 * 60 * 1000),
+  );
+  if (departureKey === tomorrowKey) return `Amanhã às ${time}`;
+
+  return `${formatDepartureFullDate(departsAtIso)} às ${time}`;
+}

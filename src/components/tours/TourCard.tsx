@@ -91,7 +91,7 @@ export function TourCard({ tour, priority = false, peopleParam }: TourCardProps)
           </div>
           <Link
             href={href}
-            className="relative z-10 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition-colors group-hover:bg-sea"
+            className="relative z-10 rounded-full bg-ink px-4 py-2 text-sm font-semibold text-white transition active:scale-95 group-hover:bg-sea"
           >
             Ver passeio
           </Link>

@@ -13,9 +13,12 @@ import {
 } from '@/lib/format';
 import {
   MIN_BOOKING_QUANTITY,
+  availabilityLabel,
   calculateEstimatedTotal,
   canContinueBooking,
   clampQuantity,
+  countAvailableInGroup,
+  formatAvailableTimesCount,
   groupDeparturesByDate,
   isGroupAvailable,
   isSellablePriceType,
@@ -41,13 +44,6 @@ import { PixPayment } from './PixPayment';
 import { BookingVoucher } from './BookingVoucher';
 
 const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não está disponível.';
-
-/** 1 -> singular; 2+ -> plural; 0 (ou menos) -> esgotado. Nunca mostra valor negativo. */
-function availabilityLabel(spots: number): string {
-  if (spots <= 0) return 'Esgotado';
-  if (spots === 1) return '1 vaga disponível';
-  return `${spots} vagas disponíveis`;
-}
 
 // Client real (chama só as rotas do próprio ToursFlow, nunca o
 // NauticFlow/Asaas diretamente) — a proteção contra uso em produção é
@@ -359,7 +355,7 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
               disabled={!available}
               aria-current={isSelected ? 'date' : undefined}
               onClick={() => handleSelectDate(group)}
-              className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold capitalize transition-colors ${
+              className={`flex shrink-0 flex-col items-center gap-0.5 rounded-2xl border px-4 py-2.5 text-sm font-semibold capitalize transition active:scale-95 ${
                 !available
                   ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
                   : isSelected
@@ -376,9 +372,15 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
 
       {selectedGroup ? (
         <div className="space-y-2">
-          <p className="inline-flex items-center gap-1.5 text-sm font-semibold capitalize text-ink">
-            <Calendar size={14} aria-hidden />
-            {formatDepartureFullDate(selectedGroup.departures[0].departsAt)}
+          <p className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-ink">
+            <span className="inline-flex items-center gap-1.5 font-semibold capitalize">
+              <Calendar size={14} aria-hidden />
+              {formatDepartureFullDate(selectedGroup.departures[0].departsAt)}
+            </span>
+            <span aria-hidden className="text-ink-muted">
+              ·
+            </span>
+            <span className="text-ink-muted">{formatAvailableTimesCount(countAvailableInGroup(selectedGroup))}</span>
           </p>
           {/* Horários do dia escolhido — uma linha compacta por horário, sem repetir
               a data (já mostrada acima). Se houver só um horário, esta lista mostra
@@ -397,7 +399,7 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
                     disabled={isDisabled}
                     aria-pressed={isSelected}
                     onClick={() => handleSelectDeparture(departure)}
-                    className={`flex w-full items-center justify-between gap-3 rounded-card border px-4 py-3 text-left transition-colors ${
+                    className={`flex w-full items-center justify-between gap-3 rounded-card border px-4 py-3 text-left transition active:scale-[0.98] ${
                       isDisabled
                         ? 'cursor-not-allowed border-ink/10 bg-sand opacity-60'
                         : isSelected
@@ -459,7 +461,7 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
                 aria-label="Diminuir quantidade de pessoas"
                 onClick={() => handleQuantityChange(quantity - 1)}
                 disabled={quantity <= MIN_BOOKING_QUANTITY}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/15 text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/15 text-ink transition hover:border-ink/40 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
               >
                 <Minus size={16} aria-hidden />
               </button>
@@ -480,7 +482,7 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
                 aria-label="Aumentar quantidade de pessoas"
                 onClick={() => handleQuantityChange(quantity + 1)}
                 disabled={quantity >= selectedDeparture.availableSpots}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/15 text-ink transition-colors hover:border-ink/40 disabled:cursor-not-allowed disabled:opacity-40"
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-ink/15 text-ink transition hover:border-ink/40 active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
               >
                 <Plus size={16} aria-hidden />
               </button>
@@ -511,7 +513,7 @@ export function BookingSelector({ departures, initialQuantityHint }: BookingSele
         type="button"
         onClick={handleContinue}
         disabled={!canContinue}
-        className="btn-primary w-full disabled:cursor-not-allowed disabled:opacity-40"
+        className="btn-primary w-full active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-40 disabled:active:scale-100"
       >
         Continuar reserva
       </button>

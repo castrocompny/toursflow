@@ -277,9 +277,9 @@ describe('BookingSelector', () => {
     expect(screen.getByText('10 vagas disponíveis')).toBeTruthy();
   });
 
-  it('mostra singular "1 vaga disponível" quando resta só uma', () => {
+  it('mostra "Última vaga disponível" quando resta só uma', () => {
     render(<BookingSelector departures={[oneSpotLeft]} />);
-    expect(screen.getByText('1 vaga disponível')).toBeTruthy();
+    expect(screen.getByText('Última vaga disponível')).toBeTruthy();
   });
 
   it('mostra a disponibilidade também perto do seletor de quantidade, após selecionar', () => {
@@ -365,6 +365,20 @@ describe('BookingSelector', () => {
       const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
       expect(timeButtons[0].getAttribute('aria-pressed')).toBe('false');
       expect(screen.queryByLabelText(/quantidade de pessoas/i)).toBeNull();
+    });
+
+    it('resumo da data mostra "N horários disponíveis", contando só os vendáveis e não esgotados do dia', () => {
+      const morningSameDay: Departure = { ...available, id: 'morning', departsAt: '2026-10-11T09:00:00+00:00' };
+      const soldOutSameDay: Departure = { ...available, id: 'sold-out-same-day', departsAt: '2026-10-11T20:00:00+00:00', soldOut: true, availableSpots: 0 };
+      render(<BookingSelector departures={[available, morningSameDay, soldOutSameDay]} />);
+
+      // available + morningSameDay são vendáveis; soldOutSameDay não conta.
+      expect(screen.getByText('2 horários disponíveis')).toBeTruthy();
+    });
+
+    it('resumo da data mostra singular "1 horário disponível" quando só um horário do dia é vendável', () => {
+      render(<BookingSelector departures={[available]} />);
+      expect(screen.getByText('1 horário disponível')).toBeTruthy();
     });
   });
 

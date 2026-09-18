@@ -125,7 +125,7 @@ export default async function ToursPage({ searchParams }: PageProps) {
           <Link
             href={routes.tours(pageQuery(page - 1))}
             aria-disabled={page <= 1}
-            className={`inline-flex items-center gap-1.5 rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold ${
+            className={`inline-flex items-center gap-1.5 rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold transition active:scale-95 ${
               page <= 1 ? 'pointer-events-none opacity-40' : 'hover:border-ink/40'
             }`}
           >
@@ -138,7 +138,7 @@ export default async function ToursPage({ searchParams }: PageProps) {
           <Link
             href={routes.tours(pageQuery(page + 1))}
             aria-disabled={page >= totalPages}
-            className={`inline-flex items-center gap-1.5 rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold ${
+            className={`inline-flex items-center gap-1.5 rounded-full border border-ink/15 px-4 py-2 text-sm font-semibold transition active:scale-95 ${
               page >= totalPages ? 'pointer-events-none opacity-40' : 'hover:border-ink/40'
             }`}
           >

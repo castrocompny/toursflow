@@ -92,7 +92,7 @@ export function FilterBar({ destinations, categories }: FilterBarProps) {
           <button
             type="button"
             onClick={() => router.push('/passeios', { scroll: false })}
-            className="inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-sea hover:bg-foam"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full px-3 py-2 text-sm font-semibold text-sea transition active:scale-95 hover:bg-foam"
           >
             <X size={14} aria-hidden />
             Limpar

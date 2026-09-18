@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { AlertTriangle, ArrowRight, Clock, MapPin, ShieldCheck, Users } from 'lucide-react';
+import { AlertTriangle, ArrowRight, MapPin, ShieldCheck } from 'lucide-react';
 import { getTour, listDepartures, listTours } from '@/data/repository';
 import { TourGallery } from '@/components/tours/TourGallery';
 import { TourItinerary } from '@/components/tours/TourItinerary';
@@ -14,6 +14,8 @@ import { Rating } from '@/components/ui/Rating';
 import { Price } from '@/components/ui/Price';
 import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { formatDuration, formatLocation } from '@/lib/format';
+import { summarizeNextDeparture } from '@/lib/booking-selection';
+import { buildTourSummaryItems } from '@/lib/tour-summary';
 import { routes } from '@/lib/routes';
 import { pageMetadata, toSafeJsonLdScript } from '@/lib/seo';
 import { site } from '@/lib/site';
@@ -51,14 +53,24 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
 export default async function TourPage({ params, searchParams }: PageProps) {
   const { destino, slug } = await params;
-  const tour = await getTour(destino, slug);
-  if (!tour) notFound();
 
-  const [relatedResult, departures, resolvedSearchParams] = await Promise.all([
-    listTours({ destination: tour.destinationSlug, limit: 4 }),
-    listDepartures(tour.slug),
+  // As 4 chamadas partem juntas: `getTour`, `listDepartures` e `listTours`
+  // (relacionados) não dependem uma da outra — todas usam só `destino`/`slug`
+  // da própria URL, nunca um campo resolvido de `tour` (ex.: `tour.slug`,
+  // que sempre é igual a `slug` quando `getTour` encontra o passeio). Antes,
+  // `listDepartures`/`listTours` só começavam DEPOIS de `getTour` responder
+  // — um round-trip inteiro perdido à toa no caminho mais comum (passeio
+  // existe). No caso raro de 404, os resultados de `listDepartures`/
+  // `listTours` chegam mas são descartados — troca aceitável por uma
+  // navegação mais rápida na esmagadora maioria dos acessos.
+  const [tour, departures, relatedResult, resolvedSearchParams] = await Promise.all([
+    getTour(destino, slug),
+    listDepartures(slug),
+    listTours({ destination: destino, limit: 4 }),
     searchParams,
   ]);
+  if (!tour) notFound();
+
   const related = relatedResult.tours.filter((item) => item.id !== tour.id).slice(0, 3);
 
   // Só uma dica de quantidade inicial pro BookingSelector (ex.: vindo de
@@ -68,6 +80,11 @@ export default async function TourPage({ params, searchParams }: PageProps) {
   const pessoasRaw = resolvedSearchParams.pessoas;
   const pessoasValue = Number(Array.isArray(pessoasRaw) ? pessoasRaw[0] : pessoasRaw);
   const initialQuantityHint = Number.isFinite(pessoasValue) && pessoasValue > 0 ? pessoasValue : undefined;
+
+  // Só a partir das saídas já recebidas — nenhuma chamada nova. `summarizeNextDeparture`
+  // usa o instante real do servidor (a rota já é `force-dynamic`/`no-store`).
+  const nextDepartureSummary = summarizeNextDeparture(departures);
+  const summaryItems = buildTourSummaryItems(tour);
 
   const structuredData = {
     '@context': 'https://schema.org',
@@ -124,6 +141,9 @@ export default async function TourPage({ params, searchParams }: PageProps) {
           ))}
         </div>
         <h1 className="mt-4 text-3xl font-extrabold leading-tight sm:text-5xl">{tour.name}</h1>
+        {/* Duração/capacidade saíram daqui pro bloco "Informações do passeio" logo
+            abaixo — mostrar os dois em sequência seria repetir a mesma informação
+            duas vezes na mesma página. */}
         <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-ink-muted">
           <Rating rating={tour.rating} showCount />
           {formatLocation(tour.boardingPoint.city, tour.boardingPoint.state) ? (
@@ -132,22 +152,43 @@ export default async function TourPage({ params, searchParams }: PageProps) {
               {formatLocation(tour.boardingPoint.city, tour.boardingPoint.state)}
             </span>
           ) : null}
-          <span className="inline-flex items-center gap-1.5">
-            <Clock size={15} aria-hidden />
-            {formatDuration(tour.durationMinutes)}
-          </span>
-          {tour.maxPeople ? (
-            <span className="inline-flex items-center gap-1.5">
-              <Users size={15} aria-hidden />
-              até {tour.maxPeople} pessoas
-            </span>
-          ) : null}
         </div>
       </header>
 
       <div className="mt-8">
         <TourGallery images={tour.images} title={tour.name} />
       </div>
+
+      {/* "Resumo do passeio" — fatos rápidos pra decisão sem precisar ler tudo
+          embaixo. Só os campos que `buildTourSummaryItems` decidiu mostrar
+          (nunca inventa um campo ausente na API) + próxima saída, calculada
+          só a partir das saídas já buscadas (sem request novo). */}
+      <section aria-labelledby="informacoes" className="mt-8">
+        <h2 id="informacoes" className="sr-only">
+          Informações do passeio
+        </h2>
+        <div className="rounded-card border border-ink/10 bg-sand p-5 sm:p-6">
+          <p className="text-sm font-semibold text-ink">Informações do passeio</p>
+          <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3">
+            {summaryItems.map((item) => (
+              <div key={item.label}>
+                <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{item.label}</dt>
+                <dd className="mt-0.5 font-semibold text-ink">{item.value}</dd>
+              </div>
+            ))}
+          </dl>
+          <div className="mt-4 border-t border-ink/10 pt-4">
+            <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">Próxima saída</p>
+            {nextDepartureSummary ? (
+              <p className="mt-0.5 font-semibold text-ink">
+                {nextDepartureSummary.label} · {nextDepartureSummary.spotsLabel}
+              </p>
+            ) : (
+              <p className="mt-0.5 text-sm text-ink-muted">Sem novas saídas disponíveis no momento.</p>
+            )}
+          </div>
+        </div>
+      </section>
 
       <div className="mt-10 grid gap-12 lg:grid-cols-[1fr_360px]">
         <div className="space-y-12">
@@ -274,15 +315,28 @@ export default async function TourPage({ params, searchParams }: PageProps) {
                   {tour.operator.name}
                 </dd>
               </div>
+              {nextDepartureSummary ? (
+                <>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-ink-muted">Próxima saída</dt>
+                    <dd className="text-right font-semibold">{nextDepartureSummary.label}</dd>
+                  </div>
+                  <div className="flex justify-between gap-4">
+                    <dt className="text-ink-muted">Vagas</dt>
+                    <dd className="text-right font-semibold">{nextDepartureSummary.spotsLabel}</dd>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-ink-muted">Próxima saída</dt>
+                  <dd className="text-right font-semibold text-ink-muted">Sem novas saídas</dd>
+                </div>
+              )}
             </dl>
 
-            <a href="#embarque" className="btn-primary mt-6 w-full">
-              Ver local de embarque
+            <a href="#saidas" className="btn-primary mt-6 w-full active:scale-[0.98]">
+              Ver datas e horários
             </a>
-            <p className="mt-3 text-center text-xs text-ink-muted">
-              Reserva online em breve. Por enquanto, confira o ponto de encontro e fale com o
-              operador no local.
-            </p>
           </div>
         </aside>
       </div>

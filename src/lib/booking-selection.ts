@@ -1,5 +1,5 @@
 import type { Departure, PriceType } from '@/types';
-import { departureDateKey } from '@/lib/format';
+import { departureDateKey, formatNextDepartureLabel } from '@/lib/format';
 
 /**
  * Lógica pura da seleção de reserva — separada do componente React para
@@ -112,4 +112,63 @@ export function groupDeparturesByDate(sortedDepartures: Departure[]): DepartureG
 /** Uma data só conta como "disponível" se tiver pelo menos um horário vendável e não esgotado — usado pra escolher a data inicial e pra marcar "Esgotado" na faixa de datas. Nunca inventa disponibilidade: só lê `soldOut`/`priceType`, os mesmos campos que já vêm do NauticFlow. */
 export function isGroupAvailable(group: DepartureGroup): boolean {
   return group.departures.some((departure) => !departure.soldOut && isSellablePriceType(departure.priceType));
+}
+
+/** Quantos horários de um grupo já podem ser escolhidos agora (não esgotados, tipo vendável) — usado no resumo compacto "17 de setembro · 3 horários disponíveis". */
+export function countAvailableInGroup(group: DepartureGroup): number {
+  return group.departures.filter((departure) => !departure.soldOut && isSellablePriceType(departure.priceType)).length;
+}
+
+/** Uma saída pode ser reservada agora: não esgotada, tipo vendável. Não considera data/hora (uma saída de hoje mais cedo, por exemplo, ainda pode ter `soldOut: false` — quem decide isso é o NauticFlow, nunca o relógio do cliente). */
+export function isDepartureBookable(departure: Departure): boolean {
+  return !departure.soldOut && isSellablePriceType(departure.priceType);
+}
+
+/** 0 -> esgotado; 1 -> "última vaga"; 2+ -> "N vagas disponíveis". Nunca mostra valor negativo. */
+export function availabilityLabel(spots: number): string {
+  if (spots <= 0) return 'Esgotado';
+  if (spots === 1) return 'Última vaga disponível';
+  return `${spots} vagas disponíveis`;
+}
+
+/** Resumo compacto acima da lista de horários de uma data ("3 horários disponíveis"). */
+export function formatAvailableTimesCount(count: number): string {
+  if (count <= 0) return 'Nenhum horário disponível nesta data';
+  if (count === 1) return '1 horário disponível';
+  return `${count} horários disponíveis`;
+}
+
+/**
+ * Próxima saída vendável a partir de `now` — só entre as saídas já
+ * recebidas (nenhuma request nova). `now` é injetável pra teste; em
+ * produção é sempre o instante real do servidor (rota já é
+ * `force-dynamic`/`no-store`, não há cache pra invalidar). Ordena
+ * internamente — não depende do chamador já ter ordenado.
+ */
+export function findNextDeparture(departures: Departure[], now: Date = new Date()): Departure | null {
+  const nowMs = now.getTime();
+  return (
+    sortDeparturesByDate(departures).find(
+      (departure) => isDepartureBookable(departure) && new Date(departure.departsAt).getTime() > nowMs,
+    ) ?? null
+  );
+}
+
+export interface NextDepartureSummary {
+  departure: Departure;
+  /** "Hoje às 15:30" / "Amanhã às 09:00" / "17 de setembro às 15:30". */
+  label: string;
+  /** "4 vagas disponíveis" / "Última vaga disponível" — nunca "Esgotado" (findNextDeparture já filtra saídas esgotadas). */
+  spotsLabel: string;
+}
+
+/** Combina `findNextDeparture` + os formatadores de texto — usado direto na página do passeio, sem request novo. */
+export function summarizeNextDeparture(departures: Departure[], now: Date = new Date()): NextDepartureSummary | null {
+  const departure = findNextDeparture(departures, now);
+  if (!departure) return null;
+  return {
+    departure,
+    label: formatNextDepartureLabel(departure.departsAt, now.toISOString()),
+    spotsLabel: availabilityLabel(departure.availableSpots),
+  };
 }

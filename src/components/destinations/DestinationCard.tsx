@@ -13,7 +13,7 @@ export function DestinationCard({ destination, tourCount, size = 'sm' }: Destina
   return (
     <Link
       href={routes.destination(destination.slug)}
-      className={`group relative block overflow-hidden rounded-card ${
+      className={`group relative block overflow-hidden rounded-card transition active:scale-[0.98] ${
         size === 'lg' ? 'aspect-[4/5]' : 'aspect-[4/3]'
       }`}
     >

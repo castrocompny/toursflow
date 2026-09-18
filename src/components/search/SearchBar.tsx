@@ -80,7 +80,11 @@ export function SearchBar({ destinations, defaultDestination = '' }: SearchBarPr
           />
         </label>
 
-        <button type="button" onClick={handleSearch} className="btn-primary h-full w-full px-8 py-4 text-base">
+        <button
+          type="button"
+          onClick={handleSearch}
+          className="btn-primary h-full w-full px-8 py-4 text-base active:scale-[0.98]"
+        >
           <Search size={18} aria-hidden />
           Buscar passeios
         </button>

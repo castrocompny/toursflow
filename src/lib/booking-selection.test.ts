@@ -2,13 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { Departure } from '@/types';
 import {
   MIN_BOOKING_QUANTITY,
+  availabilityLabel,
   calculateEstimatedTotal,
   canContinueBooking,
   clampQuantity,
+  countAvailableInGroup,
+  findNextDeparture,
+  formatAvailableTimesCount,
   groupDeparturesByDate,
+  isDepartureBookable,
   isGroupAvailable,
   isSellablePriceType,
   sortDeparturesByDate,
+  summarizeNextDeparture,
 } from './booking-selection';
 
 const perPerson: Departure = {
@@ -214,5 +220,116 @@ describe('isGroupAvailable', () => {
   it('false quando todas as saídas do grupo são de tipo não vendável (catálogo)', () => {
     const group = { dateKey: '2026-10-11', departures: [startingFrom, perBoat] };
     expect(isGroupAvailable(group)).toBe(false);
+  });
+});
+
+describe('countAvailableInGroup', () => {
+  it('conta só as saídas vendáveis e não esgotadas do grupo', () => {
+    const group = { dateKey: '2026-10-11', departures: [perPerson, perGroup, soldOutDeparture, startingFrom] };
+    expect(countAvailableInGroup(group)).toBe(2);
+  });
+
+  it('zero quando nenhuma saída do grupo está disponível', () => {
+    const group = { dateKey: '2026-10-11', departures: [soldOutDeparture, startingFrom] };
+    expect(countAvailableInGroup(group)).toBe(0);
+  });
+});
+
+describe('isDepartureBookable', () => {
+  it('true: não esgotada e tipo vendável', () => {
+    expect(isDepartureBookable(perPerson)).toBe(true);
+  });
+
+  it('false: esgotada', () => {
+    expect(isDepartureBookable(soldOutDeparture)).toBe(false);
+  });
+
+  it('false: tipo não vendável mesmo com vagas', () => {
+    expect(isDepartureBookable(startingFrom)).toBe(false);
+  });
+});
+
+describe('availabilityLabel', () => {
+  it('0 ou menos -> "Esgotado"', () => {
+    expect(availabilityLabel(0)).toBe('Esgotado');
+    expect(availabilityLabel(-1)).toBe('Esgotado');
+  });
+
+  it('1 -> "Última vaga disponível"', () => {
+    expect(availabilityLabel(1)).toBe('Última vaga disponível');
+  });
+
+  it('2+ -> "N vagas disponíveis"', () => {
+    expect(availabilityLabel(2)).toBe('2 vagas disponíveis');
+    expect(availabilityLabel(10)).toBe('10 vagas disponíveis');
+  });
+});
+
+describe('formatAvailableTimesCount', () => {
+  it('0 -> "Nenhum horário disponível nesta data"', () => {
+    expect(formatAvailableTimesCount(0)).toBe('Nenhum horário disponível nesta data');
+  });
+
+  it('1 -> singular', () => {
+    expect(formatAvailableTimesCount(1)).toBe('1 horário disponível');
+  });
+
+  it('2+ -> plural', () => {
+    expect(formatAvailableTimesCount(3)).toBe('3 horários disponíveis');
+  });
+});
+
+describe('findNextDeparture', () => {
+  const now = new Date('2026-10-01T00:00:00Z');
+  const past: Departure = { ...perPerson, id: 'past', departsAt: '2026-09-01T12:00:00Z' };
+  const soonest: Departure = { ...perPerson, id: 'soonest', departsAt: '2026-10-05T12:00:00Z' };
+  const later: Departure = { ...perPerson, id: 'later', departsAt: '2026-10-20T12:00:00Z' };
+  const soonestButSoldOut: Departure = { ...soonest, id: 'soonest-sold-out', soldOut: true, availableSpots: 0 };
+  const soonestButUnsellable: Departure = { ...soonest, id: 'soonest-unsellable', priceType: 'starting_from' };
+
+  it('a saída futura mais próxima, ignorando as passadas', () => {
+    expect(findNextDeparture([later, past, soonest], now)?.id).toBe('soonest');
+  });
+
+  it('pula saídas futuras esgotadas ou não vendáveis, escolhendo a próxima que já pode ser reservada', () => {
+    expect(findNextDeparture([soonestButSoldOut, soonestButUnsellable, later], now)?.id).toBe('later');
+  });
+
+  it('null quando não há nenhuma saída futura vendável (array vazio ou só passado/esgotado)', () => {
+    expect(findNextDeparture([], now)).toBeNull();
+    expect(findNextDeparture([past], now)).toBeNull();
+    expect(findNextDeparture([soonestButSoldOut], now)).toBeNull();
+  });
+
+  it('não ordena o array recebido (usa sortDeparturesByDate internamente, imutável)', () => {
+    const input = [later, soonest];
+    findNextDeparture(input, now);
+    expect(input.map((d) => d.id)).toEqual(['later', 'soonest']);
+  });
+});
+
+describe('summarizeNextDeparture', () => {
+  const now = new Date('2026-10-01T13:00:00Z'); // 10:00 em Brasília, 01/out
+  const soon: Departure = {
+    ...perPerson,
+    id: 'soon',
+    departsAt: '2026-10-01T15:30:00Z', // 12:30 em Brasília, mesmo dia civil que `now`
+    availableSpots: 4,
+  };
+
+  it('combina saída + rótulo de data/hora + rótulo de vagas', () => {
+    const summary = summarizeNextDeparture([soon], now);
+    expect(summary?.departure.id).toBe('soon');
+    expect(summary?.label).toBe('Hoje às 12:30');
+    expect(summary?.spotsLabel).toBe('4 vagas disponíveis');
+  });
+
+  it('"Última vaga disponível" quando só resta uma', () => {
+    const summary = summarizeNextDeparture([{ ...soon, availableSpots: 1 }], now);
+    expect(summary?.spotsLabel).toBe('Última vaga disponível');
+  });
+
+  it('null quando não há próxima saída (nunca inventa um valor)', () => {
+    expect(summarizeNextDeparture([], now)).toBeNull();
   });
 });
