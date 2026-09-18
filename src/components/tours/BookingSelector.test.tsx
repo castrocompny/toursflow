@@ -56,7 +56,7 @@ describe('BookingSelector', () => {
   it('saída esgotada não é selecionável', () => {
     render(<BookingSelector departures={[soldOut]} />);
     // O botão da saída esgotada precisa estar desabilitado.
-    const departureButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+    const departureButtons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
     expect(isDisabled(departureButtons[0])).toBe(true);
     fireEvent.click(departureButtons[0]);
     // Sem seleção possível -> nenhum resumo de quantidade aparece.
@@ -70,7 +70,7 @@ describe('BookingSelector', () => {
 
   it('selecionar uma saída disponível habilita o resumo e o botão continuar', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
 
     fireEvent.click(departureButton);
 
@@ -81,7 +81,7 @@ describe('BookingSelector', () => {
 
   it('quantidade nunca fica abaixo de 1 (botão de diminuir desabilita em 1)', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
 
     const decrement = screen.getByRole('button', { name: /diminuir quantidade/i });
@@ -94,7 +94,7 @@ describe('BookingSelector', () => {
 
   it('incrementa e decrementa a quantidade corretamente', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
 
     const increment = screen.getByRole('button', { name: /aumentar quantidade/i });
@@ -111,7 +111,7 @@ describe('BookingSelector', () => {
 
   it('calcula o total estimado como preço × quantidade (per_person)', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
 
     const increment = screen.getByRole('button', { name: /aumentar quantidade/i });
@@ -125,7 +125,7 @@ describe('BookingSelector', () => {
     vi.stubGlobal('fetch', fetchSpy);
 
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
     fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
 
@@ -138,7 +138,7 @@ describe('BookingSelector', () => {
 
   it('"Voltar" no formulário do comprador retorna para a seleção, preservando departure/quantidade', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
     fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i })); // quantidade = 2
     fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
@@ -159,7 +159,7 @@ describe('BookingSelector', () => {
 
     function goToCustomerForm() {
       render(<BookingSelector departures={[available]} />);
-      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
       fireEvent.click(departureButton);
       fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
     }
@@ -223,7 +223,7 @@ describe('BookingSelector', () => {
 
   it('per_group: total fixo, não muda com a quantidade', () => {
     render(<BookingSelector departures={[perGroup]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
 
     expect(screen.getAllByText('R$ 200,00').length).toBeGreaterThan(0);
@@ -241,7 +241,7 @@ describe('BookingSelector', () => {
 
   it('per_group: "Continuar reserva" fica habilitado (tipo vendável)', () => {
     render(<BookingSelector departures={[perGroup]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
     expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(false);
   });
@@ -251,7 +251,7 @@ describe('BookingSelector', () => {
     vi.stubGlobal('fetch', fetchSpy);
 
     render(<BookingSelector departures={[startingFrom]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
 
     expect(isDisabled(departureButton)).toBe(true);
     fireEvent.click(departureButton);
@@ -266,7 +266,7 @@ describe('BookingSelector', () => {
 
   it('per_boat: card desabilitado e mesma mensagem de indisponibilidade (sem equivalente no NauticFlow)', () => {
     render(<BookingSelector departures={[perBoat]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
 
     expect(isDisabled(departureButton)).toBe(true);
     expect(screen.getByText(/reserva online para este tipo de passeio ainda não está disponível/i)).toBeTruthy();
@@ -284,14 +284,14 @@ describe('BookingSelector', () => {
 
   it('mostra a disponibilidade também perto do seletor de quantidade, após selecionar', () => {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
     expect(screen.getAllByText('10 vagas disponíveis').length).toBeGreaterThan(0);
   });
 
   it('botão "+" desabilita ao atingir availableSpots (não deixa passar do teto)', () => {
     render(<BookingSelector departures={[oneSpotLeft]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
 
     const increment = screen.getByRole('button', { name: /aumentar quantidade/i });
@@ -310,7 +310,7 @@ describe('BookingSelector', () => {
     // horário simultâneos.
     render(<BookingSelector departures={[available, oneSpotLeft]} />);
 
-    const availableButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const availableButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(availableButton);
     fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
     fireEvent.click(screen.getByRole('button', { name: /aumentar quantidade/i }));
@@ -320,31 +320,39 @@ describe('BookingSelector', () => {
     fireEvent.click(screen.getByRole('button', { name: /25$/ }));
     expect(screen.queryByLabelText(/quantidade de pessoas/i)).toBeNull();
 
-    const oneSpotButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const oneSpotButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(oneSpotButton);
     expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('1');
     expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(false);
   });
 
   describe('agrupamento por data', () => {
-    it('a data em destaque (11/out) não tem chip próprio — já vem expandida; 25/out aparece em "Próximas datas"', () => {
+    function dateChipsGroup() {
+      return screen.getByRole('group', { name: /datas disponíveis/i });
+    }
+
+    it('a data selecionada aparece como chip destacado em "Escolha a data", com o horário dela expandido abaixo', () => {
       render(<BookingSelector departures={[available, oneSpotLeft]} />);
 
-      // 11/out é a data em destaque (mais próxima disponível): sem chip, já
-      // mostrando o horário como botão selecionável diretamente.
-      expect(screen.queryByRole('button', { name: /11$/ })).toBeNull();
-      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
-      expect(timeButtons).toHaveLength(1);
+      // 11/out (mais próxima disponível) é o chip selecionado.
+      const selectedChip = screen.getByRole('button', { name: /11$/ });
+      expect(selectedChip.getAttribute('aria-pressed')).toBe('true');
 
-      // 25/out é a única data "depois" da destacada -> aparece como chip em "Próximas datas".
-      expect(screen.getByText('Próximas datas')).toBeTruthy();
-      expect(screen.getByRole('button', { name: /25$/ })).toBeTruthy();
+      // 25/out também aparece como chip (mesma faixa "Escolha a data"), só não selecionado.
+      const otherChip = screen.getByRole('button', { name: /25$/ });
+      expect(otherChip.getAttribute('aria-pressed')).toBe('false');
+
+      // O painel abaixo mostra só o horário de 11/out.
+      const timeButtons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      expect(timeButtons).toHaveLength(1);
     });
 
     it('data com todos os horários esgotados aparece com o chip desabilitado e rótulo "Esgotado"', () => {
       render(<BookingSelector departures={[soldOut, available]} />);
 
-      const soldOutDateButtons = screen.getAllByRole('button').filter((el) => /esgotado/i.test(el.textContent ?? ''));
+      const soldOutDateButtons = within(dateChipsGroup())
+        .getAllByRole('button')
+        .filter((el) => /esgotado/i.test(el.textContent ?? ''));
       expect(soldOutDateButtons.length).toBeGreaterThan(0);
       expect(isDisabled(soldOutDateButtons[0])).toBe(true);
     });
@@ -357,30 +365,16 @@ describe('BookingSelector', () => {
 
       // O horário de `available` (a única data com vaga real) já aparece
       // selecionável sem precisar clicar em nenhum chip.
-      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      const timeButtons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
       expect(timeButtons).toHaveLength(1);
       expect(isDisabled(timeButtons[0])).toBe(false);
     });
 
     it('nunca pré-seleciona um horário automaticamente, mesmo a data já vindo selecionada', () => {
       render(<BookingSelector departures={[available, oneSpotLeft]} />);
-      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      const timeButtons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
       expect(timeButtons[0].getAttribute('aria-pressed')).toBe('false');
       expect(screen.queryByLabelText(/quantidade de pessoas/i)).toBeNull();
-    });
-
-    it('resumo da data mostra "N horários disponíveis", contando só os vendáveis e não esgotados do dia', () => {
-      const morningSameDay: Departure = { ...available, id: 'morning', departsAt: '2026-10-11T09:00:00+00:00' };
-      const soldOutSameDay: Departure = { ...available, id: 'sold-out-same-day', departsAt: '2026-10-11T20:00:00+00:00', soldOut: true, availableSpots: 0 };
-      render(<BookingSelector departures={[available, morningSameDay, soldOutSameDay]} />);
-
-      // available + morningSameDay são vendáveis; soldOutSameDay não conta.
-      expect(screen.getByText('2 horários disponíveis')).toBeTruthy();
-    });
-
-    it('resumo da data mostra singular "1 horário disponível" quando só um horário do dia é vendável', () => {
-      render(<BookingSelector departures={[available]} />);
-      expect(screen.getByText('1 horário disponível')).toBeTruthy();
     });
 
     it('vários horários no mesmo dia viram linhas separadas, sem repetir a data (só um cabeçalho)', () => {
@@ -390,8 +384,18 @@ describe('BookingSelector', () => {
       // Só uma ocorrência do cabeçalho de data (11 de outubro é domingo).
       expect(screen.getAllByText('Domingo, 11 de outubro')).toHaveLength(1);
       // Mas dois horários selecionáveis.
-      const timeButtons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+      const timeButtons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
       expect(timeButtons).toHaveLength(2);
+    });
+
+    it('trocar de chip de data troca o painel de horários abaixo', () => {
+      render(<BookingSelector departures={[available, oneSpotLeft]} />);
+      expect(screen.getByText('Domingo, 11 de outubro')).toBeTruthy();
+
+      fireEvent.click(screen.getByRole('button', { name: /25$/ }));
+
+      expect(screen.queryByText('Domingo, 11 de outubro')).toBeNull();
+      expect(screen.getByText('Domingo, 25 de outubro')).toBeTruthy();
     });
 
     it('início + duração calcula o horário final exibido ("09:00 às 14:00" pra 300min)', () => {
@@ -407,67 +411,82 @@ describe('BookingSelector', () => {
       expect(screen.queryByText(/09:00 às/)).toBeNull();
     });
 
-    describe('muitas datas futuras (progressão "Ver mais datas")', () => {
-      // Featured (11/out) + 9 datas extras em dias consecutivos (12 a 20/out) -> 9 "remainingGroups".
+    describe('janela de navegação entre datas (‹ ›)', () => {
+      // 10 datas em dias consecutivos (11 a 20/out) -> mais que DATE_WINDOW_SIZE (7).
       const manyDates: Departure[] = Array.from({ length: 10 }, (_, index) => ({
         ...available,
         id: `many-${index}`,
         departsAt: `2026-10-${String(11 + index).padStart(2, '0')}T17:00:00+00:00`,
       }));
 
-      function moreDatesGroup() {
-        return screen.getByRole('group', { name: /mais datas/i });
+      function previousButton() {
+        return screen.getByRole('button', { name: /datas anteriores/i });
+      }
+      function nextButton() {
+        return screen.getByRole('button', { name: /mais datas/i });
       }
 
-      it('inicialmente só até 3 datas extras aparecem em "Próximas datas", com "Ver mais datas" visível', () => {
+      it('nunca monta mais que 7 chips de data de uma vez, mesmo com dezenas de saídas futuras', () => {
         render(<BookingSelector departures={manyDates} />);
-        expect(within(moreDatesGroup()).getAllByRole('button')).toHaveLength(3);
-        expect(screen.getByRole('button', { name: /ver mais datas/i })).toBeTruthy();
+        expect(within(dateChipsGroup()).getAllByRole('button')).toHaveLength(7);
       });
 
-      it('"Ver mais datas" revela mais datas progressivamente (3 -> 7 -> resto) e some quando não há mais', () => {
+      it('"‹" começa desabilitado (já na primeira data) e "›" habilitado (há mais datas à frente)', () => {
         render(<BookingSelector departures={manyDates} />);
-        const showMore = () => screen.getByRole('button', { name: /ver mais datas/i });
-        const chipCount = () => within(moreDatesGroup()).getAllByRole('button').length;
-
-        expect(chipCount()).toBe(3);
-        fireEvent.click(showMore());
-        expect(chipCount()).toBe(7);
-        fireEvent.click(showMore());
-        // 9 datas extras no total (10 saídas - 1 destacada) -> preenche tudo, sem passar de 14.
-        expect(chipCount()).toBe(9);
-        expect(screen.queryByRole('button', { name: /ver mais datas/i })).toBeNull();
+        expect(isDisabled(previousButton())).toBe(true);
+        expect(isDisabled(nextButton())).toBe(false);
       });
 
-      it('as datas extras aparecem em ordem cronológica', () => {
+      it('"›" desliza a janela mantendo a ordem cronológica, sem mudar a data selecionada', () => {
         render(<BookingSelector departures={manyDates} />);
-        fireEvent.click(screen.getByRole('button', { name: /ver mais datas/i }));
-        fireEvent.click(screen.getByRole('button', { name: /ver mais datas/i }));
-        const chipLabels = within(moreDatesGroup())
+        expect(screen.getByText('Domingo, 11 de outubro')).toBeTruthy();
+
+        fireEvent.click(nextButton());
+
+        // A data selecionada continua a mesma (11/out) — só a janela de chips deslizou.
+        expect(screen.getByText('Domingo, 11 de outubro')).toBeTruthy();
+        const chipLabels = within(dateChipsGroup())
           .getAllByRole('button')
-          .map((el) => el.textContent);
-        // 12/out até 20/out, nessa ordem (nenhuma fora de ordem).
-        expect(chipLabels).toEqual(['Seg 12', 'Ter 13', 'Qua 14', 'Qui 15', 'Sex 16', 'Sáb 17', 'Dom 18', 'Seg 19', 'Ter 20']);
+          .map((el) => el.textContent?.replace('Esgotado', ''));
+        expect(chipLabels).toEqual(['Seg 12', 'Ter 13', 'Qua 14', 'Qui 15', 'Sex 16', 'Sáb 17', 'Dom 18']);
       });
-    });
 
-    it('sem "Ver mais datas" quando há poucas datas extras (menos de 3)', () => {
-      render(<BookingSelector departures={[available, oneSpotLeft]} />);
-      expect(screen.queryByRole('button', { name: /ver mais datas/i })).toBeNull();
+      it('"‹" desliza a janela de volta; "›" desabilita ao chegar no fim', () => {
+        render(<BookingSelector departures={manyDates} />);
+        // 10 datas, janela de 7 -> no máximo 3 passos de "›" (windowStart 0 -> 3).
+        fireEvent.click(nextButton());
+        fireEvent.click(nextButton());
+        fireEvent.click(nextButton());
+        expect(isDisabled(nextButton())).toBe(true);
+
+        const chipLabelsAtEnd = within(dateChipsGroup())
+          .getAllByRole('button')
+          .map((el) => el.textContent?.replace('Esgotado', ''));
+        expect(chipLabelsAtEnd).toEqual(['Qua 14', 'Qui 15', 'Sex 16', 'Sáb 17', 'Dom 18', 'Seg 19', 'Ter 20']);
+
+        fireEvent.click(previousButton());
+        expect(isDisabled(nextButton())).toBe(false);
+      });
+
+      it('quando cabem todas as datas na janela, "‹" e "›" ficam desabilitados dos dois lados', () => {
+        render(<BookingSelector departures={[available, oneSpotLeft]} />);
+        expect(isDisabled(previousButton())).toBe(true);
+        expect(isDisabled(nextButton())).toBe(true);
+      });
     });
   });
 
   describe('initialQuantityHint (ex.: "pessoas" vindo da busca)', () => {
     it('usa o hint como quantidade inicial quando a saída escolhida tem vagas suficientes', () => {
       render(<BookingSelector departures={[available]} initialQuantityHint={4} />);
-      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
       fireEvent.click(departureButton);
       expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('4');
     });
 
     it('reajusta o hint pra baixo quando a saída escolhida tem menos vagas do que o pedido', () => {
       render(<BookingSelector departures={[oneSpotLeft]} initialQuantityHint={4} />);
-      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
       fireEvent.click(departureButton);
       expect((screen.getByRole('spinbutton', { name: /quantidade de pessoas/i }) as HTMLInputElement).value).toBe('1');
     });
@@ -483,7 +502,7 @@ describe('BookingSelector', () => {
 
   it('mistura de saídas: só a vendável pode ser selecionada', () => {
     render(<BookingSelector departures={[available, startingFrom]} />);
-    const buttons = screen.getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
+    const buttons = within(screen.getByRole('list')).getAllByRole('button').filter((el) => el.getAttribute('aria-pressed') !== null);
 
     const sellableButton = buttons.find((btn) => !isDisabled(btn))!;
     const unsellableButton = buttons.find((btn) => isDisabled(btn))!;
@@ -499,7 +518,7 @@ describe('BookingSelector', () => {
   describe('reserva/checkout desligado (BOOKING_CHECKOUT_ENABLED real, false)', () => {
     function goToReview() {
       render(<BookingSelector departures={[available]} />);
-      const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+      const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
       fireEvent.click(departureButton);
       fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
       fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Departure } from '@/types';
 
@@ -74,7 +74,7 @@ describe('BookingSelector — confirmação de reserva (BOOKING_CHECKOUT_ENABLED
 
   function goToReview() {
     render(<BookingSelector departures={[available]} />);
-    const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
     fireEvent.click(departureButton);
     fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
     fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });

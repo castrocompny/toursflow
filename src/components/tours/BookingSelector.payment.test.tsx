@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Departure } from '@/types';
 
@@ -109,7 +109,7 @@ async function flush() {
 }
 
 function fillAndReview() {
-  const departureButton = screen.getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+  const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
   fireEvent.click(departureButton);
   fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
   fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });
