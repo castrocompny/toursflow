@@ -14,6 +14,50 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Footer e frontend preparados para expansão multidestino (branch `frontend/mobile-booking-ux`)
+
+Decisão registrada: **destinos do ToursFlow são data-driven — a entrada de
+uma nova cidade no catálogo (Arraial do Cabo, Cabo Frio, Angra dos Reis,
+Recife, etc.) não deve exigir alteração funcional no frontend.** Detalhe
+completo em [ADR-015](../DECISIONS.md#adr-015--destinos-são-data-driven-nenhuma-cidade-nova-exige-alteração-de-código).
+
+Auditoria confirmou que `listDestinations()`, o mecanismo de vitrine
+(`destinationsVitrine`/`genericDestinationVitrine`), `/destinos/[slug]`,
+`/passeios/[destino]/[slug]` e `sitemap.ts` já eram totalmente dinâmicos —
+nenhum código mudou nesses pontos, só foram documentados/testados.
+
+O que foi corrigido:
+- `src/app/page.tsx`: eyebrow da home trocado de "Região dos Lagos e Costa
+  Verde" (posicionamento regional que deixaria de ser verdade com a
+  expansão) para "Descubra destinos e experiências"; seção de destinos
+  agora usa `HOME_DESTINATION_LIMIT = 10` como teto visual, sem deixar de
+  ser 100% dinâmica nem de linkar "Ver todos os destinos".
+- `src/components/layout/Footer.tsx`: corrigido bug de filtro de categoria
+  — os links "Passeios privativos"/"Passeios compartilhados" usavam os
+  valores do mock (`privativo`/`compartilhado`) em vez dos valores reais
+  da integração (`passeio_privativo`/`passeio_compartilhado`), o que
+  geraria filtro inválido em produção; adicionado link "Como funciona"
+  (`routes.howItWorks()`); descrição da marca trocada para "Passeios e
+  experiências em diferentes destinos, reunidos em um só lugar."; coluna
+  "Destinos" agora usa `FOOTER_DESTINATION_LIMIT = 6` e sempre mostra "Ver
+  todos os destinos →", sem nunca preencher com cidade fictícia.
+- `src/data/vitrine/destinations.test.ts` (novo): cobre o fallback de
+  `genericDestinationVitrine` para um slug sem vitrine específica.
+- `src/components/layout/Footer.test.tsx`: reescrito para cobrir os 5
+  links de Explorar, hrefs reais de categoria, comportamento com 1 e com
+  8 destinos, limite respeitado, "Ver todos os destinos" sempre presente,
+  e nenhum destino não recebido por prop aparecendo.
+
+Zero requisições novas (só fatiamento de dados já recebidos via
+`listDestinations()`). `npm run typecheck`, `npm run lint`,
+`npx vitest run` (435 testes) e `npm run build` passando.
+
+Fora de escopo, não tocado: categorias da home (decisão já fechada),
+comunicação direta com operador, NauticFlow/backend/API/banco,
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` (continuam `false`).
+
+---
+
 ## 2026-09-18 — Posicionamento "só ToursFlow": fim do "fale com o operador", footer institucional, vitrine de categorias curada (branch `frontend/mobile-booking-ux`)
 
 Três pontos de conteúdo/UX, sem tocar backend/NauticFlow nem ativar nenhuma feature flag.

@@ -115,7 +115,10 @@ src/
       mock-source.ts         fallback só para dev local
     mock/             dados estáticos (usados só pelo mock-source)
     vitrine/          metadados de destino/categoria que o NauticFlow não fornece
-                       (tagline, descrição, imagem, ícone) — propriedade do ToursFlow
+                       (tagline, descrição, imagem, ícone) — propriedade do ToursFlow.
+                       Fallback genérico por slug/value desconhecido garante que uma
+                       cidade/categoria nova nunca quebra a UI — destinos são
+                       data-driven, ver ADR-015 em DECISIONS.md
   lib/
     routes.ts, seo.ts, site.ts, format.ts, maps.ts, feature-flags.ts
     http-guards.ts     Origin/Sec-Fetch-Site, Content-Type, limite real de corpo — compartilhado pelas 2 rotas de escrita

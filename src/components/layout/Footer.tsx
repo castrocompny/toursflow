@@ -4,6 +4,11 @@ import { LogoLockup } from '@/components/brand/Logo';
 import type { Destination } from '@/types';
 import { site } from '@/lib/site';
 
+// Cap visual para a coluna Destinos do footer — a lista completa de destinos
+// reais (vinda da API/repository, sem cidades fixas no código) continua
+// acessível via "Ver todos os destinos".
+const FOOTER_DESTINATION_LIMIT = 6;
+
 export function Footer({ destinations }: { destinations: Destination[] }) {
   const year = new Date().getFullYear();
 
@@ -13,7 +18,7 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
         <div>
           <LogoLockup size={36} onDark />
           <p className="mt-4 max-w-xs text-sm text-white/70">
-            Passeios náuticos de operadores locais, reunidos em um só lugar.
+            Passeios e experiências em diferentes destinos, reunidos em um só lugar.
           </p>
         </div>
 
@@ -33,13 +38,18 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
               </Link>
             </li>
             <li>
-              <Link href={routes.category('privativo')} className="text-white/80 transition-colors duration-150 hover:text-white">
+              <Link href={routes.category('passeio_privativo')} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Passeios privativos
               </Link>
             </li>
             <li>
-              <Link href={routes.category('compartilhado')} className="text-white/80 transition-colors duration-150 hover:text-white">
+              <Link href={routes.category('passeio_compartilhado')} className="text-white/80 transition-colors duration-150 hover:text-white">
                 Passeios compartilhados
+              </Link>
+            </li>
+            <li>
+              <Link href={routes.howItWorks()} className="text-white/80 transition-colors duration-150 hover:text-white">
+                Como funciona
               </Link>
             </li>
           </ul>
@@ -50,13 +60,18 @@ export function Footer({ destinations }: { destinations: Destination[] }) {
             Destinos
           </h2>
           <ul className="mt-4 space-y-2 text-sm">
-            {destinations.map((destination) => (
+            {destinations.slice(0, FOOTER_DESTINATION_LIMIT).map((destination) => (
               <li key={destination.slug}>
                 <Link href={routes.destination(destination.slug)} className="text-white/80 transition-colors duration-150 hover:text-white">
                   Passeios em {destination.name}
                 </Link>
               </li>
             ))}
+            <li>
+              <Link href={routes.destinations()} className="font-semibold text-sea-light transition-colors duration-150 hover:text-white">
+                Ver todos os destinos →
+              </Link>
+            </li>
           </ul>
         </nav>
 

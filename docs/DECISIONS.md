@@ -713,3 +713,83 @@ independente disso, porque não depende do Realtime en nada. Falta de
 normal, sem auto-refresh de aba aberta", nunca pra "mostra dado errado".
 
 ---
+
+## ADR-015 — Destinos são data-driven; nenhuma cidade nova exige alteração de código
+
+**Contexto:** hoje o catálogo real do NauticFlow tem poucos destinos (na
+prática, só Búzios em produção). O plano comercial é expandir para
+Arraial do Cabo, Cabo Frio, Angra dos Reis, Recife e outras cidades à
+medida que operadores forem cadastrados no NauticFlow. Antes de qualquer
+expansão de cidade, era preciso confirmar (e onde necessário, corrigir)
+que o frontend público não tem nenhuma lista fixa de destinos escondida
+em componentes — porque isso obrigaria a um deploy manual por cidade
+nova, o oposto do que o negócio precisa.
+
+**Decisão:** Destinos do ToursFlow são data-driven. A entrada de uma
+nova cidade no catálogo não deve exigir alteração funcional no
+frontend. Fluxo desejado: novo destino entra no NauticFlow → `listDestinations()`
+devolve → home/`/destinos`/`/destinos/[slug]`/busca/footer/sitemap
+mostram → passeios aparecem. Nenhuma etapa lê uma lista de cidades
+escrita em código.
+
+**O que a auditoria confirmou já estar correto (nenhum código mudou):**
+- `listDestinations()` (`src/data/repository.ts`) já é a única fonte de
+  destinos para home, `/destinos`, `/destinos/[slug]`, `SearchBar` e
+  `sitemap.ts` — não existe uma segunda lista manual em nenhum desses
+  pontos.
+- O mecanismo de vitrine (`src/data/vitrine/destinations.ts`,
+  `destinationsVitrine` + `genericDestinationVitrine`, usado dentro de
+  `mapDestinationDTO` em `nauticflow-source.ts`) já garante que um slug
+  sem copy editorial específica (ex.: `recife`, ainda não escrito) cai
+  num fallback genérico e honesto — tagline/descrição citam o nome real
+  da cidade, sem inventar fato específico do lugar, com uma imagem de
+  fallback (`/img/mock/destinations/generic.svg`) que já existe em
+  disco. Nenhum destino novo quebra a UI por falta de metadado
+  editorial. Coberto por `src/data/vitrine/destinations.test.ts`
+  (novo).
+- `/destinos/[slug]` já usa `generateStaticParams`/`generateMetadata`
+  dinâmicos a partir de `listDestinations()`, com `EmptyState` genérico
+  em vez de conteúdo hardcoded por cidade.
+- `/passeios/[destino]/[slug]` já gera metadata dinamicamente, sem regra
+  por cidade.
+- `sitemap.ts` já é inteiramente dinâmico (`listDestinations()` +
+  `listTourPaths()`), sem lista fixa.
+
+**O que foi corrigido nesta rodada:**
+- **Copy institucional regional removida:** o eyebrow da home dizia
+  "Região dos Lagos e Costa Verde" — posicionamento que deixa de ser
+  verdade assim que o catálogo tiver destinos fora dessa região. Trocado
+  por "Descubra destinos e experiências" (`src/app/page.tsx`).
+- **Bug de filtro de categoria no footer:** os links "Passeios
+  privativos"/"Passeios compartilhados" usavam `routes.category('privativo')`/
+  `routes.category('compartilhado')` — valores do MOCK, não da integração
+  real (`categoriesVitrine` usa `passeio_privativo`/`passeio_compartilhado`).
+  Em produção (fonte real), esses links gerariam um filtro inválido/vazio.
+  Corrigido em `src/components/layout/Footer.tsx`.
+- **Footer preparado para muitos destinos:** a coluna "Destinos" agora usa
+  `FOOTER_DESTINATION_LIMIT = 6` (só um teto visual — a lista continua
+  vindo inteira via prop `destinations`, sem cidade fixa) e sempre mostra
+  um link "Ver todos os destinos →" para `routes.destinations()`,
+  independente de quantos destinos existirem (1, 6 ou 50).
+- **Home preparada para muitos destinos:** a seção "Para onde você vai"
+  agora usa `HOME_DESTINATION_LIMIT = 10` pelo mesmo motivo (2 linhas
+  cheias em `lg:grid-cols-5`), mantendo o link "Ver todos os destinos"
+  para a página completa.
+- Descrição da marca no footer trocada de "Passeios náuticos de
+  operadores locais, reunidos em um só lugar." para "Passeios e
+  experiências em diferentes destinos, reunidos em um só lugar." — menos
+  amarrada a uma leitura regional, sem reabrir comunicação com operador.
+- Adicionado link "Como funciona" (`routes.howItWorks()`) na coluna
+  Explorar do footer.
+
+**Fora de escopo, deliberadamente não tocado:** categorias da home
+(decisão já fechada numa rodada anterior), qualquer comunicação
+direta com operador (não reaberta), NauticFlow/backend/API/banco,
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` (continuam `false`).
+
+**Performance:** zero requisições novas — todas as mudanças são
+fatiamento (`slice`) e formatação de dados que a página/layout já
+recebiam via `listDestinations()`; nenhum fetch por cidade, por card ou
+no footer.
+
+---

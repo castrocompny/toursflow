@@ -12,6 +12,11 @@ import { routes } from '@/lib/routes';
 import { pageMetadata } from '@/lib/seo';
 import { site } from '@/lib/site';
 
+// Cap visual só para a grade da home — a lista completa de destinos continua
+// disponível em `/destinos` ("Ver todos os destinos"). 10 alinha com 2 linhas
+// cheias em `lg:grid-cols-5`.
+const HOME_DESTINATION_LIMIT = 10;
+
 export const metadata = pageMetadata({
   title: `${site.name} — ${site.tagline}`,
   description: site.description,
@@ -62,7 +67,7 @@ export default async function HomePage() {
         </svg>
 
         <div className="shell relative pb-32 pt-16 sm:pb-40 sm:pt-24">
-          <p className="eyebrow text-sea-light">Região dos Lagos e Costa Verde</p>
+          <p className="eyebrow text-sea-light">Descubra destinos e experiências</p>
           <h1 className="mt-4 max-w-3xl font-display text-4xl font-extrabold leading-[1.05] sm:text-6xl">
             Encontre seu próximo passeio
           </h1>
@@ -99,7 +104,7 @@ export default async function HomePage() {
           action={{ label: 'Ver todos os destinos', href: routes.destinations() }}
         >
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-            {destinations.map((destination) => (
+            {destinations.slice(0, HOME_DESTINATION_LIMIT).map((destination) => (
               <DestinationCard
                 key={destination.slug}
                 destination={destination}
