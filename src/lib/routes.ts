@@ -19,5 +19,7 @@ export const routes = {
     `/passeios/${tour.destinationSlug}/${tour.slug}`,
   destinations: () => '/destinos',
   destination: (slug: string) => `/destinos/${slug}`,
+  /** Âncora pra seção "Como funciona" na home (ver `id="como-funciona"` em `src/app/page.tsx`) — não é uma rota própria. */
+  howItWorks: () => '/#como-funciona',
   category: (slug: string) => `/passeios?categoria=${slug}`,
 } as const;

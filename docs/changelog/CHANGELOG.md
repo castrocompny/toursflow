@@ -14,6 +14,22 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Header público reorganizado: nav centralizada, "Como funciona", CTA "Buscar passeios" (branch `frontend/mobile-booking-ux`)
+
+O header antigo (`Header.tsx`) só tinha logo à esquerda e dois links (`Passeios`/`Destinos`) à direita via `justify-between` — muito espaço vazio no meio, sem CTA. Reorganizado pra 3 zonas reais (logo | nav centralizada | CTA) via `grid grid-cols-[auto_1fr_auto]`, mantendo o foco 100% turista da entrada anterior (nenhuma comunicação de operador/NauticFlow reintroduzida).
+
+**Navegação**: adicionado o link **"Como funciona"**, apontando pra `/#como-funciona` — não é página nova, é uma âncora pro bloco que já existia na home ("Escolha a experiência" / "Confira o embarque" / "Fale com o operador"), que ganhou `id="como-funciona"` e `scroll-mt-16` (compensa a altura do header sticky ao rolar até lá). **`src/lib/routes.ts`** ganhou `routes.howItWorks()` pra essa âncora, mesmo padrão dos outros helpers de rota.
+
+**CTA "Buscar passeios"**: link real (`routes.tours()` = `/passeios`), sempre visível no desktop ao lado da nav; no mobile, vive dentro do menu (ver abaixo) — não aparece solto no header mobile pra não disputar espaço com a logo/botão de menu.
+
+**Estado ativo da rota**: `/passeios` (e sub-rotas, ex. página de detalhe do passeio) destaca "Passeios"; `/destinos` (e sub-rotas) destaca "Destinos"; "Como funciona" nunca fica "ativo" (é âncora, não rota própria). Isolado no menor Client Component possível — **`HeaderNav.tsx`** (só a nav central do desktop) — em vez de converter o `Header` inteiro: `usePathname()` é a única razão de precisar de JS aqui, e o resto do header (logo, CTA desktop) continua Server Component, sem aumentar o bundle por um detalhe visual.
+
+**Menu mobile**: novo **`MobileMenu.tsx`** (Client Component, sem biblioteca externa) — botão hamburguer com `aria-expanded`/`aria-controls`/`aria-label`, alvo de toque 44×44px, painel com os mesmos 3 links + o CTA "Buscar passeios". Fecha ao clicar num link (`onClick` explícito) e também via `useEffect` observando `pathname` (cobre voltar/avançar pelo navegador). Lista de links e a função `isNavLinkActive()` (pura, testada) ficam compartilhadas em **`header-nav-links.ts`** entre `HeaderNav` e `MobileMenu`, sem duplicar o array.
+
+**Testes novos**: `header-nav-links.test.ts` (8 casos, `isNavLinkActive` — rota exata, sub-rota, prefixo textual que não é sub-rota, home nunca "vaza" pra tudo, âncora nunca ativa), `HeaderNav.test.tsx` (5), `MobileMenu.test.tsx` (6 — abre/fecha, `aria-expanded`/`aria-controls`, fecha ao navegar, alvo de toque), `Header.test.tsx` (5 — logo → home, CTA único no DOM com o menu fechado, zero menção a operador/NauticFlow, zero link inventado). **412 testes passando** (31 arquivos, +24 desde a entrada anterior).
+
+`npm run typecheck`/`lint`/`build` limpos; confirmado via `curl` contra o dev server que o HTML servido já vem com o estado ativo certo (`aria-current="page"` em "Passeios" ao acessar `/passeios`), sem depender de hidratação pra isso.
+
 ## 2026-09-18 — Remoção da comunicação voltada a operadores do frontend público (branch `frontend/mobile-booking-ux`)
 
 Decisão de posicionamento: o site público do ToursFlow passa a ser 100% voltado ao turista — nenhuma comunicação/CTA comercial dirigida a operadores fica visível na experiência pública. Se um fluxo de entrada para operador for necessário no futuro, ele deve viver separado do site principal, não misturado com a vitrine do turista.

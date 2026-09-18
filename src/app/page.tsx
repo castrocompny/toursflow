@@ -127,7 +127,10 @@ export default async function HomePage() {
         </div>
       </Section>
 
-      <section className="shell py-14">
+      {/* Alvo de "Como funciona" no header (`/#como-funciona`) — `scroll-mt-16`
+          compensa a altura do header sticky (h-16) pra não ficar escondida atrás
+          dele ao rolar até aqui. */}
+      <section id="como-funciona" className="shell scroll-mt-16 py-14">
         <div className="grid gap-8 sm:grid-cols-3">
           {[
             {
