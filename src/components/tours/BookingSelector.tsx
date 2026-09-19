@@ -77,6 +77,10 @@ interface BookingSelectorProps {
    * inválida, mostra só o horário de início, nunca inventa um horário final.
    */
   durationMinutes?: number;
+  /** `tour.name`/`tour.boardingPoint.*` — usados só no voucher final (`BookingVoucher`), pro resumo/mensagem de compartilhamento. Opcionais pra não obrigar toda chamada existente a passar: ausentes, o voucher só omite essas linhas. */
+  tourName?: string;
+  boardingPointName?: string;
+  boardingPointReference?: string;
 }
 
 type Step = 'selection' | 'customer-form' | 'review' | 'confirmation' | 'payment-pix' | 'voucher';
@@ -128,7 +132,14 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * NÃO IMPLEMENTADO: pagamento (Asaas/PIX/cartão/split/webhook/voucher) —
  * o step de confirmação deixa isso explícito para o turista.
  */
-export function BookingSelector({ departures, initialQuantityHint, durationMinutes }: BookingSelectorProps) {
+export function BookingSelector({
+  departures,
+  initialQuantityHint,
+  durationMinutes,
+  tourName,
+  boardingPointName,
+  boardingPointReference,
+}: BookingSelectorProps) {
   const router = useRouter();
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const groups = useMemo(() => groupDeparturesByDate(sorted), [sorted]);
@@ -374,7 +385,16 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
   }
 
   if (step === 'voucher' && selectedDeparture && paymentResult) {
-    return <BookingVoucher departure={selectedDeparture} bookingId={paymentResult.bookingId} payment={paymentResult} />;
+    return (
+      <BookingVoucher
+        departure={selectedDeparture}
+        bookingId={paymentResult.bookingId}
+        payment={paymentResult}
+        tourName={tourName}
+        boardingPointName={boardingPointName}
+        boardingPointReference={boardingPointReference}
+      />
+    );
   }
 
   const allSoldOut = sorted.every((departure) => departure.soldOut);

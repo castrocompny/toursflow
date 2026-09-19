@@ -14,6 +14,53 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Voucher/comprovante ToursFlow com compartilhamento manual via WhatsApp (branch `frontend/mobile-booking-ux`)
+
+Fluxo final de reserva (`BookingVoucher`, só alcançável depois de
+`PixPayment` reportar `status: 'paid'` — preservado, não reimplementado)
+ganha um comprovante mais completo e um jeito prático de guardar/
+compartilhar esse comprovante. Detalhe completo em
+[ADR-017](../DECISIONS.md#adr-017--vouchercomprovante-toursflow-com-compartilhamento-manual-via-whatsapp).
+
+- `src/components/tours/BookingVoucher.tsx`: agora mostra marca
+  ToursFlow, nome do passeio, código da reserva, data, horário,
+  quantidade de pessoas, valor pago, embarque (nome + referência quando
+  disponíveis) e uma instrução curta para apresentar o código no
+  embarque. Removido o aviso antigo ("voucher será enviado pelo
+  operador"), que reintroduzia dependência de contato com o operador.
+- Novo `src/lib/whatsapp-voucher.ts` (`buildVoucherShareMessage`/
+  `buildWhatsAppShareUrl`, puro e testado): monta a mensagem e a URL
+  `https://wa.me/?text=...` — sem número de destino, o turista escolhe
+  para quem compartilhar. Nenhum envio automático.
+- Botão "Compartilhar no WhatsApp" (ícone `MessageCircle` do Lucide, já
+  dependência do projeto — nenhum pacote novo) e botão secundário
+  "Copiar dados da reserva" (Clipboard API, feedback "Copiado",
+  tratamento de falha sem quebrar a tela).
+- `tourName`/`boardingPointName`/`boardingPointReference` chegam a
+  `BookingVoucher` via novas props opcionais de `BookingSelector`,
+  passadas por `src/app/passeios/[destino]/[slug]/page.tsx` a partir de
+  `tour.name`/`tour.boardingPoint.*` — nunca por URL, nunca persistidas
+  em localStorage/sessionStorage. Campo ausente some da mensagem, nunca
+  um placeholder inventado.
+- Sem PII: a mensagem nunca contém nome/CPF/e-mail/telefone do
+  comprador, Idempotency-Key, id técnico de payment provider ou dado do
+  NauticFlow — a interface de entrada do helper não aceita esses campos.
+- **Não é o voucher operacional do NauticFlow** (QR de embarque,
+  validação de ingresso) — distinção preservada no código e no ADR-017;
+  esta tela é só o comprovante do lado ToursFlow.
+- Envio automático via WhatsApp Business API registrado como evolução
+  futura separada (ADR-017) — não implementado; nenhum secret criado.
+
+Fora de escopo, não tocado: NauticFlow, banco, migrations, Supabase,
+Asaas, payment provider, webhook, withdrawals, hold, idempotência.
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+Nenhum E2E real.
+
+`npm run typecheck`, `npm run lint`, `npx vitest run` (457 testes) e
+`npm run build` passando.
+
+---
+
 ## 2026-09-18 — ADR-016 completo: requisitos futuros, snapshot de versão e independência de operador (branch `frontend/mobile-booking-ux`)
 
 Fecha os pontos que ficaram pendentes da política de cancelamento

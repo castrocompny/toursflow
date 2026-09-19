@@ -219,6 +219,9 @@ export default async function TourPage({ params, searchParams }: PageProps) {
                 departures={departures}
                 initialQuantityHint={initialQuantityHint}
                 durationMinutes={tour.durationMinutes}
+                tourName={tour.name}
+                boardingPointName={tour.boardingPoint.name}
+                boardingPointReference={tour.boardingPoint.reference}
               />
             </div>
           </section>

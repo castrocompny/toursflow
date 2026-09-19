@@ -883,3 +883,85 @@ Nenhum checkbox de aceite jurídico ou termo extra é criado agora — isso
 depende de uma decisão de produto própria, fora desta tarefa.
 
 ---
+
+## ADR-017 — Voucher/comprovante ToursFlow com compartilhamento manual via WhatsApp
+
+**Contexto:** `BookingVoucher` (tela final do fluxo, só alcançável depois
+de `PixPayment` reportar `status: 'paid'`) mostrava só código, data,
+horário e valor pago, com um aviso de que "voucher e detalhes finais
+serão enviados pelo operador" — texto que reintroduzia dependência de
+contato com o operador (contrariando a decisão já tomada de manter o
+site 100% autossuficiente do lado turista) e não dava ao turista nenhuma
+forma prática de guardar/compartilhar o comprovante.
+
+**Decisão:** `BookingVoucher` passou a mostrar um comprovante mais
+completo — nome do passeio, código, data, horário, quantidade de
+pessoas, valor pago e embarque (nome + referência, quando disponíveis)
+— e ganhou um botão "Compartilhar no WhatsApp" que abre
+`https://wa.me/?text=<mensagem>` com a mensagem já pronta. Sem número de
+destino: o turista escolhe para quem enviar (ele mesmo, um
+acompanhante, quem for) — nunca um envio automático para o telefone do
+comprador nem para o operador. Um botão secundário "Copiar dados da
+reserva" (Clipboard API, com feedback "Copiado" e tratamento de falha)
+serve como fallback quando o compartilhamento direto não é o que o
+turista quer.
+
+**Isto NÃO é o voucher operacional do NauticFlow** (mesma ressalva já
+existente em `src/types/payment.ts` e no código de `BookingVoucher.tsx`)
+— nenhum QR code de embarque, nenhuma validação de ingresso foi
+inventada. Se/quando o NauticFlow definir um contrato de voucher
+operacional próprio (Fase 10 de
+[PLANO-INTEGRACAO-NAUTICFLOW.md](PLANO-INTEGRACAO-NAUTICFLOW.md)), essa
+tela deverá incorporá-lo — não o substitui nem antecipa seu formato.
+
+**Fonte de dados, sem PII:** `whatsapp-voucher.ts` (`buildVoucherShareMessage`/
+`buildWhatsAppShareUrl`) recebe só campos públicos da reserva
+(`tourName?`, `bookingId`, `date`/`time` já formatados, `quantity`,
+`pricePaidLabel`, `boardingPointName?`, `boardingPointReference?`) — a
+interface não tem (e nunca deve ganhar) campo de nome/CPF/e-mail/telefone
+do comprador, Idempotency-Key, id de payment provider ou qualquer outro
+dado técnico do NauticFlow. `tourName`/`boardingPointName`/
+`boardingPointReference` chegam a `BookingVoucher` via novas props
+opcionais de `BookingSelector`, passadas explicitamente por
+`src/app/passeios/[destino]/[slug]/page.tsx` a partir de `tour.name`/
+`tour.boardingPoint.*` — nunca via URL (evita PII em query string/
+histórico) e nunca persistidas em localStorage/sessionStorage (mesma
+regra que já valia para nome/CPF/e-mail/telefone no restante do fluxo).
+Campo ausente (ex.: passeio sem `boardingPoint.reference` cadastrado)
+simplesmente some da mensagem — nunca um placeholder inventado.
+
+**Só alcançável pós-`paid` — invariante do fluxo existente, não
+reimplementada aqui:** `BookingVoucher` nunca recebe (e não precisa
+receber) um campo de status próprio — quem o monta é sempre
+`BookingSelector`, que só guarda `paymentResult` (e portanto só chega a
+`step === 'voucher'`) dentro do `onPaid` de `PixPayment`, chamado
+exclusivamente quando o polling encontra `status === 'paid'` (nunca
+`pending`/`failed`/`expired`/`refunded`/`partially_refunded` — esses
+status têm suas próprias telas em `PixPayment`, que nunca chamam
+`onPaid`). Ver `BookingSelector.payment.test.tsx` ("cadeia completa") —
+já prova esse caminho ponta a ponta; nenhuma checagem nova foi
+adicionada dentro de `BookingVoucher` porque o componente confia
+corretamente no contrato de quem o monta (documentado no JSDoc do
+componente, não uma nova validação redundante).
+
+**Fora de escopo nesta tarefa (`BOOKING_CHECKOUT_ENABLED`/
+`PAYMENTS_UI_ENABLED` continuam `false`; NauticFlow/banco/migrations/
+Asaas/webhook intocados):** nenhum envio automático de WhatsApp. Evolução
+futura possível, não implementada:
+
+```
+payment paid (server-side, webhook/evento real)
+  → WhatsApp Business API (Meta)
+  → template de mensagem pré-aprovado
+  → envio ao telefone do comprador
+```
+
+Isso exigiria, no mínimo: conta/credenciais de provedor (Meta ou BSP),
+templates aprovados, consentimento/base legal explícita do comprador
+para receber mensagem automática, política de retry para falha de
+envio, e observabilidade (taxa de entrega/falha). Nenhum secret foi
+criado ou exposto nesta tarefa — quando essa integração for decidida,
+as credenciais entram como variável de ambiente nova, documentada aqui,
+nunca hardcoded.
+
+---

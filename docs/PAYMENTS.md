@@ -81,7 +81,8 @@ documento).
 | `src/app/api/bookings/[bookingId]/payment/route.ts` | server | `POST` (criar Pix) e `GET` (status/polling) — únicas rotas do ToursFlow para pagamento |
 | `src/lib/payment-client.ts` | client | `PaymentClient` (interface), `ToursFlowPaymentClient` (real — chama só as rotas acima), `NotImplementedPaymentClient` (mantido) |
 | `src/components/tours/PixPayment.tsx` | client (`'use client'`) | QR/copia-e-cola, countdown, polling, os 5 estados reais + `expired` (derivado) |
-| `src/components/tours/BookingVoucher.tsx` | client | Tela final (reserva confirmada) |
+| `src/components/tours/BookingVoucher.tsx` | client | Tela final (reserva confirmada) — comprovante ToursFlow + compartilhamento manual via WhatsApp (ver ADR-017 em DECISIONS.md) |
+| `src/lib/whatsapp-voucher.ts` | puro/testável | Monta a mensagem do comprovante e a URL `wa.me` — só campos públicos, nenhum campo de PII no tipo de entrada |
 | `src/test/fake-payment-client.ts` | teste | Fake em memória — nunca importado por código de produção |
 
 ## `client-ip.ts` generalizado
@@ -175,7 +176,14 @@ nunca cria nada.
   (`totalCents`) sempre vem da resposta do NauticFlow.
 - **PII:** `PixPayment`/`BookingVoucher` continuam sem tocar
   `cpf`/`email`/`phone`/`customer` — o pagamento opera só sobre
-  `bookingId` (já criado com esses dados na Fase 3).
+  `bookingId` (já criado com esses dados na Fase 3). A mensagem de
+  compartilhamento do WhatsApp (`whatsapp-voucher.ts`) segue a mesma
+  regra: o tipo de entrada (`VoucherShareData`) não tem campo de
+  nome/CPF/e-mail/telefone do comprador, Idempotency-Key nem id técnico
+  de payment provider — não porque um filtro os remove, mas porque a
+  interface nunca os aceita. `tourName`/`boardingPointName`/
+  `boardingPointReference` chegam por prop explícita (nunca por URL,
+  nunca persistidos em localStorage/sessionStorage).
 - **Erros nunca vazam detalhe técnico:** todo `PaymentApiError`/
   `PaymentClientError` vira uma das 17 mensagens curadas em
   `payment-error-messages.ts` — nunca o texto bruto do NauticFlow/Asaas.
@@ -205,6 +213,15 @@ nunca cria nada.
 - Qualquer chamada real ao endpoint de pagamento (nenhuma foi feita).
 - `PAYMENTS_UI_ENABLED = true` em qualquer ambiente.
 - Cartão, split visível ao ToursFlow, webhook (o ToursFlow nunca recebe
-  webhook do Asaas — isso é responsabilidade do NauticFlow), voucher real
-  (formato/entrega ainda não definidos — `BookingVoucher` é só a
-  confirmação visual do lado ToursFlow).
+  webhook do Asaas — isso é responsabilidade do NauticFlow), voucher
+  operacional real do NauticFlow (formato/entrega ainda não definidos —
+  `BookingVoucher` é só o comprovante ToursFlow do lado turista, com
+  compartilhamento manual via WhatsApp; não é, nem substitui, o voucher
+  operacional do NauticFlow — ver ADR-017 em DECISIONS.md).
+- Envio automático de WhatsApp (WhatsApp Business API/Meta) — hoje o
+  compartilhamento é sempre uma ação explícita do turista
+  (`https://wa.me/?text=...`, sem número de destino). Envio automático
+  ao telefone do comprador quando o pagamento é confirmado é evolução
+  futura separada, não implementada — exigiria credenciais de
+  provedor/Meta, templates aprovados, consentimento/base legal, retry e
+  observabilidade (ver ADR-017).
