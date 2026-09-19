@@ -14,6 +14,42 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Responsividade mobile da página do passeio (branch `frontend/mobile-booking-ux`)
+
+Refinamento visual/layout, sem tocar backend, NauticFlow, feature flags ou
+lógica de booking/pagamento — `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`
+continuam `false`. Objetivo: página do passeio menos "esticada" e mais
+compacta no celular, com desktop preservado (todo ajuste usa `sm:`/`lg:`
+para manter o layout ≥640px como estava).
+
+- `src/app/passeios/[destino]/[slug]/page.tsx`: card "Informações do
+  passeio" mais enxuto no mobile (menos padding/gap, labels menores,
+  "Operador" ocupa a largura toda se o nome for longo, "Próxima saída"
+  ganhou uma faixa própria com leve destaque visual); títulos de seção
+  (`Sobre o passeio`, `Datas e horários`, `Roteiro`, etc.) e o ritmo
+  vertical entre seções foram reduzidos no mobile (`space-y-12` →
+  `space-y-8`, headings `text-2xl` → `text-xl` abaixo de `sm:`). A
+  sidebar sticky de desktop (preço/resumo/"Ver datas e horários") agora
+  só aparece em `lg:` — no mobile ela duplicava informação já mostrada no
+  card do topo e no próprio `BookingSelector`, e aparecia repetida bem no
+  fim da página.
+- `src/components/tours/TourGallery.tsx`: foto principal com aspect ratio
+  mais baixo (`16/10` → `16/9`) e miniaturas menores no mobile — imagem
+  calibrada, não removida.
+- `src/components/tours/BookingSelector.tsx`: chips de data um pouco mais
+  compactos no mobile mantendo alvo de toque ≥44px; cada linha de
+  horário agora agrupa hora+preço numa única linha (antes eram duas) e
+  vagas+botão "Selecionar" na linha seguinte, com o botão maior/mais
+  presente (`px-3 py-1` → `px-3.5 py-1.5`); card de quantidade/preço com
+  menos padding no mobile.
+
+Nenhum teste ficou frágil por classe CSS — as suítes existentes usam
+queries semânticas (role/texto), então nenhuma precisou mudar; os 435
+testes continuam passando. `npm run typecheck`, `npm run lint`,
+`npx vitest run` e `npm run build` passando.
+
+---
+
 ## 2026-09-18 — Footer e frontend preparados para expansão multidestino (branch `frontend/mobile-booking-ux`)
 
 Decisão registrada: **destinos do ToursFlow são data-driven — a entrada de

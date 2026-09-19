@@ -381,7 +381,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
   const hasUnsellable = sorted.some((departure) => !isSellablePriceType(departure.priceType));
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4 sm:space-y-5">
       {/* Faixa "Escolha a data" — janela deslizante de no máximo DATE_WINDOW_SIZE
           chips, nunca a agenda inteira montada de uma vez. `‹`/`›` deslizam a
           janela; tocar num chip troca a data expandida abaixo, sem mudar a
@@ -402,7 +402,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
           <div
             role="group"
             aria-label="Datas disponíveis"
-            className="flex flex-1 gap-2 overflow-x-auto scroll-smooth px-1 py-1 [-webkit-overflow-scrolling:touch]"
+            className="flex flex-1 gap-1.5 overflow-x-auto scroll-smooth px-1 py-1 sm:gap-2 [-webkit-overflow-scrolling:touch]"
           >
             {visibleDateGroups.map((group) => {
               const isSelected = group.dateKey === selectedDateKey;
@@ -414,7 +414,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
                   disabled={!available}
                   aria-pressed={isSelected}
                   onClick={() => handleSelectDate(group)}
-                  className={`flex min-h-[44px] min-w-[64px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border px-3 py-2 text-sm font-semibold capitalize transition active:scale-95 ${
+                  className={`flex min-h-[44px] min-w-[58px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border px-2.5 py-1.5 text-sm font-semibold capitalize transition active:scale-95 sm:min-w-[64px] sm:px-3 sm:py-2 ${
                     !available
                       ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
                       : isSelected
@@ -445,12 +445,12 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
           da mesma data viram linhas dentro DESTE painel (divididas por
           linha fina, não bordas de card), sem repetir o cabeçalho de data. */}
       {selectedGroup ? (
-        <div className="border-t border-ink/10 pt-4">
-          <p className="font-display text-lg font-bold capitalize text-ink">
+        <div className="border-t border-ink/10 pt-3 sm:pt-4">
+          <p className="font-display text-base font-bold capitalize text-ink sm:text-lg">
             {formatRelativeDepartureDate(selectedGroup.departures[0].departsAt)}
           </p>
 
-          <ul className="mt-3 divide-y divide-ink/10">
+          <ul className="mt-2 divide-y divide-ink/10 sm:mt-3">
             {selectedGroup.departures.map((departure) => {
               const isSelected = selectedDepartureId === departure.id;
               const sellable = isSellablePriceType(departure.priceType);
@@ -463,16 +463,16 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
                     disabled={isDisabled}
                     aria-pressed={isSelected}
                     onClick={() => handleSelectDeparture(departure)}
-                    className={`flex w-full flex-col gap-2 rounded-xl px-2 py-3 text-left transition active:scale-[0.99] sm:flex-row sm:items-center sm:justify-between ${
+                    className={`flex w-full flex-col gap-1.5 rounded-xl px-2 py-2.5 text-left transition active:scale-[0.99] sm:flex-row sm:items-center sm:justify-between sm:gap-2 sm:py-3 ${
                       isDisabled ? 'cursor-not-allowed opacity-50' : isSelected ? 'bg-foam' : 'hover:bg-sand/60'
                     }`}
                   >
-                    <span className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-4">
+                    <span className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 sm:flex-row sm:items-center sm:gap-4">
                       <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-ink">
                         <Clock size={14} aria-hidden />
                         {formatDepartureTimeRange(departure.departsAt, durationMinutes)}
                       </span>
-                      <span className="font-display text-base font-bold text-ink">
+                      <span className="font-display text-sm font-bold text-ink sm:text-base">
                         {formatPrice(departure.price)}{' '}
                         <span className="text-xs font-medium text-ink-muted">{priceTypeLabel(departure.priceType)}</span>
                       </span>
@@ -490,7 +490,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
                       )}
                       {!isDisabled ? (
                         <span
-                          className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold text-white ${
+                          className={`shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-xs font-semibold text-white ${
                             isSelected ? 'bg-sea' : 'bg-ink'
                           }`}
                         >
@@ -519,7 +519,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
       ) : null}
 
       {selectedDeparture ? (
-        <div className="rounded-card border border-ink/10 bg-white p-5">
+        <div className="rounded-card border border-ink/10 bg-white p-4 sm:p-5">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <label htmlFor="booking-quantity" className="text-sm font-semibold text-ink">
               Quantas pessoas?
@@ -562,7 +562,7 @@ export function BookingSelector({ departures, initialQuantityHint, durationMinut
             {availabilityLabel(selectedDeparture.availableSpots)}
           </p>
 
-          <dl className="mt-4 space-y-2 border-t border-ink/10 pt-4 text-sm">
+          <dl className="mt-3 space-y-1.5 border-t border-ink/10 pt-3 text-sm sm:mt-4 sm:space-y-2 sm:pt-4">
             <div className="flex justify-between gap-4">
               <dt className="text-ink-muted">Preço {priceTypeLabel(selectedDeparture.priceType)}</dt>
               <dd className="font-semibold">{formatPrice(selectedDeparture.price)}</dd>

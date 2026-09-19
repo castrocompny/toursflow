@@ -23,7 +23,7 @@ export function TourGallery({ images, title }: TourGalleryProps) {
       <div
         role="img"
         aria-label={`${title} — sem fotos disponíveis`}
-        className="flex aspect-[16/10] items-center justify-center rounded-card bg-foam text-ink/25 sm:aspect-[16/9]"
+        className="flex aspect-[16/9] items-center justify-center rounded-card bg-foam text-ink/25"
       >
         <ImageOff size={40} aria-hidden />
       </div>
@@ -31,8 +31,12 @@ export function TourGallery({ images, title }: TourGalleryProps) {
   }
 
   return (
-    <section aria-label={`Fotos de ${title}`} className="space-y-3">
-      <div className="relative aspect-[16/10] overflow-hidden rounded-card bg-foam sm:aspect-[16/9]">
+    <section aria-label={`Fotos de ${title}`} className="space-y-2 sm:space-y-3">
+      {/* 16/9 (em vez de um recorte mais quadrado) mantém a foto principal
+          mais baixa no celular — ela é a porta de entrada da página, não o
+          conteúdo que decide a compra, então não precisa dominar a tela
+          antes das informações essenciais logo abaixo. */}
+      <div className="relative aspect-[16/9] overflow-hidden rounded-card bg-foam">
         <Image
           src={current.url}
           alt={current.alt}
@@ -44,7 +48,7 @@ export function TourGallery({ images, title }: TourGalleryProps) {
       </div>
 
       {images.length > 1 ? (
-        <div className="flex gap-3 overflow-x-auto pb-1">
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:gap-3">
           {images.map((image, index) => (
             <button
               key={image.url}
@@ -52,7 +56,7 @@ export function TourGallery({ images, title }: TourGalleryProps) {
               onClick={() => setActive(index)}
               aria-label={`Ver foto ${index + 1}: ${image.alt}`}
               aria-current={index === active}
-              className={`relative h-20 w-28 shrink-0 overflow-hidden rounded-xl transition-opacity ${
+              className={`relative h-16 w-24 shrink-0 overflow-hidden rounded-xl transition-opacity sm:h-20 sm:w-28 ${
                 index === active ? 'ring-2 ring-sea' : 'opacity-70 hover:opacity-100'
               }`}
             >
