@@ -16,6 +16,7 @@ import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { formatDuration, formatLocation } from '@/lib/format';
 import { summarizeNextDeparture } from '@/lib/booking-selection';
 import { buildTourSummaryItems } from '@/lib/tour-summary';
+import { MARKETPLACE_CANCELLATION_POLICY } from '@/lib/marketplace-cancellation-policy';
 import { routes } from '@/lib/routes';
 import { pageMetadata, toSafeJsonLdScript } from '@/lib/seo';
 import { site } from '@/lib/site';
@@ -253,10 +254,10 @@ export default async function TourPage({ params, searchParams }: PageProps) {
 
           <section aria-labelledby="cancelamento">
             <h2 id="cancelamento" className="text-xl font-bold sm:text-2xl">
-              Política de cancelamento
+              {MARKETPLACE_CANCELLATION_POLICY.title}
             </h2>
             <p className="mt-3 rounded-card border border-ink/10 bg-sand p-4 text-sm text-ink-muted sm:mt-4 sm:p-5">
-              {tour.cancellationPolicy}
+              {MARKETPLACE_CANCELLATION_POLICY.summary}
             </p>
           </section>
 

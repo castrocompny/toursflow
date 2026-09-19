@@ -14,6 +14,38 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — Política de cancelamento centralizada no ToursFlow (branch `frontend/mobile-booking-ux`)
+
+Decisão de produto: o turista que reserva pelo ToursFlow não vê mais uma
+política de cancelamento escrita livremente por cada operador
+(`tour.cancellationPolicy`, que varia passeio a passeio) — vê a política
+padronizada do próprio marketplace. Detalhe completo em
+[ADR-016](../DECISIONS.md#adr-016--política-de-cancelamento-exibida-ao-turista-é-do-marketplace-não-do-operador).
+
+- Novo `src/lib/marketplace-cancellation-policy.ts`: fonte central,
+  testável e versionada (`MARKETPLACE_CANCELLATION_POLICY` — `id`,
+  `version`, `title`, `summary`). Testes em
+  `marketplace-cancellation-policy.test.ts`.
+- `src/app/passeios/[destino]/[slug]/page.tsx`: a seção "Cancelamento e
+  reembolso" agora renderiza essa política central em vez de
+  `tour.cancellationPolicy`.
+- Nenhum número financeiro/prazo foi inventado — ainda sem autorização
+  de produto para isso. A copy atual é transitória e factual: informa
+  que a política é do marketplace e será apresentada antes da
+  confirmação da reserva, sem prometer reembolso/gratuidade/prazo e sem
+  instruir a falar com o operador.
+- `tour.cancellationPolicy` continua no tipo `Tour` e no mapeamento do
+  NauticFlow (`nauticflow-source.ts`) — só a exibição pública parou de
+  usá-lo; nenhum contrato/tipo/mapper foi alterado.
+- Fora de escopo, não tocado: NauticFlow, banco, migrations,
+  booking/payments (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`
+  continuam `false`).
+
+`npm run typecheck`, `npm run lint`, `npx vitest run` (439 testes) e
+`npm run build` passando.
+
+---
+
 ## 2026-09-18 — Responsividade mobile da página do passeio (branch `frontend/mobile-booking-ux`)
 
 Refinamento visual/layout, sem tocar backend, NauticFlow, feature flags ou

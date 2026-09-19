@@ -793,3 +793,46 @@ recebiam via `listDestinations()`; nenhum fetch por cidade, por card ou
 no footer.
 
 ---
+
+## ADR-016 — Política de cancelamento exibida ao turista é do marketplace, não do operador
+
+**Contexto:** a página do passeio renderizava `tour.cancellationPolicy`
+diretamente — um texto livre que vem do NauticFlow e varia por operador
+(mock/dados reais mostram redações e prazos diferentes passeio a
+passeio: "grátis até 24h", "até 48h", "até 12h", etc.). Decisão de
+produto: o turista que reserva pelo ToursFlow não deve ver uma política
+de cancelamento/reembolso escrita livremente por cada operador — o
+marketplace terá sua própria política, padronizada, igual para qualquer
+passeio/operador/destino.
+
+**Decisão:** `tour.cancellationPolicy` deixou de ser a fonte da política
+pública exibida no marketplace. Criado
+`src/lib/marketplace-cancellation-policy.ts`, com um único objeto
+`MARKETPLACE_CANCELLATION_POLICY` (`id`, `version`, `title`, `summary`)
+como fonte central, testável e versionada — testado em
+`marketplace-cancellation-policy.test.ts`. `src/app/passeios/[destino]/[slug]/page.tsx`
+passou a renderizar `MARKETPLACE_CANCELLATION_POLICY.title`/`.summary`
+na seção "Cancelamento e reembolso", em vez de `tour.cancellationPolicy`.
+
+**O que NÃO foi feito (fora de escopo/sem autorização ainda):**
+- Nenhum número financeiro/prazo foi inventado (ex.: "grátis até 24h",
+  "50% após X horas", "sem reembolso em Y horas") — sem aprovação de
+  produto para isso. `summary` é só a copy transitória e factual pedida:
+  informa que a política é do marketplace e será apresentada antes da
+  confirmação, sem prometer reembolso, gratuidade ou prazo, e sem
+  instruir a falar com o operador.
+- `tour.cancellationPolicy` continua existindo no tipo `Tour` e sendo
+  mapeado de `dto.cancellationPolicy` em `nauticflow-source.ts` — o
+  NauticFlow ainda envia o campo e ele pode ter uso fora da vitrine
+  pública do marketplace no futuro; só a exibição pública nesta página
+  parou de usá-lo. Nenhum contrato/tipo/mapper foi alterado.
+- NauticFlow, banco, migrations: intocados. Booking/pagamento continuam
+  desligados (`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` = `false`).
+
+**Próximo passo (fora desta tarefa):** quando o negócio decidir a regra
+financeira real (prazo de cancelamento grátis, percentual de multa,
+prazo de estorno etc.), ela vira uma nova versão do mesmo objeto
+(`id` estável, `version` nova) — não uma reescrita ad-hoc espalhada pela
+UI.
+
+---
