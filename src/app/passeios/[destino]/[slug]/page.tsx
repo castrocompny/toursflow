@@ -16,7 +16,7 @@ import { Breadcrumbs } from '@/components/ui/Breadcrumbs';
 import { formatDuration, formatLocation } from '@/lib/format';
 import { summarizeNextDeparture } from '@/lib/booking-selection';
 import { buildTourSummaryItems } from '@/lib/tour-summary';
-import { MARKETPLACE_CANCELLATION_POLICY } from '@/lib/marketplace-cancellation-policy';
+import { resolveCancellationPolicy } from '@/lib/marketplace-cancellation-policy';
 import { routes } from '@/lib/routes';
 import { pageMetadata, toSafeJsonLdScript } from '@/lib/seo';
 import { site } from '@/lib/site';
@@ -86,6 +86,7 @@ export default async function TourPage({ params, searchParams }: PageProps) {
   // usa o instante real do servidor (a rota já é `force-dynamic`/`no-store`).
   const nextDepartureSummary = summarizeNextDeparture(departures);
   const summaryItems = buildTourSummaryItems(tour);
+  const cancellationPolicy = resolveCancellationPolicy(tour);
 
   const structuredData = {
     '@context': 'https://schema.org',
@@ -254,10 +255,10 @@ export default async function TourPage({ params, searchParams }: PageProps) {
 
           <section aria-labelledby="cancelamento">
             <h2 id="cancelamento" className="text-xl font-bold sm:text-2xl">
-              {MARKETPLACE_CANCELLATION_POLICY.title}
+              {cancellationPolicy.title}
             </h2>
             <p className="mt-3 rounded-card border border-ink/10 bg-sand p-4 text-sm text-ink-muted sm:mt-4 sm:p-5">
-              {MARKETPLACE_CANCELLATION_POLICY.summary}
+              {cancellationPolicy.summary}
             </p>
           </section>
 

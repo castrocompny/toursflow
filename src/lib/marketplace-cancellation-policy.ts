@@ -38,3 +38,17 @@ export const MARKETPLACE_CANCELLATION_POLICY: MarketplaceCancellationPolicy = {
   summary:
     'As condições de cancelamento e reembolso das reservas feitas pelo ToursFlow são definidas pelo próprio marketplace e serão apresentadas antes da confirmação da reserva.',
 };
+
+/**
+ * Ponto único de leitura da política pública para um passeio. Recebe o
+ * passeio só pela forma do contrato — nunca lê `cancellationPolicy` —
+ * pra deixar explícito, num lugar só, que a política pública do
+ * marketplace não depende (e não deve voltar a depender) do texto que o
+ * operador cadastrou no NauticFlow, seja qual for esse texto. Qualquer
+ * página que precise exibir a política de cancelamento deve chamar esta
+ * função, nunca ler `tour.cancellationPolicy` diretamente.
+ */
+export function resolveCancellationPolicy(tour: { cancellationPolicy: string }): MarketplaceCancellationPolicy {
+  void tour;
+  return MARKETPLACE_CANCELLATION_POLICY;
+}

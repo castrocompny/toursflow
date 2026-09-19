@@ -835,4 +835,51 @@ prazo de estorno etc.), ela vira uma nova versão do mesmo objeto
 (`id` estável, `version` nova) — não uma reescrita ad-hoc espalhada pela
 UI.
 
+**Requisitos da política oficial (a decidir antes do rollout real de
+booking — nenhum destes é definido agora, só registrado como pendência
+de escopo):** a versão oficial de `MARKETPLACE_CANCELLATION_POLICY`
+precisa cobrir, no mínimo:
+- cancelamento solicitado pelo turista;
+- no-show (turista não comparece);
+- condições climáticas/marítimas que impeçam a saída;
+- segurança (cancelamento por risco operacional/segurança);
+- cancelamento operacional (iniciado pelo operador/ToursFlow, fora de
+  clima/segurança — ex.: embarcação com problema, saída sem número
+  mínimo de participantes);
+- reagendamento (quando é oferecido como alternativa ao
+  cancelamento/reembolso);
+- elegibilidade de reembolso (quais cancelamentos geram direito a
+  reembolso e quais não);
+- prazo/processamento de estorno (em quanto tempo, por qual meio).
+
+Nenhum destes pontos ganha hora, percentual, multa, valor ou promessa de
+reembolso nesta tarefa — só o registro de que a política oficial
+precisa endereçar cada um antes de booking/pagamento reais saírem do ar
+(`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`).
+
+**Snapshot da política na reserva (requisito arquitetural para quando
+booking for habilitado — não implementado agora, banco/API/NauticFlow
+não foram tocados):** toda reserva real do marketplace deve guardar ou
+referenciar o `id` e a `version` de `MARKETPLACE_CANCELLATION_POLICY`
+vigentes no momento da confirmação (o mesmo par que já existe na
+constante hoje). Motivo: a política pode mudar de versão no futuro (novo
+`summary`, novas regras financeiras) — sem esse snapshot, uma mudança
+futura alteraria retroativamente as condições que o turista aceitou ao
+confirmar uma reserva antiga. Isso é responsabilidade do modelo de
+reserva (hoje só existe como payload em memória em `BookingSelector`,
+nunca persistido — ver `buildBookingPayload`/`submitBooking` em
+`src/lib/booking-submission.ts`) quando a reserva passar a ser real; não
+é um campo que existe hoje em `BookingPayload`/`POST /api/bookings`.
+
+**`BookingReview` — onde a política entra no fluxo (documentado, não
+implementado; `BOOKING_CHECKOUT_ENABLED` continua `false`, então
+`BookingReview` não recebe `onConfirm` e nenhum botão de confirmação
+funcional é alcançável pela UI real, mesma trava de sempre):** quando
+booking for habilitado, `BookingReview` é o ponto certo para apresentar
+a política aplicável ao turista de forma clara, antes do clique em
+"Confirmar reserva" — usando `MARKETPLACE_CANCELLATION_POLICY` (ou, já
+existindo o snapshot acima, a versão registrada na própria reserva).
+Nenhum checkbox de aceite jurídico ou termo extra é criado agora — isso
+depende de uma decisão de produto própria, fora desta tarefa.
+
 ---

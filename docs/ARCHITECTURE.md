@@ -121,6 +121,11 @@ src/
                        data-driven, ver ADR-015 em DECISIONS.md
   lib/
     routes.ts, seo.ts, site.ts, format.ts, maps.ts, feature-flags.ts
+    marketplace-cancellation-policy.ts   fonte de verdade da política de cancelamento
+                       PÚBLICA exibida ao turista (MARKETPLACE_CANCELLATION_POLICY,
+                       versionada). tour.cancellationPolicy (NauticFlow) é dado legado/
+                       de compatibilidade — nunca usado como política pública do
+                       marketplace, ver ADR-016 em DECISIONS.md
     http-guards.ts     Origin/Sec-Fetch-Site, Content-Type, limite real de corpo — compartilhado pelas 2 rotas de escrita
     booking-validation.ts, booking-errors.ts, booking-selection.ts, booking-submission.ts, booking-error-messages.ts
     payment-validation.ts, payment-errors.ts, payment-error-messages.ts, payment-client.ts

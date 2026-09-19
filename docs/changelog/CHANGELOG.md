@@ -14,6 +14,51 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-18 — ADR-016 completo: requisitos futuros, snapshot de versão e independência de operador (branch `frontend/mobile-booking-ux`)
+
+Fecha os pontos que ficaram pendentes da política de cancelamento
+centralizada (commit `f909a6e`) — sem reabrir a implementação já feita.
+[ADR-016](../DECISIONS.md#adr-016--política-de-cancelamento-exibida-ao-turista-é-do-marketplace-não-do-operador)
+completado (não um novo ADR) com:
+
+- **Requisitos da política oficial** (registro de escopo, nenhum número
+  definido): a versão oficial precisa cobrir cancelamento pelo turista,
+  no-show, condições climáticas, segurança, cancelamento operacional,
+  reagendamento, elegibilidade de reembolso e prazo/processamento de
+  estorno — antes do rollout real de booking.
+- **Snapshot de política na reserva** (requisito arquitetural, não
+  implementado — banco/API/NauticFlow intocados): toda reserva real
+  deve guardar o `id`/`version` de `MARKETPLACE_CANCELLATION_POLICY`
+  vigentes na confirmação, para uma mudança futura de política nunca
+  alterar retroativamente o que uma reserva antiga aceitou.
+- **`BookingReview`**: comentário no código (`src/components/tours/BookingReview.tsx`)
+  marcando o ponto exato — antes do clique em "Confirmar reserva" —
+  onde a política (ou seu snapshot) deve ser apresentada quando booking
+  for habilitado. Nenhum fluxo novo, nenhum checkbox jurídico; a flag
+  `BOOKING_CHECKOUT_ENABLED` continua `false`.
+- **Independência do operador, testada de fato**: novo
+  `resolveCancellationPolicy(tour)` em `marketplace-cancellation-policy.ts`
+  — único ponto de leitura da política pública, que recebe o passeio mas
+  nunca lê `cancellationPolicy` — chamado por
+  `src/app/passeios/[destino]/[slug]/page.tsx` no lugar do acesso direto
+  à constante. Testes novos em `marketplace-cancellation-policy.test.ts`
+  provam, com dois fixtures de operadores diferentes, que o resultado é
+  sempre `MARKETPLACE_CANCELLATION_POLICY` e que o texto livre do
+  operador nunca aparece no conteúdo resolvido.
+- **`docs/ARCHITECTURE.md`**: nota curta na listagem de `lib/` apontando
+  `marketplace-cancellation-policy.ts` como fonte de verdade da política
+  pública e `tour.cancellationPolicy` como dado legado/compatibilidade.
+
+Fora de escopo, não tocado: NauticFlow, banco, migrations, API,
+Supabase, Asaas, Pix, payments, withdrawals, hold, idempotência.
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+Nenhum E2E real.
+
+`npm run typecheck`, `npm run lint`, `npx vitest run` (442 testes) e
+`npm run build` passando.
+
+---
+
 ## 2026-09-18 — Política de cancelamento centralizada no ToursFlow (branch `frontend/mobile-booking-ux`)
 
 Decisão de produto: o turista que reserva pelo ToursFlow não vê mais uma

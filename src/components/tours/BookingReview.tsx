@@ -117,6 +117,13 @@ export function BookingReview({
         </button>
       </div>
 
+      {/* Quando `onConfirm` existir de verdade (BOOKING_CHECKOUT_ENABLED
+          ligada), este é o ponto certo para apresentar a política de
+          cancelamento aplicável antes do clique em "Confirmar reserva" —
+          `MARKETPLACE_CANCELLATION_POLICY` (`src/lib/marketplace-cancellation-policy.ts`)
+          ou, já existindo snapshot na reserva, a versão registrada nela.
+          Não implementado agora (nem checkbox de aceite/termo extra — depende
+          de decisão de produto própria) — ver ADR-016 em docs/DECISIONS.md. */}
       {onConfirm ? (
         <button
           type="button"
