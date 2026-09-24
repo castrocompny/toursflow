@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Clock, Minus, Plus, Users } from 'lucide-react';
 import type { Departure } from '@/types';
@@ -46,12 +46,69 @@ const UNSELLABLE_MESSAGE = 'Reserva online para este tipo de passeio ainda não 
 /**
  * Quantas datas ficam montadas no DOM de uma vez na faixa "Escolha a data" —
  * nunca a agenda inteira (o NauticFlow pode ter saídas geradas todo santo
- * dia por meses). Em telas estreitas, só as primeiras ~3-4 cabem antes do
- * scroll horizontal; em telas largas, cabem as 7 — mesmo componente, mesma
- * janela de dados, só o viewport decide quantas ficam visíveis sem rolar.
- * `‹`/`›` deslizam a janela por cima do array completo de datas.
+ * dia por meses). `‹`/`›` deslizam a janela por cima do array completo de
+ * datas.
+ *
+ * O número muda por faixa de largura real (`useDateWindowSize` abaixo) —
+ * não é só um CSS escondendo chips extras enquanto a lógica continua achando
+ * que 7 estão visíveis: `windowStart`/`maxWindowStart`/`visibleDateGroups`
+ * (mais abaixo) sempre usam o valor atual, então a quantidade que a
+ * navegação `‹ ›` considera é exatamente a quantidade renderizada. Antes
+ * disso, o valor era fixo em 7 e dependia só de `overflow-x-auto` pra
+ * "sumir" com o excesso em telas estreitas — o que na prática criava uma
+ * faixa horizontal longa e pesada no mobile (chips demais montados ao mesmo
+ * tempo), em vez de recortar de fato a janela.
+ *
+ * `SMALL_MOBILE_DATE_WINDOW_SIZE` existe porque, mesmo depois de enxugar
+ * gap/padding do chip (ver classes abaixo), 4 chips de largura variável
+ * (`Qua 23` é o mais largo) só cabem sem cortar/rolar a partir de ~400px de
+ * viewport real — abaixo disso (ex.: 320/360/375/390, testado visualmente),
+ * o último chip ficava parcialmente visível com scroll horizontal interno.
+ * 3 chips cabe com folga mesmo em 320px.
  */
-const DATE_WINDOW_SIZE = 7;
+const SMALL_MOBILE_DATE_WINDOW_SIZE = 3;
+const MOBILE_DATE_WINDOW_SIZE = 4;
+const TABLET_DATE_WINDOW_SIZE = 5;
+const DESKTOP_DATE_WINDOW_SIZE = 7;
+
+/** Mesmos breakpoints já usados no resto do projeto: `md` (768px, ver `Header`/`MobileMenu`) separa mobile de tablet, `lg` (1024px) separa tablet de desktop. `SMALL_MOBILE_BREAKPOINT_PX` é específico desta faixa de datas (não usado em mais nenhum lugar do projeto). */
+const SMALL_MOBILE_BREAKPOINT_PX = 400;
+const TABLET_BREAKPOINT_PX = 768;
+const DESKTOP_BREAKPOINT_PX = 1024;
+
+function resolveDateWindowSize(viewportWidth: number): number {
+  if (viewportWidth >= DESKTOP_BREAKPOINT_PX) return DESKTOP_DATE_WINDOW_SIZE;
+  if (viewportWidth >= TABLET_BREAKPOINT_PX) return TABLET_DATE_WINDOW_SIZE;
+  if (viewportWidth >= SMALL_MOBILE_BREAKPOINT_PX) return MOBILE_DATE_WINDOW_SIZE;
+  return SMALL_MOBILE_DATE_WINDOW_SIZE;
+}
+
+/**
+ * SSR-safe de propósito: a primeira renderização (servidor E a primeira
+ * passada no cliente, antes do `useEffect` rodar) sempre usa
+ * `SMALL_MOBILE_DATE_WINDOW_SIZE` (o menor de todos, não mais
+ * `MOBILE_DATE_WINDOW_SIZE`) — nunca lê `window` durante o render, só depois
+ * de montado, pra nunca divergir do HTML gerado no servidor (sem isso, dá
+ * mismatch de hidratação). Usar o menor tamanho como valor universal evita
+ * qualquer flash de overflow em telas muito estreitas antes do efeito
+ * ajustar pro valor real. O ajuste pro valor real da tela acontece uma vez
+ * logo após montar (e de novo a cada resize/orientação), então só quem
+ * carrega fora do menor tier vê a janela crescer depois do primeiro paint —
+ * sem isso não haveria como saber a largura real antes de o JS rodar no
+ * navegador.
+ */
+function useDateWindowSize(): number {
+  const [size, setSize] = useState(SMALL_MOBILE_DATE_WINDOW_SIZE);
+
+  useEffect(() => {
+    const update = () => setSize(resolveDateWindowSize(window.innerWidth));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return size;
+}
 
 // Client real (chama só as rotas do próprio ToursFlow, nunca o
 // NauticFlow/Asaas diretamente) — a proteção contra uso em produção é
@@ -141,6 +198,7 @@ export function BookingSelector({
   boardingPointReference,
 }: BookingSelectorProps) {
   const router = useRouter();
+  const dateWindowSize = useDateWindowSize();
   const sorted = useMemo(() => sortDeparturesByDate(departures), [departures]);
   const groups = useMemo(() => groupDeparturesByDate(sorted), [sorted]);
   // Primeira DATA com disponibilidade real vem pré-selecionada (só o grupo —
@@ -153,13 +211,18 @@ export function BookingSelector({
   });
   // Início da janela de datas visível em "Escolha a data" — desliza com
   // `‹`/`›` por cima do array completo de `groups`, nunca monta mais que
-  // DATE_WINDOW_SIZE chips no DOM de uma vez. Começa na primeira data com
+  // `dateWindowSize` chips no DOM de uma vez. Começa na primeira data com
   // disponibilidade real (mesmo critério do `selectedDateKey` acima), pra
-  // ela já aparecer dentro da janela sem precisar navegar.
+  // ela já aparecer dentro da janela sem precisar navegar. Usa
+  // `SMALL_MOBILE_DATE_WINDOW_SIZE` aqui (não `dateWindowSize`) porque este
+  // `useState` só roda uma vez, na primeira renderização — o mesmo momento
+  // em que `dateWindowSize` ainda é o valor SSR-safe (o menor de todos); o
+  // efeito abaixo reajusta `windowStart` quando o tamanho real da janela
+  // chega.
   const [windowStart, setWindowStart] = useState(() => {
     const firstAvailableIndex = groups.findIndex((group) => isGroupAvailable(group));
     const start = firstAvailableIndex === -1 ? 0 : firstAvailableIndex;
-    return Math.min(start, Math.max(0, groups.length - DATE_WINDOW_SIZE));
+    return Math.min(start, Math.max(0, groups.length - SMALL_MOBILE_DATE_WINDOW_SIZE));
   });
   // Horário dentro da data escolhida — nunca pré-selecionado automaticamente,
   // mesmo quando a data tem um único horário: a escolha é sempre um clique
@@ -202,10 +265,21 @@ export function BookingSelector({
   // Janela atual de datas — só essas ficam montadas no DOM da faixa
   // "Escolha a data" (nunca a agenda inteira, mesmo com saída diária por
   // meses). `maxWindowStart` garante que `›` nunca desliza além do fim.
-  const maxWindowStart = Math.max(0, groups.length - DATE_WINDOW_SIZE);
-  const visibleDateGroups = groups.slice(windowStart, windowStart + DATE_WINDOW_SIZE);
+  const maxWindowStart = Math.max(0, groups.length - dateWindowSize);
+  const visibleDateGroups = groups.slice(windowStart, windowStart + dateWindowSize);
   const canGoToPreviousDates = windowStart > 0;
   const canGoToNextDates = windowStart < maxWindowStart;
+
+  // `dateWindowSize` muda depois de montado (viewport real) e pode encolher
+  // de novo num resize/orientação — sem isto, um `windowStart` válido pra
+  // uma janela maior pode ficar além do novo `maxWindowStart`, cortando
+  // datas do fim (`visibleDateGroups` devolveria menos que `dateWindowSize`
+  // itens) sem que `›` perceba que já devia estar desabilitado. Só nunca
+  // AUMENTA `windowStart` sozinho — isso poderia esconder uma data já
+  // selecionada; só recua o mínimo pra caber de novo dentro da janela.
+  useEffect(() => {
+    setWindowStart((current) => Math.min(current, maxWindowStart));
+  }, [maxWindowStart]);
 
   const selectedGroup = groups.find((group) => group.dateKey === selectedDateKey) ?? groups[0] ?? null;
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
@@ -402,10 +476,10 @@ export function BookingSelector({
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      {/* Faixa "Escolha a data" — janela deslizante de no máximo DATE_WINDOW_SIZE
-          chips, nunca a agenda inteira montada de uma vez. `‹`/`›` deslizam a
-          janela; tocar num chip troca a data expandida abaixo, sem mudar a
-          janela sozinho. */}
+      {/* Faixa "Escolha a data" — janela deslizante de no máximo `dateWindowSize`
+          chips (3 <400px / 4 mobile / 5 tablet / 7 desktop), nunca a agenda
+          inteira montada de uma vez. `‹`/`›` deslizam a janela; tocar num chip
+          troca a data expandida abaixo, sem mudar a janela sozinho. */}
       <div>
         <p className="text-sm font-semibold text-ink">Escolha a data</p>
         <div className="mt-2 flex items-center gap-1">
@@ -422,7 +496,7 @@ export function BookingSelector({
           <div
             role="group"
             aria-label="Datas disponíveis"
-            className="flex flex-1 gap-1.5 overflow-x-auto scroll-smooth px-1 py-1 sm:gap-2 [-webkit-overflow-scrolling:touch]"
+            className="flex flex-1 gap-1 overflow-x-auto scroll-smooth px-0 py-1 sm:gap-1.5 sm:px-1 [-webkit-overflow-scrolling:touch]"
           >
             {visibleDateGroups.map((group) => {
               const isSelected = group.dateKey === selectedDateKey;
@@ -434,7 +508,7 @@ export function BookingSelector({
                   disabled={!available}
                   aria-pressed={isSelected}
                   onClick={() => handleSelectDate(group)}
-                  className={`flex min-h-[44px] min-w-[58px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border px-2.5 py-1.5 text-sm font-semibold capitalize transition active:scale-95 sm:min-w-[64px] sm:px-3 sm:py-2 ${
+                  className={`flex min-h-[44px] min-w-[52px] shrink-0 flex-col items-center justify-center gap-0.5 rounded-2xl border px-1.5 py-1.5 text-sm font-semibold capitalize transition active:scale-95 sm:min-w-[56px] sm:px-1.5 sm:py-2 ${
                     !available
                       ? 'cursor-not-allowed border-ink/10 bg-sand text-ink-muted opacity-60'
                       : isSelected

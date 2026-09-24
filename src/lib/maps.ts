@@ -15,6 +15,8 @@ export function boardingMapUrl(point: BoardingPoint): string {
 }
 
 export function fullAddress(point: BoardingPoint): string {
-  const base = `${point.district} — ${point.city}/${point.state}`;
-  return point.zipCode ? `${base}, CEP ${point.zipCode}` : base;
+  const cityState = [point.city, point.state].filter(Boolean).join('/');
+  const base = [point.district, cityState].filter(Boolean).join(' — ');
+  if (!point.zipCode) return base;
+  return base ? `${base}, CEP ${point.zipCode}` : `CEP ${point.zipCode}`;
 }

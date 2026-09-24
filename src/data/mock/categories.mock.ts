@@ -50,14 +50,14 @@ export const mockCategories: Category[] = [
   },
   {
     id: 'cat-privativo',
-    slug: 'privativo',
+    slug: 'passeio_privativo',
     name: 'Passeio privativo',
     icon: '⭐',
     description: 'Embarcação só para o seu grupo, com roteiro flexível.',
   },
   {
     id: 'cat-compartilhado',
-    slug: 'compartilhado',
+    slug: 'passeio_compartilhado',
     name: 'Passeio compartilhado',
     icon: '👥',
     description: 'Preço por pessoa, saídas com horário fixo.',

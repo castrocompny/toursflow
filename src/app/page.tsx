@@ -117,9 +117,9 @@ export default async function HomePage() {
 
       {featured.length > 0 ? (
         <Section
-          eyebrow="Mais procurados"
+          eyebrow="Passeios"
           title="Passeios em destaque"
-          description="Passeios selecionados para você descobrir nesta temporada."
+          description="Alguns dos passeios disponíveis na plataforma."
           action={{ label: 'Ver todos os passeios', href: routes.tours() }}
           className="bg-sand"
         >

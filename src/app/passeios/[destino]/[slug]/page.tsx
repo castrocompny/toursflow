@@ -157,7 +157,7 @@ export default async function TourPage({ params, searchParams }: PageProps) {
         </div>
       </header>
 
-      <div className="mt-6 sm:mt-8">
+      <div className="mt-5 sm:mt-8">
         <TourGallery images={tour.images} title={tour.name} />
       </div>
 
@@ -165,7 +165,7 @@ export default async function TourPage({ params, searchParams }: PageProps) {
           embaixo. Só os campos que `buildTourSummaryItems` decidiu mostrar
           (nunca inventa um campo ausente na API) + próxima saída, calculada
           só a partir das saídas já buscadas (sem request novo). */}
-      <section aria-labelledby="informacoes" className="mt-6 sm:mt-8">
+      <section aria-labelledby="informacoes" className="mt-5 sm:mt-8">
         <h2 id="informacoes" className="sr-only">
           Informações do passeio
         </h2>
@@ -201,8 +201,8 @@ export default async function TourPage({ params, searchParams }: PageProps) {
         </div>
       </section>
 
-      <div className="mt-8 grid gap-8 sm:mt-10 sm:gap-10 lg:grid-cols-[1fr_360px] lg:gap-12">
-        <div className="space-y-8 sm:space-y-12">
+      <div className="mt-6 grid gap-6 sm:mt-10 sm:gap-10 lg:grid-cols-[1fr_360px] lg:gap-12">
+        <div className="space-y-6 sm:space-y-12">
           <section aria-labelledby="sobre">
             <h2 id="sobre" className="text-xl font-bold sm:text-2xl">
               Sobre o passeio
@@ -214,7 +214,7 @@ export default async function TourPage({ params, searchParams }: PageProps) {
             <h2 id="saidas" className="text-xl font-bold sm:text-2xl">
               Datas e horários disponíveis
             </h2>
-            <div className="mt-4 sm:mt-6">
+            <div className="mt-3 sm:mt-6">
               <BookingSelector
                 departures={departures}
                 initialQuantityHint={initialQuantityHint}
@@ -226,21 +226,25 @@ export default async function TourPage({ params, searchParams }: PageProps) {
             </div>
           </section>
 
-          <section aria-labelledby="roteiro">
-            <h2 id="roteiro" className="text-xl font-bold sm:text-2xl">
-              Roteiro
-            </h2>
-            <div className="mt-4 sm:mt-6">
-              <TourItinerary stops={tour.itinerary} />
-            </div>
-          </section>
+          {tour.itinerary.length > 0 ? (
+            <section aria-labelledby="roteiro">
+              <h2 id="roteiro" className="text-xl font-bold sm:text-2xl">
+                Roteiro
+              </h2>
+              <div className="mt-4 sm:mt-6">
+                <TourItinerary stops={tour.itinerary} />
+              </div>
+            </section>
+          ) : null}
 
-          <section aria-labelledby="inclui">
-            <h2 id="inclui" className="sr-only">
-              O que está incluído
-            </h2>
-            <TourChecklist included={tour.included} notIncluded={tour.notIncluded} />
-          </section>
+          {tour.included.length > 0 || tour.notIncluded.length > 0 ? (
+            <section aria-labelledby="inclui">
+              <h2 id="inclui" className="sr-only">
+                O que está incluído
+              </h2>
+              <TourChecklist included={tour.included} notIncluded={tour.notIncluded} />
+            </section>
+          ) : null}
 
           <section aria-labelledby="importante">
             <h2 id="importante" className="text-xl font-bold sm:text-2xl">

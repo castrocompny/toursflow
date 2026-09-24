@@ -17,7 +17,9 @@ export function Breadcrumbs({ items }: { items: Crumb[] }) {
                 {item.label}
               </Link>
             ) : (
-              <span className="text-ink">{item.label}</span>
+              <span className="text-ink" aria-current="page">
+                {item.label}
+              </span>
             )}
             {index < items.length - 1 ? <ChevronRight size={14} aria-hidden /> : null}
           </li>

@@ -14,6 +14,266 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-24 — Investigação de overflow horizontal reportado em aparelho físico (branch `frontend/mobile-booking-ux`)
+
+Usuário reportou, num aparelho físico real (não DevTools), overflow
+horizontal na página do passeio: a página inteira arrasta lateralmente,
+sobra espaço em branco no drag, a faixa "Escolha a data" excede a largura
+da tela, e aparecem mais chips de data do que o esperado para mobile.
+
+**Reprodução sistemática, sem corrigir no escuro.** Usando Chrome DevTools
+MCP com emulação de viewport mobile real (`isMobile: true`, `hasTouch:
+true` — não só `resize_page`, que não reproduz `window.innerWidth`
+corretamente), a página foi recarregada e medida em 320, 360, 375, 390,
+414, 430, 768 e 1024px. Em **todas** as larguras: `window.innerWidth ===
+document.documentElement.clientWidth === document.documentElement.scrollWidth
+=== document.body.scrollWidth` (0px de overflow de documento), e a
+quantidade de chips renderizados bateu exatamente com o esperado por
+`resolveDateWindowSize()` (3 chips <400px, 4 mobile, 5 tablet, 7 desktop).
+Uma varredura de `getBoundingClientRect()` em toda a árvore do DOM não
+encontrou nenhum elemento aumentando o `scrollWidth` do documento — o
+único elemento que ultrapassa a viewport (a tira de miniaturas do
+`TourGallery`) fica contido dentro do próprio `overflow-x-auto`, sem
+vazar para o documento.
+
+**Conclusão honesta: o overflow relatado no aparelho físico não foi
+reproduzido nesta sessão via emulação do Chrome DevTools MCP.** O código
+atual de `BookingSelector.tsx` já segue a estrutura exigida (`flex-1` no
+grupo de chips, `shrink-0` nos botões/chips, `overflow-x-auto` contido,
+sem `overflow-x-hidden` global em `body`/`globals.css`) — não foi alterado
+nesta tarefa, por não haver causa confirmada para corrigir. Hipóteses não
+confirmadas para a divergência entre o aparelho físico e esta sessão:
+cache de bundle antigo no navegador do aparelho (o `BookingSelector` já
+recebeu dois ajustes de overflow em 2026-09-19 e 2026-09-22, ainda não
+commitados) ou uma particularidade do navegador real não replicável na
+emulação do DevTools. Recomendação: reproduzir com o site aberto em
+aba anônima/sem cache no mesmo aparelho antes de investigar mais.
+
+**Pequeno ajuste de espaçamento mobile aplicado** (independente do
+overflow, que já estava zerado): a página do passeio
+(`src/app/passeios/[destino]/[slug]/page.tsx`) tinha respiros verticais
+generosos no mobile herdados diretamente dos valores de desktop/tablet.
+Reduzido, só na faixa mobile (`sm:` e acima inalterados): galeria→"Informações
+do passeio" e "Informações do passeio"→"Sobre o passeio"
+(`mt-6`→`mt-5`), grade "Sobre"/"Datas"/coluna lateral (`mt-8`→`mt-6`),
+espaço entre as seções internas dessa grade — Sobre, Datas e horários,
+Roteiro, etc. (`space-y-8`→`space-y-6`), e título→conteúdo da seção
+"Datas e horários disponíveis" (`mt-4`→`mt-3`). Desktop/tablet (`sm:` e
+acima) não foram tocados.
+
+Nada do NauticFlow, backend, APIs, Supabase, disponibilidade, HMAC,
+cancelamento, voucher, WhatsApp, Pix ou Asaas foi tocado.
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+Nenhum commit/push/deploy foi feito nesta tarefa.
+
+**Validação:** `npm run typecheck` ok, `npm run lint` ok, `npm run build`
+ok, `npm test` 469/470 (a 1 falha é pré-existente e não relacionada —
+`localStorage` experimental do Node sem a flag `--localstorage-file` no
+runner de testes, não uma regressão desta tarefa).
+
+## 2026-09-22 — Checagem visual real da janela de datas em navegador, 320px–1440px (branch `frontend/mobile-booking-ux`)
+
+Fecha a pendência registrada na entrada de 2026-09-19 ("ficou pendente uma
+checagem visual real"): a responsividade da faixa "Escolha a data" do
+`BookingSelector` foi inspecionada de fato num navegador real (Chrome
+DevTools MCP), não só por leitura de código, nos breakpoints 320, 360,
+375, 390, 414, 430, 768, 1024, 1366 e 1440px. Só ajuste visual/responsivo —
+nada de NauticFlow, API, Supabase, disponibilidade, `aria-pressed`,
+seleção de data/horário ou lógica de reserva foi tocado;
+`BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+
+**Dois overflows reais confirmados visualmente (não só calculados) e
+corrigidos com o menor ajuste possível:**
+
+- **Mobile estreito (320–~420px):** com os 4 chips fixos do tier mobile
+  (`MOBILE_DATE_WINDOW_SIZE`), o conteúdo natural da faixa (chip mais
+  largo é "Qua 23") só cabia sem cortar a partir de ~421px — abaixo disso
+  o 4º chip ficava parcialmente visível, com scroll horizontal interno.
+  Corrigido combinando as duas estratégias na ordem de preferência: (1)
+  reduzido levemente gap/padding dos chips (`gap-1.5`→`gap-1`,
+  padding do chip `px-2.5`→`px-1.5`, `min-w-[58px]`→`min-w-[52px]`), o que
+  sozinho já resolvia a maior parte da faixa mobile; (2) como isso ainda
+  não bastava para os 320-390px mais estreitos, foi criado um tier
+  adicional só para essa faixa: `SMALL_MOBILE_DATE_WINDOW_SIZE = 3` chips
+  abaixo de `SMALL_MOBILE_BREAKPOINT_PX = 400`. Confirmado sem overflow
+  (0px) em 320, 360, 375, 390, 414 e 430px, com screenshot real mostrando
+  os chips legíveis, sem corte e sem scrollbar.
+- **Boundary desktop em 1024px:** ao contrário do mobile, este só apareceu
+  na inspeção real (o cálculo teórico anterior não pegava porque não
+  considerava o grid da página, `lg:grid-cols-[1fr_360px]`, que também
+  muda de layout exatamente em 1024px). Nesse ponto exato, o tier desktop
+  liga 7 chips ao mesmo tempo em que a coluna principal do conteúdo fica
+  mais estreita (compartilhando espaço com a sidebar fixa de 360px),
+  gerando 44px de overflow na faixa de datas e overflow horizontal na
+  página inteira. Corrigido reduzindo o padding/gap dos chips a partir do
+  breakpoint `sm:` (`sm:gap-2`→`sm:gap-1.5`, `sm:px-3`→`sm:px-1.5`,
+  `sm:min-w-[64px]`→`sm:min-w-[56px]`). Confirmado 0px de overflow em
+  1024px (e sem overflow horizontal de página), com 768/1366/1440px
+  reconferidos depois do ajuste e continuando em 0px — em telas largas a
+  folga extra é imperceptível.
+
+Nenhuma regra preservada foi alterada: data selecionada continua com
+destaque visual e `aria-pressed`, datas indisponíveis continuam
+desabilitadas, trocar de data continua limpando o horário escolhido,
+navegação `‹ ›` nunca troca a seleção sozinha, primeira/última data
+continuam alcançáveis, resize não perde a seleção atual.
+
+**Arquivos alterados:** `src/components/tours/BookingSelector.tsx` (só
+classes Tailwind de espaçamento/tamanho dos chips + os novos
+`SMALL_MOBILE_DATE_WINDOW_SIZE`/`SMALL_MOBILE_BREAKPOINT_PX`),
+`src/components/tours/BookingSelector.test.tsx` (teste do tier mobile
+antigo dividido em "<400px → 3 chips" e "400–767px → 4 chips";
+`resizeTo(390)` nos testes existentes trocado por um valor dentro do tier
+correto). `npm run typecheck`, `npm run lint`, `npx vitest run` (470/470
+testes) e `npm run build` passam depois do ajuste.
+
+**Limitação da checagem:** o emulador de viewport do Chrome DevTools MCP
+mostrou instabilidade em chamadas repetidas sobre a mesma aba (medidas
+"congeladas" de uma emulação anterior); contornado abrindo uma aba nova a
+cada largura testada. Fora isso, todas as larguras listadas foram
+verificadas com medição real de DOM (`scrollWidth`/`clientWidth`) e
+confirmadas com screenshot nos pontos de maior risco (320, 375, 414,
+1024, 1440px). Não fez parte desta rodada revisar Home, `/passeios`,
+navegação mobile ou o restante da página do passeio além da faixa de
+datas — escopo explicitamente limitado ao seletor de datas.
+
+## 2026-09-19 — Janela de datas do `BookingSelector` responsiva por viewport real (branch `frontend/mobile-booking-ux`)
+
+Só frontend/responsividade da faixa "Escolha a data" da página do passeio —
+nada de NauticFlow, API, Supabase, reserva/pagamento/idempotência foi
+tocado; `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED` continuam `false`.
+
+**Causa validada visualmente:** `DATE_WINDOW_SIZE` era uma constante fixa
+em 7 — a faixa sempre montava 7 chips no DOM, dependendo só de
+`overflow-x-auto` pra "sumir" com o excesso em telas estreitas (o
+comentário do código já assumia, sem checar, que "só as primeiras ~3-4
+cabem antes do scroll" no mobile). Na prática isso criava uma faixa
+horizontal longa e pesada no celular, exatamente o problema relatado.
+
+**Solução:** `src/components/tours/BookingSelector.tsx` ganhou
+`useDateWindowSize()` — um hook local (sem dependência nova) que lê
+`window.innerWidth` só depois de montado (`useEffect`, com um listener de
+`resize`) e resolve o tamanho real da janela: `MOBILE_DATE_WINDOW_SIZE = 4`
+(<768px), `TABLET_DATE_WINDOW_SIZE = 5` (768–1023px, mesmos breakpoints
+`md`/`lg` já usados no projeto — ver `Header`/`MobileMenu`) e
+`DESKTOP_DATE_WINDOW_SIZE = 7` (≥1024px, preserva o desktop). SSR-safe de
+propósito: a primeira renderização (servidor e a primeira passada no
+cliente) sempre usa o valor mobile, nunca lê `window` durante o render —
+sem isso haveria mismatch de hidratação. `windowStart`/`maxWindowStart`/
+`visibleDateGroups` passam a usar esse valor dinâmico (não só CSS
+escondendo chips com a lógica ainda achando que são 7) — a quantidade que
+a navegação `‹ ›` considera é sempre a quantidade de fato renderizada. Um
+`useEffect` extra reclampa `windowStart` sempre que `maxWindowStart` muda
+(resize/orientação, ou a lista de saídas mudando após
+`INSUFFICIENT_CAPACITY`), só recuando o mínimo necessário — nunca escondendo
+uma data já selecionada nem pulando datas.
+
+Nenhuma regra de negócio mudou: horário nunca pré-seleciona sozinho,
+trocar de data continua limpando o horário escolhido, disponibilidade
+continua vindo só dos dados reais, formato do chip (`Sáb 19`) intocado.
+
+**Arquivos alterados:** `src/components/tours/BookingSelector.tsx`. Testes
+novos em `src/components/tours/BookingSelector.test.tsx`: janela de 4
+chips em largura mobile, de 5 em tablet, reclamp da janela num resize sem
+perder acesso à última data nem à seleção atual, e um teste cobrindo uma
+lacuna encontrada na suíte existente (trocar de data limpa o horário
+escolhido). As 45 asserções pré-existentes sobre a janela (incluindo as
+que fixavam "7" como tamanho padrão) continuam passando sem alteração —
+o jsdom usado nos testes tem `innerWidth` padrão 1024, que já cai no
+tier desktop.
+
+## 2026-09-19 — Rodada final de fechamento não-financeiro (branch `frontend/mobile-booking-ux`)
+
+Auditoria de tudo que não depende de pagamento/checkout (explicitamente fora
+do escopo desta rodada — `BOOKING_CHECKOUT_ENABLED`/`PAYMENTS_UI_ENABLED`
+permanecem `false`, arquitetura de reserva/idempotência/Supabase realtime
+não foi reaberta). Confirmado sem alteração: política de cancelamento
+centralizada (`resolveCancellationPolicy`), voucher/WhatsApp (sem PII, sem
+número hardcoded, sem envio automático), filtros/paginação/estados vazios de
+`/passeios`, nenhuma marca "Sou operador"/CTA para NauticFlow reintroduzida.
+
+Problemas reais corrigidos:
+
+- **Claims sem sustento nos dados atuais** (item de conteúdo/claims): a
+  home anunciava a vitrine de destaque como "Mais procurados" +
+  "selecionados... nesta temporada" (`src/app/page.tsx`), mas
+  `listFeaturedTours()` só devolve os primeiros N passeios da API, sem
+  nenhum conceito de popularidade ou curadoria por temporada. Trocado por
+  copy que não promete métrica nenhuma. `src/lib/site.ts` também descrevia
+  operadores como "verificados" na meta description global, mas nem o
+  próprio tipo `Operator` finge isso — o comentário do tipo já registra que
+  a API pública do NauticFlow "ainda não expõe... selo de verificado"; o
+  badge condicional (`tour.operator.verified`) nunca aparece de fato na
+  integração real. Removida a palavra da description.
+- **Hardcode de cidades violando o princípio multidestino** (item de
+  multidestino): `/destinos` (`src/app/destinos/page.tsx`) tinha 5 nomes de
+  cidade fixos na meta description e na copy do topo — qualquer mudança no
+  catálogo de destinos (adicionar/remover cidade) exigiria editar texto
+  aqui, o que o projeto explicitamente não quer. Copy trocada por texto
+  genérico, sem nomear nenhuma cidade. `src/app/layout.tsx` também tinha um
+  `keywords` com 3 das 5 cidades da época (incompleto por natureza, some
+  fica de fora sempre que uma cidade nova entra); trocado por termos
+  genéricos de categoria/produto.
+- **Seções vazias com cabeçalho sem conteúdo** (item de estados vazios): a
+  página do passeio sempre renderizava `<h2>Roteiro</h2>` e os cabeçalhos
+  de "O que está incluído"/"não incluído" mesmo quando
+  `tour.itinerary`/`included`/`notIncluded` vêm vazios da API — real desde
+  que o formato desses campos no NauticFlow ainda não foi confirmado contra
+  um passeio publicado (ver comentário em `nauticflow-source.ts`). Agora
+  `src/app/passeios/[destino]/[slug]/page.tsx` só renderiza cada seção
+  quando há conteúdo, e `TourChecklist.tsx` também ficou defensivo por
+  conta própria (cada coluna só aparece com itens; sem nenhum, não
+  renderiza nada).
+- **Endereço de embarque quebrado com campos ausentes** (item de estados
+  vazios): `fullAddress()` (`src/lib/maps.ts`) montava
+  `"${district} — ${city}/${state}"` sem checar nada — com os três campos
+  vindo `''` da API (mesmo cenário de shape não confirmado citado acima),
+  o texto exibido seria literalmente `" — /"`. Corrigido para descartar
+  partes vazias, igual `formatLocation()` já fazia.
+- **Trilha de navegação sem `aria-current`** (item de acessibilidade):
+  `Breadcrumbs.tsx` marcava a página atual só visualmente (sem `href`),
+  sem `aria-current="page"` pra leitor de tela. Adicionado no item sem
+  link, que em todo uso do componente é sempre o último (a página atual).
+
+Arquivos alterados: `src/app/page.tsx`, `src/lib/site.ts`,
+`src/app/destinos/page.tsx`, `src/app/layout.tsx`,
+`src/app/passeios/[destino]/[slug]/page.tsx`,
+`src/components/tours/TourChecklist.tsx`, `src/lib/maps.ts`,
+`src/components/ui/Breadcrumbs.tsx`. Testes novos:
+`src/lib/maps.test.ts`, `src/components/tours/TourChecklist.test.tsx`.
+
+Responsividade (320px–1440px) foi revisada por leitura de código (classes
+Tailwind responsivas, `overflow-x-auto`, alvos de toque `min-h-[44px]`) em
+vez de inspeção visual no navegador — nenhum problema concreto encontrado
+dessa forma; ficou pendente uma checagem visual real como próximo passo, se
+quiserem mais confiança antes da fase de pagamento.
+
+## 2026-09-18 — Correção de 2 regressões apontadas pelo Codex Review (branch `frontend/mobile-booking-ux`)
+
+Review automatizado (Codex) sobre o diff da branch contra `main` apontou
+duas regressões, ambas corrigidas:
+
+- **404 de passeio quebrava com erro em vez de página not-found.** A
+  paralelização de `getTour`/`listDepartures`/`listTours` em
+  `src/app/passeios/[destino]/[slug]/page.tsx` (commit anterior) fez
+  `Promise.all` rejeitar antes de `if (!tour) notFound()` rodar, porque
+  `listDepartures()` no `nauticflow-source.ts` lançava `NotFoundError` em
+  vez de devolver lista vazia num 404 (só `getTour()` já convertia
+  `NotFoundError` em `null`). Corrigido em
+  `src/data/sources/nauticflow-source.ts`: `listDepartures()` agora trata
+  `NotFoundError` do mesmo jeito que `getTour()` — devolve `[]`, igual ao
+  mock (`mock-source.ts`) já fazia. Página não precisou de nenhuma
+  mudança, e o paralelismo foi mantido.
+- **Links de categoria do footer não funcionavam em dev local (mock).**
+  `Footer.tsx` sempre apontou para os slugs reais da integração
+  (`passeio_privativo`/`passeio_compartilhado`), mas o mock local
+  (`src/data/mock/categories.mock.ts`, usado sem `NAUTICFLOW_API_URL`)
+  tinha esses mesmos conceitos com slugs diferentes (`privativo`/
+  `compartilhado`), e o filtro de categoria compara slug exato — os
+  links do footer voltavam vazios em dev. Corrigido alinhando o mock aos
+  valores reais da integração (`categories.mock.ts` e `tours.mock.ts`),
+  em vez de tornar o footer dependente da fonte de dados ativa.
+
 ## 2026-09-18 — Voucher/comprovante ToursFlow com compartilhamento manual via WhatsApp (branch `frontend/mobile-booking-ux`)
 
 Fluxo final de reserva (`BookingVoucher`, só alcançável depois de

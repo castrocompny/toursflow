@@ -21,7 +21,7 @@ export const mockTours: Tour[] = [
     description:
       'Saída do Píer do Centro em lancha de 30 pés, com no máximo doze passageiros. O roteiro contorna a costa leste da península, com paradas na Ilha Feia, na Ilha dos Gravatás e em João Fernandes, onde a água é rasa e calma. O comandante ajusta a ordem das paradas conforme o vento do dia.',
     destinationSlug: 'buzios',
-    categorySlugs: ['lancha', 'praias', 'compartilhado'],
+    categorySlugs: ['lancha', 'praias', 'passeio_compartilhado'],
     operatorId: 'op-mar-azul',
     images: [
       { url: '/img/mock/tours/lancha-ilhas-1.svg', alt: 'Lancha navegando entre as ilhas de Búzios' },
@@ -73,7 +73,7 @@ export const mockTours: Tour[] = [
     description:
       'A escuna sai do centro e percorre as praias mais conhecidas da península. É o passeio mais econômico da cidade e o mais indicado para quem está em Búzios por pouco tempo e quer ter uma visão geral da costa.',
     destinationSlug: 'buzios',
-    categorySlugs: ['escuna', 'compartilhado', 'praias'],
+    categorySlugs: ['escuna', 'passeio_compartilhado', 'praias'],
     operatorId: 'op-costa-brava',
     images: [
       { url: '/img/mock/tours/escuna-buzios-1.svg', alt: 'Escuna saindo do centro de Búzios' },
@@ -122,7 +122,7 @@ export const mockTours: Tour[] = [
     description:
       'Saída no fim da tarde para acompanhar o pôr do sol a partir da baía. Roteiro curto, sem parada para banho, pensado para casais e para quem quer fechar o dia no mar.',
     destinationSlug: 'buzios',
-    categorySlugs: ['lancha', 'por-do-sol', 'privativo'],
+    categorySlugs: ['lancha', 'por-do-sol', 'passeio_privativo'],
     operatorId: 'op-mar-azul',
     images: [
       { url: '/img/mock/tours/pordosol-1.svg', alt: 'Pôr do sol visto do mar em Búzios' },
@@ -169,7 +169,7 @@ export const mockTours: Tour[] = [
     description:
       'Saída da Praia dos Anjos em barco compartilhado. O roteiro passa pelos principais pontos da região, com paradas para banho e observação da Gruta Azul a partir da água.',
     destinationSlug: 'arraial-do-cabo',
-    categorySlugs: ['escuna', 'compartilhado', 'praias'],
+    categorySlugs: ['escuna', 'passeio_compartilhado', 'praias'],
     operatorId: 'op-farol',
     images: [
       { url: '/img/mock/tours/arraial-barco-1.svg', alt: 'Barco compartilhado saindo da Praia dos Anjos' },
@@ -217,7 +217,7 @@ export const mockTours: Tour[] = [
     description:
       'Lancha privativa com marinheiro, para grupos que preferem definir o próprio ritmo. O roteiro é montado no embarque, conforme a condição do mar e o tempo de parada que o grupo quiser em cada praia.',
     destinationSlug: 'arraial-do-cabo',
-    categorySlugs: ['lancha', 'privativo'],
+    categorySlugs: ['lancha', 'passeio_privativo'],
     operatorId: 'op-farol',
     images: [
       { url: '/img/mock/tours/arraial-privativo-1.svg', alt: 'Lancha privativa ancorada em Arraial do Cabo' },
@@ -260,7 +260,7 @@ export const mockTours: Tour[] = [
     description:
       'Atividade para quem nunca mergulhou. Inclui aula teórica curta em terra, deslocamento de barco até o ponto de mergulho e imersão acompanhada individualmente pelo instrutor.',
     destinationSlug: 'arraial-do-cabo',
-    categorySlugs: ['compartilhado', 'praias'],
+    categorySlugs: ['passeio_compartilhado', 'praias'],
     operatorId: 'op-farol',
     images: [
       { url: '/img/mock/tours/mergulho-1.svg', alt: 'Preparação para batismo de mergulho em Arraial do Cabo' },
@@ -308,7 +308,7 @@ export const mockTours: Tour[] = [
     description:
       'Roteiro tranquilo pelo canal, com vista das dunas e do Forte São Mateus. A parada principal é a Ilha do Japonês, com água rasa e boa para famílias com crianças.',
     destinationSlug: 'cabo-frio',
-    categorySlugs: ['escuna', 'compartilhado', 'praias'],
+    categorySlugs: ['escuna', 'passeio_compartilhado', 'praias'],
     operatorId: 'op-lagoa',
     images: [
       { url: '/img/mock/tours/cabofrio-escuna-1.svg', alt: 'Escuna passando pelo canal de Cabo Frio' },
@@ -348,7 +348,7 @@ export const mockTours: Tour[] = [
     description:
       'Saída guiada em jet ski a partir da Praia do Forte, com instrução prévia e acompanhamento por embarcação de apoio. Indicado para quem nunca pilotou.',
     destinationSlug: 'cabo-frio',
-    categorySlugs: ['jet-ski', 'privativo'],
+    categorySlugs: ['jet-ski', 'passeio_privativo'],
     operatorId: 'op-lagoa',
     images: [
       { url: '/img/mock/tours/jetski-1.svg', alt: 'Jet ski na Praia do Forte em Cabo Frio' },
@@ -392,7 +392,7 @@ export const mockTours: Tour[] = [
     description:
       'Roteiro completo pela baía de Angra, passando pela Lagoa Azul e por enseadas de água calma. Parada para almoço em restaurante sobre a água, com tempo livre para banho antes do retorno.',
     destinationSlug: 'angra-dos-reis',
-    categorySlugs: ['catamara', 'compartilhado', 'praias'],
+    categorySlugs: ['catamara', 'passeio_compartilhado', 'praias'],
     operatorId: 'op-ilha-grande',
     images: [
       { url: '/img/mock/tours/angra-ilhas-1.svg', alt: 'Catamarã entre as ilhas de Angra dos Reis' },
@@ -440,7 +440,7 @@ export const mockTours: Tour[] = [
     description:
       'Passeio em saveiro de madeira pela baía de Paraty, com paradas em ilhas e praias de mata atlântica. O almoço é preparado a bordo e servido durante a parada mais longa.',
     destinationSlug: 'paraty',
-    categorySlugs: ['escuna', 'compartilhado', 'praias'],
+    categorySlugs: ['escuna', 'passeio_compartilhado', 'praias'],
     operatorId: 'op-saveiro',
     images: [
       { url: '/img/mock/tours/paraty-1.svg', alt: 'Saveiro de madeira na baía de Paraty' },

@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from 'vitest';
-import { mapPriceType } from './nauticflow-source';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mapPriceType, nauticflowSource } from './nauticflow-source';
 
 describe('mapPriceType', () => {
   it('por_pessoa -> per_person (vendável, confirmado)', () => {
@@ -24,5 +24,26 @@ describe('mapPriceType', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
     expect(mapPriceType('algo_totalmente_novo')).toBe('starting_from');
     warnSpy.mockRestore();
+  });
+});
+
+describe('listDepartures', () => {
+  beforeEach(() => {
+    vi.stubEnv('NAUTICFLOW_API_URL', 'https://nauticflow.exemplo.test');
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  it('404 (passeio sem saídas/inexistente) devolve lista vazia, não lança erro — mesma semântica de getTour() (regressão do Codex Review de 18/09/2026)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 404 })),
+    );
+
+    await expect(nauticflowSource.listDepartures('passeio-inexistente')).resolves.toEqual([]);
   });
 });

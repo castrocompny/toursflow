@@ -7,8 +7,7 @@ import { routes } from '@/lib/routes';
 
 export const metadata = pageMetadata({
   title: 'Destinos com passeios náuticos',
-  description:
-    'Búzios, Arraial do Cabo, Cabo Frio, Angra dos Reis e Paraty: veja os passeios de barco disponíveis em cada destino.',
+  description: 'Veja os passeios de barco disponíveis em cada destino da plataforma.',
   path: '/destinos',
 });
 
@@ -30,8 +29,7 @@ export default async function DestinationsPage() {
       <header className="mt-5 max-w-2xl">
         <h1 className="text-3xl font-bold sm:text-4xl">Destinos</h1>
         <p className="mt-3 text-ink-muted">
-          O tipo de passeio muda com a cidade: água transparente em Arraial, variedade de praias em
-          Búzios, ilhas de dia inteiro em Angra.
+          O tipo de passeio muda com a cidade. Escolha um destino para ver o que está disponível.
         </p>
       </header>
 

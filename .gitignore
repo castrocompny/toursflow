@@ -10,3 +10,5 @@ out
 .DS_Store
 *.tsbuildinfo
 next-env.d.ts
+.vscode/
+graphify-out/

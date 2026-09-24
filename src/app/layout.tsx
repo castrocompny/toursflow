@@ -14,15 +14,7 @@ export const metadata: Metadata = {
   },
   description: site.description,
   applicationName: site.name,
-  keywords: [
-    'passeios de barco',
-    'passeio de lancha',
-    'escuna',
-    'Búzios',
-    'Arraial do Cabo',
-    'Cabo Frio',
-    'turismo náutico',
-  ],
+  keywords: ['passeios de barco', 'passeio de lancha', 'escuna', 'catamarã', 'jet ski', 'turismo náutico'],
   openGraph: {
     type: 'website',
     locale: 'pt_BR',

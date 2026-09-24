@@ -537,12 +537,21 @@ async function getTour(destinationSlug: string, tourSlug: string): Promise<TourW
 async function listDepartures(tourSlug: string): Promise<Departure[]> {
   // Disponibilidade nunca cacheia (revalidate: false = no-store): preço e
   // vaga têm que refletir o estado real no momento em que a página carrega.
-  const response = await fetchJson<ListEnvelope<NauticFlowDepartureDTO>>(
-    `/api/public/tours/${encodeURIComponent(tourSlug)}/departures`,
-    undefined,
-    { revalidate: false },
-  );
-  return response.data.map((item) => mapDeparture(item, tourSlug));
+  try {
+    const response = await fetchJson<ListEnvelope<NauticFlowDepartureDTO>>(
+      `/api/public/tours/${encodeURIComponent(tourSlug)}/departures`,
+      undefined,
+      { revalidate: false },
+    );
+    return response.data.map((item) => mapDeparture(item, tourSlug));
+  } catch (error) {
+    // Mesmo tratamento de getTour(): passeio inexistente é lista vazia, não
+    // erro — mantém o contrato de ToursDataSource (e o comportamento do
+    // mock) igual para os dois, o que a página de detalhe depende para
+    // buscar tour/departures em paralelo sem perder o notFound() de tour null.
+    if (error instanceof NotFoundError) return [];
+    throw error;
+  }
 }
 
 async function listFeaturedTours(limit = 6): Promise<TourWithRelations[]> {

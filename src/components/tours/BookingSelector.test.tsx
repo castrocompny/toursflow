@@ -398,6 +398,22 @@ describe('BookingSelector', () => {
       expect(screen.getByText('Domingo, 25 de outubro')).toBeTruthy();
     });
 
+    it('escolher um horário e depois trocar de data limpa o horário selecionado (não carrega pra nova data)', () => {
+      render(<BookingSelector departures={[available, oneSpotLeft]} />);
+      const timeButton = within(screen.getByRole('list'))
+        .getAllByRole('button')
+        .find((el) => el.getAttribute('aria-pressed') !== null)!;
+      fireEvent.click(timeButton);
+      expect(timeButton.getAttribute('aria-pressed')).toBe('true');
+      expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(false);
+
+      fireEvent.click(screen.getByRole('button', { name: /25$/ }));
+
+      // Nenhum horário vem pré-selecionado na nova data — "Continuar" volta a
+      // ficar bloqueado até o turista escolher um horário de novo.
+      expect(isDisabled(screen.getByRole('button', { name: /continuar reserva/i }))).toBe(true);
+    });
+
     it('início + duração calcula o horário final exibido ("09:00 às 14:00" pra 300min)', () => {
       const morning: Departure = { ...available, departsAt: '2026-10-11T12:00:00+00:00' }; // 09:00 em Brasília
       render(<BookingSelector departures={[morning]} durationMinutes={300} />);
@@ -472,6 +488,67 @@ describe('BookingSelector', () => {
         render(<BookingSelector departures={[available, oneSpotLeft]} />);
         expect(isDisabled(previousButton())).toBe(true);
         expect(isDisabled(nextButton())).toBe(true);
+      });
+
+      describe('tamanho da janela por largura de tela', () => {
+        /** jsdom não dispara resize sozinho: muda `innerWidth` e simula o evento. */
+        function resizeTo(width: number) {
+          Object.defineProperty(window, 'innerWidth', { writable: true, configurable: true, value: width });
+          fireEvent(window, new Event('resize'));
+        }
+
+        afterEach(() => {
+          // Nunca vaza a largura simulada pros outros testes deste arquivo,
+          // que assumem o padrão do jsdom (1024 -> desktop, janela de 7).
+          resizeTo(1024);
+        });
+
+        it('largura muito estreita (<400px) mostra só 3 chips por vez — 4 não cabem sem cortar em 320-390px', () => {
+          resizeTo(375);
+          render(<BookingSelector departures={manyDates} />);
+          expect(within(dateChipsGroup()).getAllByRole('button')).toHaveLength(3);
+        });
+
+        it('largura mobile (400-767px) mostra 4 chips por vez', () => {
+          resizeTo(450);
+          render(<BookingSelector departures={manyDates} />);
+          expect(within(dateChipsGroup()).getAllByRole('button')).toHaveLength(4);
+        });
+
+        it('largura tablet (768-1023px) mostra 5 chips por vez', () => {
+          resizeTo(800);
+          render(<BookingSelector departures={manyDates} />);
+          expect(within(dateChipsGroup()).getAllByRole('button')).toHaveLength(5);
+        });
+
+        it('encolher a janela (resize pra mobile) nunca deixa a data final inalcançável nem muda a seleção atual', () => {
+          render(<BookingSelector departures={manyDates} />);
+          // Desktop (jsdom padrão, 1024): avança até o fim da janela de 7 (windowStart = 3).
+          fireEvent.click(nextButton());
+          fireEvent.click(nextButton());
+          fireEvent.click(nextButton());
+          expect(isDisabled(nextButton())).toBe(true);
+          expect(screen.getByText('Domingo, 11 de outubro')).toBeTruthy();
+
+          // Mobile (400-767px): janela de 4 -> maxWindowStart sobe de 3 pra 6.
+          // `windowStart` (ainda 3) continua válido, então a data selecionada
+          // não muda e não some, e "›" volta a ficar habilitado (há mais
+          // passos até o novo fim).
+          resizeTo(450);
+          expect(within(dateChipsGroup()).getAllByRole('button')).toHaveLength(4);
+          expect(screen.getByText('Domingo, 11 de outubro')).toBeTruthy();
+          expect(isDisabled(nextButton())).toBe(false);
+
+          // A última data (20/out) continua alcançável navegando "›".
+          fireEvent.click(nextButton());
+          fireEvent.click(nextButton());
+          fireEvent.click(nextButton());
+          expect(isDisabled(nextButton())).toBe(true);
+          const chipLabelsAtEnd = within(dateChipsGroup())
+            .getAllByRole('button')
+            .map((el) => el.textContent?.replace('Esgotado', ''));
+          expect(chipLabelsAtEnd[chipLabelsAtEnd.length - 1]).toBe('Ter 20');
+        });
       });
     });
   });
