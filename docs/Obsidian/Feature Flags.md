@@ -186,3 +186,20 @@ adicionar um botão na interface.
 Ver também [[Estado Atual do Produto]] para o impacto disso em cada parte
 da UI, e [[Reservas e Pagamentos (Pix)]] para o fluxo completo por trás
 da flag.
+
+## Validação no Preview real (29/09/2026)
+
+Preview `dpl_9PNHYBymvCCLzJFW5n7WkLDGHTZ2` (commit `f4a0398`, branch
+`frontend/mobile-booking-ux`, READY), comparado com Production
+`dpl_3sKcTa9M3GS5zp8GcG3DukWG21Tc` (`main` @ `8acc69f`, intacta):
+
+- Bundle servido pelo Preview: `onConfirm` e `onPayWithPix` presentes →
+  **TOURSFLOW_PREVIEW_BOOKING=ON**, **TOURSFLOW_PREVIEW_PAYMENTS=ON** (UI).
+- Bundle servido por `toursflow.com.br`: `onConfirm:void 0` e
+  `onPayWithPix:void 0` → **TOURSFLOW_PRODUCTION_BOOKING=OFF**,
+  **TOURSFLOW_PRODUCTION_PAYMENTS=OFF**.
+- Server-side do Preview: `POST /api/bookings` passou do gate
+  `BOOKING_CHECKOUT_NOT_ENABLED` e chegou ao NauticFlow (ver
+  [[Reservas e Pagamentos (Pix)]], seção de auth). O gate server-side de
+  pagamento no Preview não foi exercitado por chamada HTTP nesta rodada
+  (só pelo bundle e pelo build simulado).

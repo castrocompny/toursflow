@@ -39,6 +39,16 @@ build local e testes continuam `false` (fail-closed).
 - Nenhum booking válido, cobrança ou Pix foi criado. NauticFlow, Asaas e
   Supabase não foram alterados. Production do ToursFlow (`main`) intacta.
 
+**Resultado no Preview real** (`dpl_9PNHYBymvCCLzJFW5n7WkLDGHTZ2`, `f4a0398`):
+bundle do Preview com `onConfirm`/`onPayWithPix` ligados; bundle de
+`toursflow.com.br` com ambos `void 0`. Sonda de auth (`POST /api/bookings`
+com `departureId` inexistente) → **401 `UNAUTHORIZED` vindo do NauticFlow
+Production** (`ede8fb0`, confirmado nos runtime logs) → TOURSFLOW_AUTH=FAILED:
+`TOURSFLOW_API_SECRET` do escopo Preview não bate com o NauticFlow. Polling
+(5 s) compatível com o rate limit de poll do NauticFlow (40/min por
+cliente). 1º E2E financeiro segue pendente. Detalhes nas notas Obsidian
+Feature Flags, Reservas e Pagamentos (Pix), Deploy e Ambiente, Riscos.
+
 ---
 
 ## 2026-09-24 — Investigação de overflow horizontal reportado em aparelho físico (branch `frontend/mobile-booking-ux`)

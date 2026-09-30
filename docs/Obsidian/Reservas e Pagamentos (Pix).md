@@ -85,3 +85,57 @@ elegibilidade de reembolso, prazo de reembolso), mas nenhum foi decidido.
 `src/lib/booking-submission.ts`, `src/lib/nauticflow-bookings.ts`,
 `src/lib/nauticflow-payments.ts`, `src/lib/payment-client.ts`,
 `src/lib/toursflow-client-key.ts`, `src/lib/idempotency-key.ts`.
+
+## Preparação do 1º E2E financeiro (29/09/2026)
+
+### Autenticação ToursFlow → NauticFlow: **TOURSFLOW_AUTH=FAILED**
+
+Sonda segura no Preview `dpl_9PNHYBymvCCLzJFW5n7WkLDGHTZ2`:
+`POST /api/bookings` com `departureId` UUID aleatório inexistente, dados
+de cliente fictícios, client-key real (HMAC calculado pelo próprio
+servidor). Não tinha como criar booking (no máximo `DEPARTURE_NOT_FOUND`).
+
+- Resposta: **HTTP 401, `UNAUTHORIZED`**.
+- Runtime logs do NauticFlow: `POST /api/marketplace/bookings 401` na
+  deployment de Production `dpl_62K79FMQ5SMbFtGQ5ahqYrkyxcBq` (`ede8fb0`)
+  no mesmo segundo → o `NAUTICFLOW_API_URL` do Preview aponta para o
+  NauticFlow Production correto; o que falha é o Bearer.
+- No NauticFlow, 401 só sai de `isAuthorizedToursFlowRequest`: secret
+  ausente no NauticFlow, ou `TOURSFLOW_API_SECRET` do ToursFlow (escopo
+  Preview) diferente do NauticFlow Production (inclui espaço/quebra de
+  linha no valor). Nenhum secret foi lido, impresso ou copiado.
+- **Ação necessária (usuário)**: alinhar `TOURSFLOW_API_SECRET` do
+  ToursFlow no escopo **Preview** da Vercel com o do NauticFlow Production
+  e fazer **Redeploy** do Preview (env nova só vale em build/deploy novo).
+  Repetir a mesma sonda: esperado `404 DEPARTURE_NOT_FOUND`.
+
+### Polling de pagamento: **COMPATÍVEL**
+
+- `PixPayment.tsx`: `POLL_INTERVAL_MS = 5000`. Começa só depois do Pix
+  criado (`phase === 'pending'`), para em `paid` (chama `onPaid` →
+  voucher), em qualquer status não-pending (`failed`, `refunded`,
+  `partially_refunded`) e em `expired` (calculado no cliente a partir de
+  `pix.expirationDate ?? holdExpiresAt`). Sem timeout global separado —
+  a expiração é o teto. Erro transitório de polling é ignorado e tenta no
+  próximo tick.
+- NauticFlow (`ede8fb0`, defaults do código): poll 40 req/60s por client
+  key, 3000 req/60s global. 5 s = 12 req/min por visitante → cabe com
+  folga (~3 abas do mesmo IP). Valores reais de env do NauticFlow
+  Production: **NÃO CONFIRMADO** (só os defaults do código foram lidos).
+
+### Fluxo revalidado (código)
+
+Preço nunca autoritativo (confirmação mostra `priceCents`/`totalCents`
+do NauticFlow); duplo-submit bloqueado por `isSubmittingRef` + botão
+`disabled`; Idempotency-Key com fingerprint, reusada em retry e zerada em
+sucesso/`IDEMPOTENCY_CONFLICT`; hold expirado esconde "Pagar com Pix";
+`bookingId` preservado em memória; key de pagamento gerada uma vez por
+tentativa (sem cobrança duplicada); voucher só após `paid`.
+
+Lacunas conhecidas (não bloqueiam E2E controlado):
+- `PixPayment` em `error`/`failed` não tem botão de nova tentativa — o
+  texto de `failed` sugere "gerar um novo Pix", mas o único caminho é
+  recarregar, o que perde o `bookingId` em memória (o hold continua no
+  NauticFlow até expirar).
+- Pagamento confirmado depois da expiração local não é detectado pela UI
+  (polling já parou).

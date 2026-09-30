@@ -9,17 +9,26 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
 
 ## Decisões de negócio pendentes (não são bugs, são decisões não tomadas)
 
-- Ligar `BOOKING_CHECKOUT_ENABLED` — depende de a equipe operacional
-  estar pronta para acompanhar holds. Ver [[Feature Flags]].
-- Ligar `PAYMENTS_UI_ENABLED` — depende de 3 condições, incluindo
-  confirmação (não verificável pelo ToursFlow) de que
-  `MARKETPLACE_PAYMENTS_ENABLED` está ligada no NauticFlow em produção.
-  Ver [[Feature Flags]].
+- Ligar `BOOKING_CHECKOUT_ENABLED` / `PAYMENTS_UI_ENABLED` em
+  **Production** — hoje ligadas só no Preview de
+  `frontend/mobile-booking-ux` (29/09/2026). Production depende do 1º E2E
+  financeiro concluído + decisão de negócio. Ver [[Feature Flags]].
 - Prazos/percentuais de reembolso da política de cancelamento do
   marketplace (ADR-016) — requisitos já enumerados, nenhum valor
   decidido. Ver [[Reservas e Pagamentos (Pix)]].
 - Decisão de negócio sobre páginas legais (Termos/Privacidade) — hoje
   não existem rotas para elas. Ver [[Estado Atual do Produto]].
+
+## Bloqueio do 1º E2E financeiro (29/09/2026)
+
+- **TOURSFLOW_AUTH=FAILED**: Preview → NauticFlow Production responde
+  401. Alinhar `TOURSFLOW_API_SECRET` (escopo Preview no ToursFlow) com o
+  NauticFlow Production e redeployar o Preview. Ver
+  [[Reservas e Pagamentos (Pix)]].
+- 1º E2E financeiro real (booking → Pix → pagamento → voucher) ainda
+  **pendente** — nenhum booking válido, cobrança ou Pix foi criado.
+- Sem retry de Pix na UI em `error`/`failed`. Ver
+  [[Reservas e Pagamentos (Pix)]].
 
 ## Não confirmado nesta rodada (depende de acesso externo, não de código)
 

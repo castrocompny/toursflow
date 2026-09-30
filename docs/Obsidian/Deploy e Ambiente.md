@@ -11,6 +11,15 @@ Fonte: `docs/DEPLOYMENT.md` (85 linhas) e `docs/ENVIRONMENT.md` (31 linhas).
   para push em qualquer branch (não só `main`) — confirmado em 24/09/2026
   com o commit `1b6fab5` na branch `frontend/mobile-booking-ux`. Ver
   [[UX e Responsividade Mobile]] para o caso de uso real desse Preview.
+- Previews da Vercel têm **Vercel Authentication (SSO)** ligada
+  (`all_except_custom_domains`) — só membros do time acessam.
+- Preview atual usado para o 1º E2E financeiro (29/09/2026):
+  `dpl_9PNHYBymvCCLzJFW5n7WkLDGHTZ2`, commit `f4a0398`,
+  `toursflow-gh2pmu46r-joao-s-projecto1.vercel.app` (alias de branch
+  `toursflow-git-frontend-mobile-booking-ux-joao-s-projecto1.vercel.app`).
+  Único Preview com checkout/pagamento ligados — ver [[Feature Flags]].
+- Production em 29/09/2026: `dpl_3sKcTa9M3GS5zp8GcG3DukWG21Tc`
+  (`main` @ `8acc69f`), flags OFF, não alterada.
 - Sem `vercel.json`/`.vercel/` no repositório.
 - Dois domínios: `toursflow.com.br` e `toursflow.vercel.app`.
 - Sem pipeline de CI para PRs (documentado como não implementado, não
@@ -30,6 +39,11 @@ Fonte: `docs/DEPLOYMENT.md` (85 linhas) e `docs/ENVIRONMENT.md` (31 linhas).
 
 Configuração real dessas duas últimas variáveis na Vercel Produção é
 **NÃO CONFIRMADO** nesta rodada — ver [[Estado Atual do Produto]].
+
+`VERCEL_ENV` e `VERCEL_GIT_COMMIT_REF` (sistema) são lidas no build por
+`next.config.mjs` e decidem as flags transacionais — ver [[Feature Flags]].
+`TOURSFLOW_API_SECRET` do escopo Preview **não autentica** no NauticFlow
+Production em 29/09/2026 (401) — ver [[Reservas e Pagamentos (Pix)]].
 
 `VERCEL` é injetada automaticamente pela plataforma — não precisa ser
 configurada manualmente.
