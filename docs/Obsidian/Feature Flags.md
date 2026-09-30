@@ -1,24 +1,57 @@
 # Feature Flags
 
-Nenhuma flag foi alterada nesta análise. Os valores abaixo foram
-confirmados por leitura direta de `src/lib/feature-flags.ts` em
-24/09/2026 (linhas 31 e 53), e novamente reconfirmados nesta revisão via
-`grep` no arquivo atual — sem alterações no código desde a última
-verificação (`git log` mostra o último commit a tocar o arquivo em
-18/09/2026, e o arquivo não aparece como modificado no `git status`
-atual).
+## Estado atual (29/09/2026): Preview ON, Production OFF
 
-## As duas flags — valor atual confirmado no código
+Desde 29/09/2026 as duas flags deixaram de ser `false` literal e passaram
+a ser derivadas **do build**, não de uma env var própria:
 
 ```ts
-export const BOOKING_CHECKOUT_ENABLED = false; // linha 31
-export const PAYMENTS_UI_ENABLED = false;      // linha 53
+// src/lib/feature-flags.ts
+export const TRANSACTIONAL_PREVIEW_BRANCH = 'frontend/mobile-booking-ux';
+export function isTransactionalPreviewBuild(vercelEnv, gitRef) {
+  return vercelEnv === 'preview' && gitRef === TRANSACTIONAL_PREVIEW_BRANCH;
+}
+export const BOOKING_CHECKOUT_ENABLED = TRANSACTIONAL_PREVIEW_BUILD;
+export const PAYMENTS_UI_ENABLED = TRANSACTIONAL_PREVIEW_BUILD;
 ```
 
-Ambas são **constantes literais no código-fonte** — não lêem env var nem
-header. Isso é deliberado: mudar qualquer uma delas exige um code change
-revisado (PR, review), nunca uma variável de ambiente que alguém ligue
-sem revisão de código.
+As entradas vêm de `next.config.mjs` (`env.TOURSFLOW_BUILD_VERCEL_ENV` /
+`env.TOURSFLOW_BUILD_GIT_REF`), copiadas no momento do build das
+variáveis de **sistema** da Vercel (`VERCEL_ENV` /
+`VERCEL_GIT_COMMIT_REF`). O Next congela esses valores no bundle — o
+cliente (`BookingSelector`) e o servidor (rotas) recebem exatamente o
+mesmo booleano, já dobrado pelo minificador.
+
+| Ambiente | `BOOKING_CHECKOUT_ENABLED` | `PAYMENTS_UI_ENABLED` |
+|---|---|---|
+| Preview da Vercel, branch `frontend/mobile-booking-ux` | **ON** | **ON** |
+| Preview de qualquer outra branch | OFF | OFF |
+| Production (`main`) | **OFF** | **OFF** |
+| Build/dev local, testes (Vitest) | OFF | OFF |
+
+Por que isso é fail-closed:
+- Qualquer valor ausente/diferente dá `false`.
+- Production tem `VERCEL_ENV=production` (variável de sistema, não
+  editável no painel) → `false` mesmo se a branch coincidisse.
+- Não existe env var própria (`ENABLE_CHECKOUT` etc.) que alguém possa
+  ligar no painel sem code change. Ligar em Production continua exigindo
+  code change revisado — mesmo princípio de antes.
+- Verificado em 29/09/2026 inspecionando o bundle minificado de dois
+  builds locais simulados: com `VERCEL_ENV=preview` + branch autorizada,
+  `BookingReview` recebe `onConfirm` e `BookingConfirmation` recebe
+  `onPayWithPix`; com `VERCEL_ENV=production` (mesma branch), ambos viram
+  `void 0` no cliente e o módulo de flags do servidor fica
+  `let d=!1,e=!1`.
+- Coberto por `src/lib/feature-flags.test.ts`.
+
+Mitigação adicional: os Previews da Vercel deste projeto têm
+**Vercel Authentication (SSO)** ligada (`all_except_custom_domains`), então
+o Preview com checkout ligado não é acessível publicamente.
+
+Histórico: até 29/09/2026 as duas eram `false` literal (linhas 31/53).
+Existiu também a branch `e2e/real-payment` (commit `6967f09`) que trocava
+as constantes para `true` na branch inteira — abandonada: base antiga e
+qualquer merge dela ligaria Production.
 
 ## `BOOKING_CHECKOUT_ENABLED`
 
@@ -79,9 +112,13 @@ pagamento falha fechada por conta própria, mesmo padrão de
 `BOOKING_CHECKOUT_ENABLED` — checagem de flag é o primeiro passo no
 handler. Testado diretamente em `route.disabled.test.ts`.
 
-**Relação com o NauticFlow — o que é e não é confirmável a partir do
-ToursFlow**: o comentário no código-fonte (`src/lib/feature-flags.ts`)
-afirma que esta flag "espelha, do lado do ToursFlow, o estado de
+**Relação com o NauticFlow**: em 29/09/2026 o usuário informou que o
+NauticFlow Production está READY em `ede8fb0` com
+`MARKETPLACE_PAYMENTS_MODE=production`, `PAYMENTS_ENABLED=true` e
+`WITHDRAWAL_PAYOUT_ENABLED=false` (informação do usuário, não lida do
+painel do NauticFlow). O texto histórico abaixo registra o estado anterior.
+Antes disso, o comentário no código-fonte afirmava que esta flag
+"espelha, do lado do ToursFlow, o estado de
 `MARKETPLACE_PAYMENTS_ENABLED` no NauticFlow — hoje desligada lá". Essa é
 uma afirmação sobre o estado do **NauticFlow**, um sistema externo — o
 repositório do ToursFlow não tem como confirmar o estado real de

@@ -21,7 +21,7 @@ Categorias: **Pronto/Implementado**, **Implementado mas atrás de flag**,
 | Páginas legais (Termos/Privacidade) | ❌ Não existem | Nenhuma rota `termos`/`privacidade` encontrada em `src/app`. Mencionado como item aberto em `docs/AUDITORIA-PRE-INTEGRACAO.md` (25/08/2026); status de decisão de negócio sobre isso: **NÃO CONFIRMADO**. |
 | SEO | ✅ Pronto | `src/app/sitemap.ts`, `src/app/robots.ts`, `src/lib/seo.ts` (testado), JSON-LD sanitizado contra XSS (`toSafeJsonLdScript`, ver [[Segurança]]). |
 | Loading/erro | 🟡 Parcial | `src/app/error.tsx` e `src/app/not-found.tsx` globais existem. `loading.tsx` dedicado existe em `/passeios` e `/passeios/[destino]/[slug]`, mas **não** em `/`, `/destinos` nem `/destinos/[slug]` — Next usa o comportamento padrão (sem skeleton dedicado) nessas rotas. Não é um bug, mas é uma cobertura desigual que vale registrar. |
-| Responsividade (BookingSelector, seletor de datas) | ✅ Pronto | Validado visualmente em browser real de 320px a 1440px em 22/09/2026 e novamente em 24/09/2026 (trabalho em andamento na branch atual, ver `git log`); `useDateWindowSize()` ajusta 3/4/5/7 chips por breakpoint. 470 testes / 39 arquivos passando na última rodada completa registrada (22/09/2026) — ver nota de staleness em [[Segurança]]. |
+| Responsividade (BookingSelector, seletor de datas) | ✅ Pronto | `useDateWindowSize()` ajusta 3/4/5/7 chips por breakpoint. Validado em emulação DevTools (320px–1440px) e, em 24/09/2026, também validado manualmente em dispositivo físico real pelo usuário (commit `1b6fab5`) — ver [[UX e Responsividade Mobile]] para a investigação completa. 470 testes / 39 arquivos passando na última rodada completa registrada (22/09/2026) — ver nota de staleness em [[Segurança]]. |
 
 ## Realtime
 
@@ -52,17 +52,11 @@ Ver [[Feature Flags]] para o mecanismo exato. Resumo de estado:
   multidestino (commit `af140b8`, ver `git log`). Conteúdo institucional específico (termos,
   privacidade, sobre) não foi auditado item a item nesta rodada — ver nota acima sobre páginas legais.
 
-## Próximos passos registrados na documentação (não inferidos, citados diretamente das fontes)
+## Próximos passos e pendências
 
-- Decisão de negócio para ligar `BOOKING_CHECKOUT_ENABLED` (equipe operacional pronta para
-  acompanhar holds) — `src/lib/feature-flags.ts`.
-- Confirmar `MARKETPLACE_PAYMENTS_ENABLED` ligada em produção no NauticFlow antes de
-  `PAYMENTS_UI_ENABLED = true` — mesmo arquivo.
-- Confirmar configuração de `NEXT_PUBLIC_NAUTICFLOW_SUPABASE_URL`/`_ANON_KEY` na Vercel Produção
-  (ADR-014) — item pendente formal.
-- Decisão de negócio sobre prazos/percentuais de reembolso da política de cancelamento (ADR-016).
-- Fase 4 de segurança (upgrade para Next.js 16) — pendente formal, ver [[Segurança]].
-- CI pipeline para PRs e ambiente de staging — `docs/DEPLOYMENT.md` lista como não implementado.
+Consolidados em [[Riscos, Pendências e Roadmap]] junto com os itens
+pendentes de [[Segurança]] e [[Integração NauticFlow - Plano e Contratos]],
+para evitar três listas parcialmente sobrepostas em notas diferentes.
 
 ## Divergências encontradas nesta rodada
 

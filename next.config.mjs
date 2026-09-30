@@ -1,6 +1,16 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Ambiente/branch do build na Vercel, congelados no bundle (cliente E
+  // servidor recebem o mesmo valor) — única entrada de
+  // `src/lib/feature-flags.ts`. Vêm das variáveis de sistema da Vercel
+  // (`VERCEL_ENV`/`VERCEL_GIT_COMMIT_REF`), nunca de uma env var própria
+  // que alguém possa ligar no painel. Fora da Vercel (local, testes) ficam
+  // vazias → flags desligadas.
+  env: {
+    TOURSFLOW_BUILD_VERCEL_ENV: process.env.VERCEL_ENV ?? '',
+    TOURSFLOW_BUILD_GIT_REF: process.env.VERCEL_GIT_COMMIT_REF ?? '',
+  },
   images: {
     // Host específico do Storage do projeto Supabase do NauticFlow, de onde
     // vêm as signed URLs das fotos dos passeios. Só este host — nunca

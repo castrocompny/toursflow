@@ -7,6 +7,10 @@ Fonte: `docs/DEPLOYMENT.md` (85 linhas) e `docs/ENVIRONMENT.md` (31 linhas).
 - GitHub → Vercel, deploy automático em push para `main` (confirmado
   empiricamente em 28/08/2026 — corrigiu uma suposição anterior de que o
   deploy era manual).
+- A mesma integração GitHub → Vercel também gera um **Preview** automático
+  para push em qualquer branch (não só `main`) — confirmado em 24/09/2026
+  com o commit `1b6fab5` na branch `frontend/mobile-booking-ux`. Ver
+  [[UX e Responsividade Mobile]] para o caso de uso real desse Preview.
 - Sem `vercel.json`/`.vercel/` no repositório.
 - Dois domínios: `toursflow.com.br` e `toursflow.vercel.app`.
 - Sem pipeline de CI para PRs (documentado como não implementado, não

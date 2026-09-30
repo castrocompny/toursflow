@@ -83,6 +83,51 @@ esperada, não como erro (ver [[Segurança]]).
 
 O arquivo original era a nota de boas-vindas padrão do Obsidian
 ("Este é o seu novo Cofre..."), sem conteúdo real do projeto. Foi
-reescrito como o índice/porta de entrada deste cofre, em vez de deixado
-ao lado do conteúdo novo, para evitar duas portas de entrada conflitantes
-no mesmo cofre.
+reescrito como conteúdo real do projeto, mas depois (ver rodada de
+24/09/2026 abaixo) deixou de ser também o índice, para não haver duas
+portas de entrada conflitantes no mesmo cofre.
+
+## Rodada de finalização, 24/09/2026 (commit `1b6fab5` já enviado ao GitHub)
+
+Tarefa somente de documentação — nenhum código, teste, config, feature
+flag, backend, NauticFlow, Supabase ou Vercel foi alterado; nenhum
+commit/push/deploy foi feito nesta rodada. Todas as 11 notas existentes
+foram relidas por completo antes de qualquer alteração, para identificar
+lacunas reais em vez de recriar o cofre.
+
+Lacunas encontradas e resolvidas:
+- **UX e responsividade**: só existia uma linha de tabela em
+  [[Estado Atual do Produto]], sem registrar a investigação completa do
+  relato de overflow em dispositivo físico, a discrepância com a
+  emulação DevTools, nem a validação manual do usuário após o commit
+  `1b6fab5`. Criada [[UX e Responsividade Mobile]]; a linha em
+  [[Estado Atual do Produto]] foi encurtada para apontar para lá em vez
+  de duplicar.
+- **Riscos e pendências / roadmap**: itens pendentes estavam espalhados,
+  parcialmente sobrepostos, em três notas ([[Estado Atual do Produto]],
+  [[Segurança]], [[Integração NauticFlow - Plano e Contratos]]). Criada
+  [[Riscos, Pendências e Roadmap]] como visão única, com links de volta
+  para cada nota-fonte em vez de copiar o texto; a lista duplicada em
+  [[Estado Atual do Produto]] foi removida e substituída por um link.
+- **Índice principal**: não existia uma porta de entrada com nome
+  estável e previsível. Criado `docs/Obsidian/00-INDEX.md` como porta de
+  entrada oficial (mapa do cofre + referência rápida de arquivos
+  importantes do repositório). [[Bem-vindo]] foi encurtado para conter
+  só a metodologia, apontando para `00-INDEX` em vez de manter um
+  segundo mapa do cofre.
+
+Assuntos verificados e **não** duplicados por já terem cobertura
+suficiente em notas existentes: multidestino e conteúdo (em
+[[Estado Atual do Produto]] e [[Visão Geral - ToursFlow vs NauticFlow]]),
+SEO e Realtime (em [[Estado Atual do Produto]] e
+[[Arquitetura e Camada de Dados]]), cancelamento/voucher/WhatsApp (todos
+já em [[Reservas e Pagamentos (Pix)]]).
+
+Sobre o commit `1b6fab5` e o Preview da Vercel: o usuário informou que o
+commit já havia sido enviado ao GitHub e que o Preview automático da
+Vercel para essa branch foi gerado com sucesso, e confirmou manualmente
+em celular físico que a versão nova resolveu o problema visual mobile
+antes observado. Essa validação em dispositivo físico foi registrada tal
+como informada pelo usuário — sem inventar modelo de aparelho, navegador
+ou métricas não verificadas no aparelho real — em
+[[UX e Responsividade Mobile]].

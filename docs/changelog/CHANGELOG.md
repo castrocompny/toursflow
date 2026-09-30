@@ -14,6 +14,33 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-29 — Flags transacionais ligadas só no Preview de `frontend/mobile-booking-ux` (preparação do 1º E2E financeiro)
+
+`BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` deixam de ser `false`
+literal e passam a valer `isTransactionalPreviewBuild(VERCEL_ENV,
+VERCEL_GIT_COMMIT_REF)`: `true` só quando o build é Preview da Vercel **e**
+a branch é `frontend/mobile-booking-ux`. Production, outras branches,
+build local e testes continuam `false` (fail-closed).
+
+- `next.config.mjs`: novo bloco `env` que congela `VERCEL_ENV` /
+  `VERCEL_GIT_COMMIT_REF` do build em `TOURSFLOW_BUILD_VERCEL_ENV` /
+  `TOURSFLOW_BUILD_GIT_REF` — cliente e servidor recebem o mesmo valor.
+  Nenhuma env var própria liga as flags; Production (`VERCEL_ENV=production`)
+  nunca liga sem code change.
+- `src/lib/feature-flags.ts`: `TRANSACTIONAL_PREVIEW_BRANCH`,
+  `isTransactionalPreviewBuild()`, comentários atualizados.
+- `src/lib/feature-flags.test.ts` (novo): Preview da branch → ON;
+  Production (mesmo na branch), outra branch, ambiente vazio → OFF; flags
+  reais `false` no ambiente de teste.
+- Verificado em builds locais simulados: Preview → `onConfirm`/`onPayWithPix`
+  presentes no bundle; Production → `void 0` no cliente e `!1` no servidor.
+- `route.disabled.test.ts` (reserva e pagamento) e `BookingSelector.test.tsx`
+  seguem passando sem alteração (ambiente de teste = flags OFF).
+- Nenhum booking válido, cobrança ou Pix foi criado. NauticFlow, Asaas e
+  Supabase não foram alterados. Production do ToursFlow (`main`) intacta.
+
+---
+
 ## 2026-09-24 — Investigação de overflow horizontal reportado em aparelho físico (branch `frontend/mobile-booking-ux`)
 
 Usuário reportou, num aparelho físico real (não DevTools), overflow
