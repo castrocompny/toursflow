@@ -14,6 +14,47 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-29 — Pix: reconciliação depois da expiração local (achado HIGH do Codex)
+
+Achado do `/codex:adversarial-review --base main`: o countdown local do
+`PixPayment` levava a `phase='expired'` e parava o polling. Um pagamento
+feito perto do fim com webhook atrasado (ou com o relógio do navegador
+adiantado) ficava invisível para o cliente, e o voucher nunca aparecia.
+
+- `src/components/tours/PixPayment.tsx`:
+  - Nova fase `reconciling`. Quando o countdown zera, o QR some, aparece
+    "Verificando pagamento" e o polling continua por 24 × 5 s (2 min),
+    contados desde a entrada na fase, portanto sem depender do relógio.
+  - Depois vem **uma** consulta final. Só `pending` (ou erro de rede)
+    nessa consulta leva a `expired`, e a partir daí não há mais polling.
+  - Status do servidor (`paid`/`failed`/…) sempre vence o estado local.
+    `settledRef` evita `onPaid` duplicado.
+  - O resultado da criação passa pelo mesmo `applyServerView`.
+  - Botão **"Verificar pagamento"** em `reconciling`/`expired`: faz só
+    GET de status, fica desabilitado durante a consulta, e erro de rede
+    não perde o `bookingId`.
+- `src/types/payment.ts`, `docs/PAYMENTS.md`: descrição de `expired`
+  atualizada.
+- `PixPayment.test.tsx`:
+  - 10 testes novos: paid após expiração, reconciling, failed terminal,
+    consulta final (pending/paid/erro), clock skew de +20 min, verificar
+    só GET + anti-spam, bookingId preservado, sem polling após terminal.
+  - Todos falham contra o componente antigo.
+  - Removido o teste que exigia `expired` imediato.
+- "Gerar novo Pix" em `failed`/`error` **não** foi implementado: o código
+  do ToursFlow não permite provar a semântica de uma nova tentativa no
+  NauticFlow. Fica como follow-up.
+- Validações:
+  - `npm test`: 484/485. A única falha é a conhecida do `localStorage`
+    experimental Node/jsdom, em `BookingSelector.booking.test.tsx`, não
+    relacionada a esta mudança.
+  - typecheck, lint e build OK.
+- Nenhuma reserva, cobrança ou Pix real foi criado. Production,
+  NauticFlow e Asaas não foram alterados. O E2E financeiro continua
+  pendente, e a aprovação depende de novo Codex review contra `main`.
+
+---
+
 ## 2026-09-29 — Flags transacionais ligadas só no Preview de `frontend/mobile-booking-ux` (preparação do 1º E2E financeiro)
 
 `BOOKING_CHECKOUT_ENABLED` e `PAYMENTS_UI_ENABLED` deixam de ser `false`

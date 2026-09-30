@@ -27,8 +27,13 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
   [[Reservas e Pagamentos (Pix)]].
 - 1º E2E financeiro real (booking → Pix → pagamento → voucher) ainda
   **pendente** — nenhum booking válido, cobrança ou Pix foi criado.
-- Sem retry de Pix na UI em `error`/`failed`. Ver
-  [[Reservas e Pagamentos (Pix)]].
+- Sem retry de Pix na UI em `error`/`failed` (follow-up: confirmar no
+  NauticFlow a semântica de nova tentativa antes de implementar "Gerar
+  novo Pix"). Ver [[Reservas e Pagamentos (Pix)]].
+- Achado HIGH do Codex (expiração local escondia pagamento tardio):
+  **corrigido** em 29/09/2026 (`reconciling` + consulta final +
+  "Verificar pagamento"). Aprovação depende de novo
+  `/codex:adversarial-review --base main`.
 
 ## Não confirmado nesta rodada (depende de acesso externo, não de código)
 

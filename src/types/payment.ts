@@ -54,8 +54,10 @@ export interface NauticFlowBookingPaymentView {
 
 /**
  * Estado usado só pela UI — nunca finge ser um `PaymentStatus` devolvido
- * pelo NauticFlow. `'expired'` é calculado no cliente comparando
- * `holdExpiresAt`/`pix.expirationDate` com `Date.now()`; `'not_started'`
+ * pelo NauticFlow. `'expired'` é derivado no cliente: o countdown local
+ * (`holdExpiresAt`/`pix.expirationDate` vs `Date.now()`) zerou E a
+ * reconciliação + consulta final do servidor ainda devolveram `pending`
+ * (ver `PixPayment`) — nunca uma falha definitiva; `'not_started'`
  * é antes de qualquer `POST .../payment` ter sido feito.
  */
 export type ClientPaymentPhase = PaymentStatus | 'expired' | 'not_started';

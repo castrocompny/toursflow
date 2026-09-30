@@ -113,11 +113,11 @@ servidor). Não tinha como criar booking (no máximo `DEPARTURE_NOT_FOUND`).
 
 - `PixPayment.tsx`: `POLL_INTERVAL_MS = 5000`. Começa só depois do Pix
   criado (`phase === 'pending'`), para em `paid` (chama `onPaid` →
-  voucher), em qualquer status não-pending (`failed`, `refunded`,
-  `partially_refunded`) e em `expired` (calculado no cliente a partir de
-  `pix.expirationDate ?? holdExpiresAt`). Sem timeout global separado —
-  a expiração é o teto. Erro transitório de polling é ignorado e tenta no
-  próximo tick.
+  voucher) e em qualquer status não-pending do servidor (`failed`,
+  `refunded`, `partially_refunded`). Quando o countdown local zera, **não
+  para mais**: entra em `reconciling` (ver seção "Reconciliação
+  pós-expiração" abaixo). Erro transitório de polling é ignorado e tenta
+  no próximo tick.
 - NauticFlow (`ede8fb0`, defaults do código): poll 40 req/60s por client
   key, 3000 req/60s global. 5 s = 12 req/min por visitante → cabe com
   folga (~3 abas do mesmo IP). Valores reais de env do NauticFlow
@@ -137,5 +137,56 @@ Lacunas conhecidas (não bloqueiam E2E controlado):
   texto de `failed` sugere "gerar um novo Pix", mas o único caminho é
   recarregar, o que perde o `bookingId` em memória (o hold continua no
   NauticFlow até expirar).
-- Pagamento confirmado depois da expiração local não é detectado pela UI
-  (polling já parou).
+- ~~Pagamento confirmado depois da expiração local não é detectado pela UI
+  (polling já parou).~~ **Corrigido em 29/09/2026** — ver abaixo.
+
+### Reconciliação pós-expiração (achado HIGH do Codex, 29/09/2026)
+
+**Achado** (`/codex:adversarial-review --base main`, verdict
+`needs-attention`): "Keep reconciling payment status after the local
+countdown expires". **Causa:** o efeito de expiração do `PixPayment`
+fazia `phase='expired'` com base no relógio do navegador, e isso parava o
+polling. Pagamento feito perto do fim + webhook Asaas → NauticFlow
+atrasado (ou relógio do navegador adiantado) = cliente vê "Pix expirou"
+para sempre, `onPaid` nunca é chamado, voucher nunca aparece.
+
+**Regra nova:** relógio local só decide a expiração **visual** do QR;
+settlement é sempre do servidor.
+
+- Fases: `creating → pending → reconciling → expired`, com `paid` /
+  `failed` / `refunded` / `partially_refunded` vindos do servidor a partir
+  de qualquer uma delas, e `error` (falha ao criar).
+- `pending` → countdown zera → `reconciling`: QR/copia-e-cola escondidos,
+  mensagem "Verificando pagamento… não pague de novo", polling continua.
+- Janela: `RECONCILE_MAX_POLLS = 24` consultas × 5 s = **2 min**, contadas
+  desde a entrada em `reconciling` (não por timestamp → imune a clock
+  skew). O contrato não expõe janela server-side de liquidação; 2 min
+  cobre atraso normal de webhook; 12 req/min ≪ 40/60 s do NauticFlow.
+- Fim da janela → **uma** consulta final (GET). Só se ela ainda for
+  `pending` (ou falhar por rede) → `expired`. Depois disso não há mais
+  polling (sem loop infinito).
+- `expired` = "não confirmado a tempo", não falha definitiva: mantém o
+  botão **"Verificar pagamento"**.
+- **"Verificar pagamento"** (em `reconciling` e `expired`): só
+  `getBookingPaymentStatus(bookingId)` — nunca POST, nunca novo
+  booking/cobrança/Pix. Desabilitado durante a consulta (ref síncrona
+  contra clique repetido); erro de rede mostra mensagem e mantém o
+  `bookingId`.
+- `settledRef`: primeiro estado terminal do servidor vence; respostas
+  atrasadas não sobrescrevem nem chamam `onPaid` duas vezes. A criação
+  também passa por `applyServerView` (se o POST idempotente já devolver
+  `paid`, vai direto ao voucher).
+- `bookingId`: continua em memória no `BookingSelector` (`bookingResult`)
+  durante todo o step `payment-pix` — nenhuma persistência nova.
+- Testes: 10 novos em `PixPayment.test.tsx` (paid após expiração local,
+  reconciling não-terminal, paid vence, failed terminal, consulta final,
+  final paid, final com erro de rede, clock skew +20 min, verificar só GET
+  + anti-spam, bookingId preservado, sem polling após terminal). Todos
+  falham contra o componente antigo. O teste antigo "expira pela detecção
+  local" foi removido — codificava o comportamento inseguro.
+
+**Retry "Gerar novo Pix": NÃO implementado (follow-up).** Uma nova
+tentativa exige nova `Idempotency-Key`; se o NauticFlow aceita criar outra
+cobrança para um booking com tentativa `failed` (ou devolve
+`PAYMENT_ALREADY_ACTIVE`/`HOLD_EXPIRED`) não é provável pelo código do
+ToursFlow, então não foi feito às cegas.

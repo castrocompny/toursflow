@@ -80,7 +80,7 @@ documento).
 | `src/lib/http-guards.ts` | server | Origin/Sec-Fetch-Site, Content-Type, limite real de corpo — extraído de `/api/bookings` (Fase 2) para ser reaproveitado aqui sem duplicar |
 | `src/app/api/bookings/[bookingId]/payment/route.ts` | server | `POST` (criar Pix) e `GET` (status/polling) — únicas rotas do ToursFlow para pagamento |
 | `src/lib/payment-client.ts` | client | `PaymentClient` (interface), `ToursFlowPaymentClient` (real — chama só as rotas acima), `NotImplementedPaymentClient` (mantido) |
-| `src/components/tours/PixPayment.tsx` | client (`'use client'`) | QR/copia-e-cola, countdown, polling, os 5 estados reais + `expired` (derivado) |
+| `src/components/tours/PixPayment.tsx` | client (`'use client'`) | QR/copia-e-cola, countdown, polling, os 5 estados reais + `reconciling`/`expired` (derivados; countdown local nunca decide settlement — ver changelog 2026-09-29) |
 | `src/components/tours/BookingVoucher.tsx` | client | Tela final (reserva confirmada) — comprovante ToursFlow + compartilhamento manual via WhatsApp (ver ADR-017 em DECISIONS.md) |
 | `src/lib/whatsapp-voucher.ts` | puro/testável | Monta a mensagem do comprovante e a URL `wa.me` — só campos públicos, nenhum campo de PII no tipo de entrada |
 | `src/test/fake-payment-client.ts` | teste | Fake em memória — nunca importado por código de produção |
