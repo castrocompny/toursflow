@@ -1,5 +1,5 @@
 import 'server-only';
-import type { NauticFlowBookingPaymentView } from '@/types/payment';
+import type { NauticFlowBookingPaymentView, NauticFlowPaymentAttempt } from '@/types/payment';
 import { PaymentApiError, isKnownPaymentErrorCode } from './payment-errors';
 import { getPaymentErrorMessage } from './payment-error-messages';
 
@@ -15,21 +15,21 @@ import { getPaymentErrorMessage } from './payment-error-messages';
 
 const TIMEOUT_MS = 8000;
 
-interface NauticFlowPaymentSuccessEnvelope {
-  data: NauticFlowBookingPaymentView;
+interface NauticFlowPaymentSuccessEnvelope<T> {
+  data: T;
 }
 
 interface NauticFlowPaymentErrorEnvelope {
   error?: { code?: string };
 }
 
-async function callNauticFlow(
+async function callNauticFlow<T>(
   method: 'GET' | 'POST',
   url: string,
   secret: string,
   headers: Record<string, string>,
   body?: unknown,
-): Promise<NauticFlowBookingPaymentView> {
+): Promise<T> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -79,7 +79,7 @@ async function callNauticFlow(
     throw new PaymentApiError(response.status, code, getPaymentErrorMessage(code));
   }
 
-  const success = responseBody as NauticFlowPaymentSuccessEnvelope | null;
+  const success = responseBody as NauticFlowPaymentSuccessEnvelope<T> | null;
   if (!success?.data) {
     throw new PaymentApiError(503, 'PAYMENT_SERVICE_UNAVAILABLE', 'Resposta inesperada do serviço de pagamento.');
   }
@@ -96,16 +96,20 @@ function requireConfig(): { baseUrl: string; secret: string } {
   return { baseUrl: baseUrl.replace(/\/+$/, ''), secret };
 }
 
-/** `POST /api/marketplace/bookings/{bookingId}/payment` — body sempre `{ paymentMethod: "pix" }`, nunca `amount`. */
+/**
+ * `POST /api/marketplace/bookings/{bookingId}/payment` — body sempre
+ * `{ paymentMethod: "pix" }`, nunca `amount`. Devolve a TENTATIVA, não a
+ * view da reserva (ver `src/types/payment.ts`).
+ */
 export async function createNauticFlowPayment(
   bookingId: string,
   idempotencyKey: string,
   clientKey: string,
-): Promise<NauticFlowBookingPaymentView> {
+): Promise<NauticFlowPaymentAttempt> {
   const { baseUrl, secret } = requireConfig();
   const url = `${baseUrl}/api/marketplace/bookings/${bookingId}/payment`;
 
-  return callNauticFlow(
+  return callNauticFlow<NauticFlowPaymentAttempt>(
     'POST',
     url,
     secret,
@@ -126,7 +130,25 @@ export async function getNauticFlowBookingStatus(
   const { baseUrl, secret } = requireConfig();
   const url = `${baseUrl}/api/marketplace/bookings/${bookingId}`;
 
-  return callNauticFlow('GET', url, secret, {
+  return callNauticFlow<NauticFlowBookingPaymentView>('GET', url, secret, {
     'X-ToursFlow-Client-Key': clientKey,
   });
+}
+
+/**
+ * Junta a tentativa do POST com a view autoritativa do GET feito logo em
+ * seguida. Status/booking/valores vêm sempre do GET; o Pix da tentativa só
+ * entra como fallback quando o GET não trouxe QR (ex.: falha pontual ao
+ * reconsultar o QR no Asaas), o pagamento ainda está `pending` e o hold
+ * ainda vale pelo relógio do servidor — nunca reexibe QR de hold vencido.
+ */
+export function mergePaymentAttemptIntoView(
+  attempt: NauticFlowPaymentAttempt,
+  view: NauticFlowBookingPaymentView,
+  now: number = Date.now(),
+): NauticFlowBookingPaymentView {
+  const payment = view.payment ?? { status: attempt.status, method: attempt.paymentMethod };
+  const holdStillValid = Boolean(view.holdExpiresAt) && new Date(view.holdExpiresAt).getTime() > now;
+  const pix = view.pix ?? (payment.status === 'pending' && holdStillValid ? attempt.pix : undefined);
+  return { ...view, payment, pix };
 }

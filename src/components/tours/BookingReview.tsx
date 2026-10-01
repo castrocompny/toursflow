@@ -4,6 +4,7 @@ import type { Departure } from '@/types';
 import type { CustomerFormValues } from '@/lib/customer-form';
 import { maskCpf, maskEmail, maskPhone } from '@/lib/customer-form';
 import { formatDepartureDateTime, formatPrice, priceTypeLabel } from '@/lib/format';
+import { MARKETPLACE_CANCELLATION_POLICY } from '@/lib/marketplace-cancellation-policy';
 
 interface BookingReviewProps {
   departure: Departure;
@@ -117,13 +118,25 @@ export function BookingReview({
         </button>
       </div>
 
-      {/* Quando `onConfirm` existir de verdade (BOOKING_CHECKOUT_ENABLED
-          ligada), este é o ponto certo para apresentar a política de
-          cancelamento aplicável antes do clique em "Confirmar reserva" —
-          `MARKETPLACE_CANCELLATION_POLICY` (`src/lib/marketplace-cancellation-policy.ts`)
-          ou, já existindo snapshot na reserva, a versão registrada nela.
-          Não implementado agora (nem checkbox de aceite/termo extra — depende
-          de decisão de produto própria) — ver ADR-016 em docs/DECISIONS.md. */}
+      {/* Política de cancelamento do MARKETPLACE (ADR-016), sempre antes do
+          botão "Confirmar reserva" — vem só de `MARKETPLACE_CANCELLATION_POLICY`,
+          nunca de `tour.cancellationPolicy` do operador. Só exibição: nenhum
+          checkbox de aceite (decisão de produto pendente, ADR-016); `id`/`version`
+          ainda não são gravados na reserva (follow-up do snapshot). */}
+      {onConfirm ? (
+        <section
+          aria-labelledby="booking-review-cancellation-policy"
+          className="mt-6 rounded-2xl bg-foam px-4 py-3"
+          data-testid="booking-review-cancellation-policy"
+          data-policy-id={MARKETPLACE_CANCELLATION_POLICY.id}
+          data-policy-version={MARKETPLACE_CANCELLATION_POLICY.version}
+        >
+          <h4 id="booking-review-cancellation-policy" className="text-sm font-semibold">
+            {MARKETPLACE_CANCELLATION_POLICY.title}
+          </h4>
+          <p className="mt-1 text-xs text-ink-muted">{MARKETPLACE_CANCELLATION_POLICY.summary}</p>
+        </section>
+      ) : null}
       {onConfirm ? (
         <button
           type="button"

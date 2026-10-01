@@ -14,6 +14,65 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-09-30 — Pagamento recuperável após falha na criação do Pix + política de cancelamento no checkout
+
+O Codex review `review-muni5eye-qgk5sn` (`--base main`) teve verdict
+`needs-attention`, com 2 achados.
+
+**[high] Falha na criação do Pix prendia o booking.** Antes, um timeout
+ou uma resposta perdida no POST de pagamento levava o `PixPayment` para
+`error`, sem nenhuma ação disponível.
+
+- `PixPayment.tsx` classifica o erro de criação:
+  - **`retry`**: "Tentar gerar Pix novamente", com a MESMA
+    Idempotency-Key. É replay no NauticFlow, sem cobrança nova.
+  - **`verify`**: "Verificar pagamento" (só GET). Reaproveita o Pix
+    ativo ou revela `paid`.
+  - **`fatal`**: só a mensagem.
+- `failed` ganha "Gerar novo Pix" com key NOVA, no mesmo booking.
+  `BookingSelector` remonta o `PixPayment` via `key`. Proibir `failed`
+  de reaproveitar a key segue o contrato do NauticFlow (índice
+  `payments_one_active_per_reservation`).
+- A copy "Tente gerar um novo Pix" só aparece quando a ação existe.
+
+**Contrato corrigido.** O POST do NauticFlow (`ede8fb0`) devolve a
+tentativa (`MarketplacePaymentAttemptDTO`), não a view da reserva.
+
+- A rota `POST /api/bookings/[bookingId]/payment` agora faz POST e
+  depois GET, e devolve a view normalizada.
+- Novos `NauticFlowPaymentAttempt` (em `src/types/payment.ts`) e
+  `mergePaymentAttemptIntoView` (em `src/lib/nauticflow-payments.ts`).
+
+**[medium] Política de cancelamento.** `BookingReview` mostra
+`MARKETPLACE_CANCELLATION_POLICY` (`toursflow-standard` / `2026-09`)
+antes de "Confirmar reserva".
+
+- Sem checkbox: ADR-016 deixa o aceite para decisão de produto.
+- **Pendente:** texto oficial com condições concretas e snapshot
+  `id`/`version` na reserva (follow-up). Isso bloqueia Production, não
+  o E2E interno no Preview, que é protegido por SSO.
+
+**Testes:**
+
+- +6 de integração de pagamento; 5 deles falham contra o código antigo.
+- +3 de rota.
+- +5 de merge.
+- +1 de política na revisão, e asserção com as flags OFF.
+- Mocks de rota passam a usar o formato real do POST.
+- Reconciliação pós-expiração (`0cee5c9`) preservada; os 18 testes do
+  `PixPayment` seguem passando.
+
+**Validações:**
+
+- `npm test`: 499/500. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+Nenhuma reserva, cobrança ou Pix real foi criado. NauticFlow só foi
+lido, nada foi alterado. O E2E financeiro continua pendente.
+
+---
+
 ## 2026-09-29 — Pix: reconciliação depois da expiração local (achado HIGH do Codex)
 
 Achado do `/codex:adversarial-review --base main`: o countdown local do

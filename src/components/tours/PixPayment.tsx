@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PaymentClientError, type PaymentClient } from '@/lib/payment-client';
 import { formatPrice, centsToReais } from '@/lib/format';
 import { formatCountdown, isHoldExpired, msUntilExpiry } from '@/lib/hold-countdown';
+import type { ClientPaymentErrorCode } from '@/lib/payment-error-messages';
 import type { NauticFlowBookingPaymentView, PaymentStatus } from '@/types/payment';
 
 const POLL_INTERVAL_MS = 5000;
@@ -22,6 +23,47 @@ const POLL_INTERVAL_MS = 5000;
  * falha definitiva, só "não confirmado a tempo".
  */
 const RECONCILE_MAX_POLLS = 24;
+
+/**
+ * Falha ao CRIAR o Pix com o booking já criado — o `bookingId` nunca se
+ * perde (vem do `BookingSelector`), então o turista sempre tem um caminho
+ * sem refazer a reserva:
+ * - `retry`: resultado ambíguo/transitório (rede, timeout de 8s do
+ *   servidor, erro do provedor, rate limit). Repetir o POST com a MESMA
+ *   Idempotency-Key é replay no NauticFlow: devolve a mesma tentativa e
+ *   reconcilia a cobrança no Asaas por `externalReference` — se o Pix
+ *   chegou a ser criado e só a resposta se perdeu, é ele que volta.
+ * - `verify`: já existe pagamento ativo, ou a reserva saiu de pending /
+ *   o hold venceu — nunca tenta criar outro; só consulta o status (GET),
+ *   que pode revelar `paid` ou o Pix já ativo.
+ * - `fatal`: nada que o turista consiga resolver nesta tela.
+ */
+type CreateErrorKind = 'retry' | 'verify' | 'fatal';
+
+const RETRY_SAME_KEY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set([
+  'NETWORK_ERROR',
+  'PAYMENT_SERVICE_UNAVAILABLE',
+  'INTERNAL_ERROR',
+  'PAYMENT_PROVIDER_ERROR',
+  'RATE_LIMITED',
+  'CLIENT_IP_UNAVAILABLE',
+  'INVALID_CLIENT_KEY',
+  'UNAUTHORIZED',
+]);
+
+const VERIFY_ONLY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set([
+  'PAYMENT_ALREADY_ACTIVE',
+  'HOLD_EXPIRED',
+  'BOOKING_NOT_PENDING',
+  'BOOKING_NOT_FOUND',
+]);
+
+function classifyCreateError(error: unknown): CreateErrorKind {
+  if (!(error instanceof PaymentClientError)) return 'fatal';
+  if (RETRY_SAME_KEY_CODES.has(error.code)) return 'retry';
+  if (VERIFY_ONLY_CODES.has(error.code)) return 'verify';
+  return 'fatal';
+}
 
 /**
  * `reconciling`: countdown local zerou, mas o servidor ainda não disse
@@ -45,6 +87,13 @@ interface PixPaymentProps {
   idempotencyKey: string;
   paymentClient: PaymentClient;
   onPaid: (view: NauticFlowBookingPaymentView) => void;
+  /**
+   * Nova tentativa depois de `failed` confirmado pelo servidor — o
+   * `BookingSelector` gera uma Idempotency-Key NOVA (contrato do
+   * NauticFlow: `failed` libera o slot de `payments_one_active_per_reservation`,
+   * "retry legítimo") e remonta este componente. Ausente = sem botão.
+   */
+  onNewAttempt?: () => void;
 }
 
 /**
@@ -64,10 +113,14 @@ interface PixPaymentProps {
  * 29/09/2026). `manual_review` foi removido: não é um `PaymentStatus`
  * confirmado no contrato real.
  */
-export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }: PixPaymentProps) {
+export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, onNewAttempt }: PixPaymentProps) {
   const [phase, setPhase] = useState<Phase>('creating');
   const [view, setView] = useState<NauticFlowBookingPaymentView | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [createErrorKind, setCreateErrorKind] = useState<CreateErrorKind>('fatal');
+  // Incrementado por "Tentar gerar Pix novamente" — re-executa o POST com
+  // a MESMA Idempotency-Key (replay), nunca uma nova.
+  const [createRun, setCreateRun] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [checking, setChecking] = useState(false);
   const [checkMessage, setCheckMessage] = useState<string | null>(null);
@@ -78,6 +131,8 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
   // `onPaid` duas vezes.
   const settledRef = useRef(false);
   const checkingRef = useRef(false);
+  // POST em voo — guarda síncrona contra clique repetido em "Tentar gerar Pix novamente".
+  const creatingRef = useRef(false);
   const reconcilePollsRef = useRef(0);
   const finalCheckStartedRef = useRef(false);
   const hasView = view !== null;
@@ -102,6 +157,7 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
     let cancelled = false;
 
     async function create() {
+      creatingRef.current = true;
       try {
         const data = await paymentClient.createPixPayment(bookingId, idempotencyKey);
         if (cancelled) return;
@@ -109,7 +165,10 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
       } catch (error) {
         if (cancelled) return;
         setErrorMessage(error instanceof PaymentClientError ? error.message : 'Pagamento Pix ainda não está disponível.');
+        setCreateErrorKind(classifyCreateError(error));
         setPhase('error');
+      } finally {
+        if (!cancelled) creatingRef.current = false;
       }
     }
 
@@ -118,7 +177,7 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bookingId, idempotencyKey]);
+  }, [bookingId, idempotencyKey, createRun]);
 
   useEffect(() => {
     if (phase !== 'pending' && phase !== 'reconciling') return;
@@ -167,8 +226,14 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
     setChecking(true);
     setCheckMessage(null);
     try {
-      const status = applyServerView(await paymentClient.getBookingPaymentStatus(bookingId));
-      if (status === 'pending') {
+      const updated = await paymentClient.getBookingPaymentStatus(bookingId);
+      const status = applyServerView(updated);
+      if (status === 'pending' && phase === 'error' && updated.pix) {
+        // Pix já ativo para esta reserva (ex.: PAYMENT_ALREADY_ACTIVE, ou a
+        // criação deu certo e só a resposta se perdeu) — reaproveita o
+        // mesmo QR, nunca cria outro.
+        setPhase('pending');
+      } else if (status === 'pending') {
         setCheckMessage('O pagamento ainda não foi confirmado. Se você já pagou, aguarde alguns instantes e verifique de novo.');
       }
     } catch (error) {
@@ -179,6 +244,15 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
       checkingRef.current = false;
       setChecking(false);
     }
+  }
+
+  function handleRetryCreate() {
+    if (phase !== 'error' || creatingRef.current) return;
+    creatingRef.current = true;
+    setErrorMessage(null);
+    setCheckMessage(null);
+    setPhase('creating');
+    setCreateRun((run) => run + 1);
   }
 
   const verifyAction = (
@@ -213,6 +287,15 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
         <p role="alert" className="text-sm text-red-700">
           {errorMessage}
         </p>
+        {createErrorKind === 'retry' ? (
+          <>
+            <p className="mt-2 text-sm text-ink-muted">Sua reserva continua guardada — não é preciso refazê-la.</p>
+            <button type="button" onClick={handleRetryCreate} className="btn-primary mt-4 w-full">
+              Tentar gerar Pix novamente
+            </button>
+          </>
+        ) : null}
+        {createErrorKind === 'verify' ? verifyAction : null}
       </div>
     );
   }
@@ -232,8 +315,13 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid }:
     return (
       <div className="rounded-card border border-ink/10 bg-white p-6">
         <p role="alert" className="text-sm text-red-700">
-          Não foi possível confirmar este pagamento. Tente gerar um novo Pix.
+          Não foi possível confirmar este pagamento.
         </p>
+        {onNewAttempt ? (
+          <button type="button" onClick={onNewAttempt} className="btn-primary mt-4 w-full">
+            Gerar novo Pix
+          </button>
+        ) : null}
       </div>
     );
   }

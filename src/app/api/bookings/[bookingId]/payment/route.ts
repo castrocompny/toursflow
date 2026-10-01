@@ -8,7 +8,7 @@ import {
 } from '@/lib/payment-validation';
 import { getTrustedClientIp } from '@/lib/client-ip';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
-import { createNauticFlowPayment, getNauticFlowBookingStatus } from '@/lib/nauticflow-payments';
+import { createNauticFlowPayment, getNauticFlowBookingStatus, mergePaymentAttemptIntoView } from '@/lib/nauticflow-payments';
 import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, noStoreJson, readBodyWithLimit } from '@/lib/http-guards';
 import { PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
 
@@ -109,8 +109,13 @@ export async function POST(request: Request, { params }: RouteParams) {
     const method = validatePaymentMethod(rawBody);
     if (!method.ok) throw method.error;
 
-    const result = await createNauticFlowPayment(bookingId.data, idempotency.data, clientKey);
-    return noStoreJson({ data: result }, { status: 201 });
+    // O POST do NauticFlow devolve só a tentativa; a view (status, hold,
+    // valores) vem do GET logo em seguida. Se o GET falhar, o erro sobe e o
+    // navegador repete o POST com a MESMA Idempotency-Key — replay seguro,
+    // devolve a mesma tentativa/cobrança, nunca uma nova.
+    const attempt = await createNauticFlowPayment(bookingId.data, idempotency.data, clientKey);
+    const view = await getNauticFlowBookingStatus(bookingId.data, clientKey);
+    return noStoreJson({ data: mergePaymentAttemptIntoView(attempt, view) }, { status: 201 });
   } catch (error) {
     return toErrorResponse(error, '[api/bookings/[bookingId]/payment POST] erro não mapeado');
   }

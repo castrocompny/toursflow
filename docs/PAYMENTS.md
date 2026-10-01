@@ -32,10 +32,35 @@ Authorization: Bearer <TOURSFLOW_API_SECRET>
 X-ToursFlow-Client-Key: <HMAC-SHA256 do IP, calculado server-side>
 ```
 
-Somente leitura, sem `Idempotency-Key`. Os dois endpoints devolvem a
-mesma "view": `bookingId`, `bookingStatus`, `holdExpiresAt`, `quantity`,
-`priceCents`, `totalCents`, `payment: { status, method }` e `pix:
-{ payload, encodedImage?, expirationDate }` quando aplicável.
+Somente leitura, sem `Idempotency-Key`. Devolve a "view" da reserva:
+`bookingId`, `bookingStatus`, `holdExpiresAt`, `quantity`, `priceCents`,
+`totalCents`, `payment: { status, method }` e `pix: { payload,
+encodedImage?, expirationDate }` só enquanto o pagamento está pending E o
+hold ainda vale.
+
+**Correção (30/09/2026, conferido no código do NauticFlow Production
+`ede8fb0`):** o POST **não** devolve a mesma view — devolve a tentativa
+(`{ paymentId, status, paymentMethod, amountCents, currency, pix? }`,
+`MarketplacePaymentAttemptDTO`). Antes, o navegador lia `payment.status`
+(ausente → sempre "pending", inclusive num replay já `paid`) e
+`totalCents` (ausente → preço inválido até o 1º polling). Agora a rota
+POST do ToursFlow faz o POST e, em seguida, o GET, e devolve a view
+normalizada (`mergePaymentAttemptIntoView` em
+`src/lib/nauticflow-payments.ts`): status/valores sempre do GET; Pix da
+tentativa só como fallback com pagamento pending e hold válido pelo
+relógio do servidor.
+
+### Semântica de nova tentativa (contrato NauticFlow `ede8fb0`)
+
+- **Mesma `Idempotency-Key`** → replay: devolve a tentativa existente
+  (antes de checar hold) e reconcilia a cobrança no Asaas por
+  `externalReference` — nunca cobrança duplicada. É o que o botão
+  "Tentar gerar Pix novamente" faz depois de erro ambíguo/transitório.
+- **`Idempotency-Key` nova** → só cria outra tentativa se nenhuma estiver
+  `pending`/`paid` (índice único `payments_one_active_per_reservation`);
+  senão `PAYMENT_ALREADY_ACTIVE`. Depois de `failed` é "retry legítimo"
+  (comentário da migration 0052) — é o que "Gerar novo Pix" faz. Hold
+  vencido → `HOLD_EXPIRED`, sem cobrança.
 
 **Estados confirmados de `payment.status`:** `pending`, `paid`, `failed`,
 `refunded`, `partially_refunded`. `manual_review` **não é** um status
@@ -167,6 +192,18 @@ primeiro. Também `false` hoje, com o mesmo tipo de trava server-side em
 
 `GET` (polling) nunca precisa de `Idempotency-Key` — é leitura pura,
 nunca cria nada.
+
+Recuperação de falha na criação do Pix (`PixPayment`, 30/09/2026): o
+`bookingId` nunca se perde (estado do `BookingSelector`). Erro
+ambíguo/transitório (`NETWORK_ERROR`, `PAYMENT_SERVICE_UNAVAILABLE`,
+`INTERNAL_ERROR`, `PAYMENT_PROVIDER_ERROR`, `RATE_LIMITED`,
+`CLIENT_IP_UNAVAILABLE`, `INVALID_CLIENT_KEY`, `UNAUTHORIZED`) →
+"Tentar gerar Pix novamente" com a **mesma** key. `PAYMENT_ALREADY_ACTIVE`
+/ `HOLD_EXPIRED` / `BOOKING_NOT_PENDING` / `BOOKING_NOT_FOUND` → só
+"Verificar pagamento" (GET), que reaproveita um Pix ativo ou revela
+`paid`. Demais códigos → só a mensagem. `failed` confirmado pelo
+servidor → "Gerar novo Pix" com key **nova** (`BookingSelector` remonta
+o `PixPayment` com `key={paymentIdempotencyKey}`).
 
 ## Segurança
 

@@ -27,9 +27,16 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
   [[Reservas e Pagamentos (Pix)]].
 - 1º E2E financeiro real (booking → Pix → pagamento → voucher) ainda
   **pendente** — nenhum booking válido, cobrança ou Pix foi criado.
-- Sem retry de Pix na UI em `error`/`failed` (follow-up: confirmar no
-  NauticFlow a semântica de nova tentativa antes de implementar "Gerar
-  novo Pix"). Ver [[Reservas e Pagamentos (Pix)]].
+- ~~Sem retry de Pix na UI em `error`/`failed`~~ — **resolvido em
+  30/09/2026** (retry com mesma key, "Verificar pagamento", "Gerar novo
+  Pix" após `failed` com key nova). Ver [[Reservas e Pagamentos (Pix)]].
+- **Política de cancelamento sem condições concretas**: exibida na
+  revisão desde 30/09/2026, mas o texto oficial (ADR-016) e o snapshot
+  `id`/`version` na reserva continuam pendentes — bloqueiam Production,
+  não o E2E interno no Preview (protegido por SSO).
+- CPF é opcional no formulário, mas o NauticFlow exige CPF/CNPJ válido
+  para gerar Pix (`CUSTOMER_DOCUMENT_REQUIRED`, não recuperável na tela
+  do Pix) — no E2E, preencher CPF.
 - Achado HIGH do Codex (expiração local escondia pagamento tardio):
   **corrigido** em 29/09/2026 (`reconciling` + consulta final +
   "Verificar pagamento"). Aprovação depende de novo

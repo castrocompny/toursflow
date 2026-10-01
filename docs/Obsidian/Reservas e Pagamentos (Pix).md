@@ -190,3 +190,57 @@ tentativa exige nova `Idempotency-Key`; se o NauticFlow aceita criar outra
 cobrança para um booking com tentativa `failed` (ou devolve
 `PAYMENT_ALREADY_ACTIVE`/`HOLD_EXPIRED`) não é provável pelo código do
 ToursFlow, então não foi feito às cegas.
+
+### Booking preso por falha na criação do Pix + política no checkout (Codex, 30/09/2026)
+
+Review `review-muni5eye-qgk5sn` (`--base main`, `needs-attention`):
+
+- **[high] Recuperar falha ambígua ao criar o Pix**
+  (`src/lib/feature-flags.ts:83`). Se o NauticFlow cria o Pix mas a
+  resposta se perde ou estoura o timeout de 8s do ToursFlow,
+  `PixPayment` caía em `error`. Essa tela não tinha verificar nem
+  retry, e o polling não roda em `error`. Recarregar perde `bookingId`
+  e key.
+  - **Resolvido:**
+    - "Tentar gerar Pix novamente" para erros ambíguos/transitórios. Usa
+      a MESMA key, então o NauticFlow faz replay da tentativa e
+      reconcilia a cobrança, sem cobrança nova.
+    - "Verificar pagamento" (só GET) para `PAYMENT_ALREADY_ACTIVE`,
+      `HOLD_EXPIRED`, `BOOKING_NOT_PENDING` e `BOOKING_NOT_FOUND`.
+      Reaproveita o Pix ativo ou revela `paid`.
+    - "Gerar novo Pix" depois de `failed`, com key NOVA, no mesmo
+      booking.
+    - Guardas síncronas contra clique repetido.
+    - Detalhe das regras em `docs/PAYMENTS.md`.
+- **Achado colateral (contrato):** o POST do NauticFlow devolve a
+  *tentativa*, não a view. A rota POST do ToursFlow agora faz POST e
+  depois GET e devolve a view normalizada (`mergePaymentAttemptIntoView`).
+- **[medium] Política de cancelamento antes da confirmação**
+  (`src/lib/feature-flags.ts:59`).
+  - **Parcialmente resolvido:**
+    - `BookingReview` mostra `MARKETPLACE_CANCELLATION_POLICY`
+      (`toursflow-standard`, versão `2026-09`, título + summary) logo
+      antes de "Confirmar reserva", só quando o botão existe.
+    - Sem checkbox: ADR-016 deixa o aceite para decisão de produto.
+  - **Continua pendente (decisão de negócio, não código):**
+    - O `summary` atual não tem condições concretas. ADR-016 lista o
+      que a versão oficial precisa cobrir.
+    - Snapshot `id`/`version` na reserva: não implementado (exige
+      NauticFlow/banco), é follow-up.
+  - **Mitigação do E2E:** o Preview é protegido por Vercel SSO, então é
+    um fluxo interno autenticado, e Production continua OFF.
+- **Testes:**
+  - 6 de integração em `BookingSelector.payment.test.tsx`:
+    - retry 503 com a mesma key até o voucher;
+    - rede + clique repetido;
+    - `PAYMENT_ALREADY_ACTIVE` reaproveitando o Pix;
+    - `HOLD_EXPIRED` só com GET;
+    - erro fatal sem ações;
+    - `failed` → key nova.
+
+    5 deles falham contra o código antigo.
+  - 3 de rota: POST+GET normalizado, replay `paid`, GET pós-POST falhando.
+  - 5 de `mergePaymentAttemptIntoView`.
+  - 1 de política na revisão, e asserção de que ela fica oculta com as
+    flags OFF.
+

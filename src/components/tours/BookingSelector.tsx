@@ -25,6 +25,7 @@ import {
 } from '@/lib/booking-selection';
 import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
 import {
+  createIdempotencyKey,
   idempotencyFingerprint,
   resolveIdempotencyKey,
   resolvePaymentIdempotencyKey,
@@ -444,9 +445,15 @@ export function BookingSelector({
   if (step === 'payment-pix' && bookingResult && paymentIdempotencyKey) {
     return (
       <PixPayment
+        // Key nova = tentativa nova: remonta o componente do zero (fase,
+        // polling, refs) em vez de herdar o estado `failed` da anterior.
+        key={paymentIdempotencyKey}
         bookingId={bookingResult.bookingId}
         idempotencyKey={paymentIdempotencyKey}
         paymentClient={paymentClient}
+        // Só depois de `failed` confirmado pelo servidor — mesmo booking,
+        // Idempotency-Key NOVA (contrato do NauticFlow para retry legítimo).
+        onNewAttempt={() => setPaymentIdempotencyKey(createIdempotencyKey())}
         onPaid={(data) => {
           setPaymentResult(data);
           // Sucesso definitivo: uma eventual nova tentativa de pagamento

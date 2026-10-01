@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PaymentApiError } from '@/lib/payment-errors';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
-import type { NauticFlowBookingPaymentView } from '@/types/payment';
+import type { NauticFlowBookingPaymentView, NauticFlowPaymentAttempt } from '@/types/payment';
 
-vi.mock('@/lib/nauticflow-payments', () => ({
+// Só as chamadas de rede são mockadas; `mergePaymentAttemptIntoView` é pura e roda de verdade.
+vi.mock('@/lib/nauticflow-payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/nauticflow-payments')>()),
   createNauticFlowPayment: vi.fn(),
   getNauticFlowBookingStatus: vi.fn(),
 }));
@@ -34,6 +36,21 @@ const successView: NauticFlowBookingPaymentView = {
   payment: { status: 'pending', method: 'pix' },
   pix: { payload: 'codigo-pix', expirationDate: '2026-09-01T12:15:00Z' },
 };
+
+/** Formato REAL do POST do NauticFlow (`MarketplacePaymentAttemptDTO`) — não é a view. */
+const successAttempt: NauticFlowPaymentAttempt = {
+  paymentId: 'pay-1',
+  status: 'pending',
+  paymentMethod: 'pix',
+  amountCents: 15000,
+  currency: 'BRL',
+  pix: { payload: 'codigo-pix', expirationDate: '2026-09-01T12:15:00Z' },
+};
+
+function mockCreateSuccess() {
+  vi.mocked(createNauticFlowPayment).mockResolvedValue(successAttempt);
+  vi.mocked(getNauticFlowBookingStatus).mockResolvedValue(successView);
+}
 
 function makePostRequest(body: unknown = { paymentMethod: 'pix' }, headers: Record<string, string> = {}) {
   return new Request(`https://toursflow.com.br/api/bookings/${BOOKING_ID}/payment`, {
@@ -73,7 +90,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   });
 
   it('cria Pix corretamente: chama o client server-only com bookingId/idempotencyKey/clientKey, devolve 201', async () => {
-    vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
+    mockCreateSuccess();
 
     const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
@@ -89,8 +106,49 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
     expect(sentClientKey).toBe(createToursFlowClientKey(TEST_IP)); // HMAC real, calculado server-side
   });
 
+  it('POST do NauticFlow devolve só a tentativa: a rota completa com o GET autoritativo e devolve a view', async () => {
+    mockCreateSuccess();
+
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
+    const body = await res.json();
+
+    expect(getNauticFlowBookingStatus).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(getNauticFlowBookingStatus).mock.calls[0]).toEqual([BOOKING_ID, createToursFlowClientKey(TEST_IP)]);
+    expect(body.data.totalCents).toBe(15000);
+    expect(body.data.holdExpiresAt).toBe('2026-09-01T12:15:00Z');
+    expect(body.data.payment).toEqual({ status: 'pending', method: 'pix' });
+  });
+
+  it('replay devolvendo paid: o status do GET chega ao navegador (nunca vira pending)', async () => {
+    vi.mocked(createNauticFlowPayment).mockResolvedValue({ ...successAttempt, status: 'paid', pix: undefined });
+    vi.mocked(getNauticFlowBookingStatus).mockResolvedValue({
+      ...successView,
+      bookingStatus: 'confirmada',
+      payment: { status: 'paid', method: 'pix' },
+      pix: undefined,
+    });
+
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
+    const body = await res.json();
+
+    expect(body.data.payment.status).toBe('paid');
+    expect(body.data.pix).toBeUndefined();
+  });
+
+  it('GET pós-POST falha: erro sobe (o navegador repete o POST com a mesma key — replay)', async () => {
+    vi.mocked(createNauticFlowPayment).mockResolvedValue(successAttempt);
+    vi.mocked(getNauticFlowBookingStatus).mockRejectedValue(
+      new PaymentApiError(503, 'PAYMENT_SERVICE_UNAVAILABLE', 'Não foi possível se comunicar.'),
+    );
+
+    const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
+
+    expect(res.status).toBe(503);
+    expect((await res.json()).error.code).toBe('PAYMENT_SERVICE_UNAVAILABLE');
+  });
+
   it('IGNORA X-ToursFlow-Client-Key enviado pelo navegador — sempre recalcula server-side', async () => {
-    vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
+    mockCreateSuccess();
 
     const forjada = 'f'.repeat(64);
     await POST(makePostRequest({ paymentMethod: 'pix' }, { 'x-toursflow-client-key': forjada }), {
@@ -103,7 +161,7 @@ describe('POST /api/bookings/[bookingId]/payment', () => {
   });
 
   it('nunca aceita amount no corpo — mesmo se o cliente mandar, não é repassado', async () => {
-    vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
+    mockCreateSuccess();
 
     await POST(makePostRequest({ paymentMethod: 'pix', amount: 999999 }), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
 
@@ -319,7 +377,7 @@ describe('Cache-Control (achado de auditoria corrigido, MEDIUM-2): nunca public/
   }
 
   it('sucesso (201, criação de Pix)', async () => {
-    vi.mocked(createNauticFlowPayment).mockResolvedValue(successView);
+    mockCreateSuccess();
     const res = await POST(makePostRequest(), { params: Promise.resolve({ bookingId: BOOKING_ID }) });
     assertNoStore(res);
   });

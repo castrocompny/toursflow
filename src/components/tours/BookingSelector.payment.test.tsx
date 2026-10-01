@@ -177,4 +177,147 @@ describe('BookingSelector — integração do fluxo de pagamento (PAYMENTS_UI_EN
     // Nunca recriado no polling: um único POST de criação durante todo o fluxo.
     expect(paymentPostCalls(fetchSpy)).toHaveLength(1);
   });
+
+  /**
+   * Codex review (30/09/2026, HIGH): booking criado + falha ao criar o Pix
+   * não pode deixar o turista preso. Cada resposta do POST/GET de
+   * pagamento é programada em fila; o resto segue `makeRoutedFetch`.
+   */
+  function makeScriptedFetch(script: { post?: Array<() => unknown>; get?: Array<() => unknown> }) {
+    const posts = [...(script.post ?? [])];
+    const gets = [...(script.get ?? [])];
+    const base = makeRoutedFetch();
+    return vi.fn(async (url: string, init?: any) => {
+      const method = init?.method ?? 'GET';
+      if (url === `/api/bookings/${BOOKING_ID}/payment` && method === 'POST' && posts.length) return posts.shift()!();
+      if (url === `/api/bookings/${BOOKING_ID}/payment` && method === 'GET' && gets.length) return gets.shift()!();
+      return base(url, init);
+    });
+  }
+
+  const ok = (data: unknown, status = 200) => () => ({ ok: true, status, json: async () => ({ data }) });
+  const fail = (status: number, code: string) => () => ({ ok: false, status, json: async () => ({ error: { code } }) });
+  const networkDown = () => () => Promise.reject(new TypeError('Failed to fetch'));
+
+  function bookingPostCalls(fetchSpy: ReturnType<typeof vi.fn>) {
+    return fetchSpy.mock.calls.filter(([url, init]) => url === '/api/bookings' && init?.method === 'POST');
+  }
+  function paymentCalls(fetchSpy: ReturnType<typeof vi.fn>, method: 'POST' | 'GET') {
+    return fetchSpy.mock.calls.filter(
+      ([url, init]) => url === `/api/bookings/${BOOKING_ID}/payment` && (init?.method ?? 'GET') === method,
+    );
+  }
+
+  async function reachPixStep(fetchSpy: ReturnType<typeof vi.fn>) {
+    vi.stubGlobal('fetch', fetchSpy);
+    render(<BookingSelector departures={[available]} />);
+    fillAndReview();
+    fireEvent.click(screen.getByRole('button', { name: /confirmar reserva/i }));
+    await flush();
+    fireEvent.click(screen.getByRole('button', { name: /pagar com pix/i }));
+    await flush();
+  }
+
+  it('POST do Pix falha (503 ambíguo): retry reaproveita bookingId e a MESMA key, sem novo booking, e segue até o voucher', async () => {
+    const fetchSpy = makeScriptedFetch({ post: [fail(503, 'PAYMENT_SERVICE_UNAVAILABLE')] });
+    await reachPixStep(fetchSpy);
+
+    expect(screen.getByRole('alert').textContent).toMatch(/indisponível/i);
+    expect(screen.getByText(/sua reserva continua guardada/i)).toBeTruthy();
+    const firstKey = paymentCalls(fetchSpy, 'POST')[0][1].headers['Idempotency-Key'];
+
+    fireEvent.click(screen.getByRole('button', { name: /tentar gerar pix novamente/i }));
+    await flush();
+
+    const posts = paymentCalls(fetchSpy, 'POST');
+    expect(posts).toHaveLength(2);
+    expect(posts[1][0]).toBe(`/api/bookings/${BOOKING_ID}/payment`);
+    expect(posts[1][1].headers['Idempotency-Key']).toBe(firstKey); // replay, nunca cobrança nova
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+    expect(screen.getByText(/pague com pix/i)).toBeTruthy();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+  });
+
+  it('erro de rede na criação pode ser tentado de novo; clique repetido não duplica o POST', async () => {
+    const fetchSpy = makeScriptedFetch({ post: [networkDown()] });
+    await reachPixStep(fetchSpy);
+
+    const retry = screen.getByRole('button', { name: /tentar gerar pix novamente/i });
+    await act(async () => {
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+      fireEvent.click(retry);
+    });
+    await flush();
+
+    expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(2); // original + UM retry
+    expect(screen.getByText(/pague com pix/i)).toBeTruthy();
+  });
+
+  it('PAYMENT_ALREADY_ACTIVE: não tenta criar outro; "Verificar pagamento" (GET) reaproveita o Pix ativo', async () => {
+    const fetchSpy = makeScriptedFetch({ post: [fail(409, 'PAYMENT_ALREADY_ACTIVE')], get: [ok(paymentView('pending'))] });
+    await reachPixStep(fetchSpy);
+
+    expect(screen.getByRole('alert').textContent).toMatch(/já existe um pagamento em andamento/i);
+    expect(screen.queryByRole('button', { name: /tentar gerar pix novamente/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /verificar pagamento/i }));
+    await flush();
+
+    expect(screen.getByTestId('pix-copy-paste').textContent).toBe('codigo-pix-teste');
+    expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(1);
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+  });
+
+  it('HOLD_EXPIRED: sem retry de criação; "Verificar pagamento" só faz GET e nunca cria cobrança', async () => {
+    const pendingNoPix = { ...paymentView('pending'), pix: undefined };
+    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'HOLD_EXPIRED')], get: [ok(pendingNoPix)] });
+    await reachPixStep(fetchSpy);
+
+    expect(screen.getByRole('alert').textContent).toMatch(/tempo da sua reserva expirou/i);
+    expect(screen.queryByRole('button', { name: /tentar gerar pix novamente/i })).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: /verificar pagamento/i }));
+    await flush();
+
+    expect(paymentCalls(fetchSpy, 'GET')).toHaveLength(1);
+    expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(1);
+    expect(screen.getByRole('alert').textContent).toMatch(/tempo da sua reserva expirou/i);
+  });
+
+  it('erro não recuperável (CUSTOMER_DOCUMENT_REQUIRED): só a mensagem, nenhuma ação que crie algo', async () => {
+    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'CUSTOMER_DOCUMENT_REQUIRED')] });
+    await reachPixStep(fetchSpy);
+
+    expect(screen.getByRole('alert').textContent).toMatch(/cpf/i);
+    expect(screen.queryByRole('button', { name: /tentar gerar pix novamente/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /verificar pagamento/i })).toBeNull();
+  });
+
+  it('failed confirmado pelo servidor: "Gerar novo Pix" usa o mesmo booking com Idempotency-Key NOVA', async () => {
+    const failedView = { ...paymentView('pending'), payment: { status: 'failed', method: 'pix' }, pix: undefined };
+    const fetchSpy = makeScriptedFetch({ get: [ok(failedView)] });
+    await reachPixStep(fetchSpy);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    expect(screen.getByText(/não foi possível confirmar este pagamento/i)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /gerar novo pix/i }));
+    await flush();
+
+    const posts = paymentCalls(fetchSpy, 'POST');
+    expect(posts).toHaveLength(2);
+    expect(posts[1][1].headers['Idempotency-Key']).toMatch(UUID_RE);
+    expect(posts[1][1].headers['Idempotency-Key']).not.toBe(posts[0][1].headers['Idempotency-Key']);
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+    expect(screen.getByText(/pague com pix/i)).toBeTruthy();
+  });
 });
+

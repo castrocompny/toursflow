@@ -618,6 +618,8 @@ describe('BookingSelector', () => {
       expect(screen.queryByRole('button', { name: /confirmar reserva/i })).toBeNull();
       expect(screen.getByText(/reserva online chega em breve/i)).toBeTruthy();
       expect(screen.queryByText(/fale com o operador/i)).toBeNull();
+      // Bloco da política só acompanha um "Confirmar reserva" funcional (flags reais OFF aqui).
+      expect(screen.queryByTestId('booking-review-cancellation-policy')).toBeNull();
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 

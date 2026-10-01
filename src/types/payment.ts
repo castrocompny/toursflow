@@ -15,8 +15,19 @@
  *            X-ToursFlow-Client-Key: <hmac>
  *   Somente leitura, sem Idempotency-Key.
  *
- * Os dois devolvem a mesma "view" (booking + payment + pix opcional) —
- * `NauticFlowBookingPaymentView` abaixo.
+ * ATENÇÃO (conferido no código do NauticFlow Production `ede8fb0`,
+ * 30/09/2026): os dois NÃO devolvem o mesmo formato. O POST devolve a
+ * TENTATIVA (`NauticFlowPaymentAttempt`, status/pix no topo); só o GET
+ * devolve a "view" da reserva (`NauticFlowBookingPaymentView`). A rota do
+ * ToursFlow (`/api/bookings/[bookingId]/payment` POST) junta os dois e
+ * devolve sempre a view ao navegador — ver `mergePaymentAttemptIntoView`.
+ *
+ * Replay do POST com a MESMA Idempotency-Key devolve a tentativa já
+ * existente (antes de qualquer checagem de hold) e reconcilia a cobrança
+ * no Asaas por `externalReference` — nunca cria cobrança duplicada. Uma
+ * Idempotency-Key NOVA só cria outra tentativa se nenhuma estiver
+ * `pending`/`paid` (índice único `payments_one_active_per_reservation`),
+ * senão `PAYMENT_ALREADY_ACTIVE`; depois de `failed` é "retry legítimo".
  */
 
 /** Estados confirmados do payment endpoint — NUNCA acrescentar um valor não confirmado aqui (ver `ClientPaymentPhase` para estado derivado só na UI). */
@@ -38,7 +49,18 @@ export interface NauticFlowPaymentInfo {
   method: PaymentMethod;
 }
 
-/** "View" devolvida tanto por `POST .../payment` quanto por `GET .../bookings/{id}`. */
+/** Resposta real do `POST .../payment` do NauticFlow (`MarketplacePaymentAttemptDTO`). */
+export interface NauticFlowPaymentAttempt {
+  paymentId: string;
+  status: PaymentStatus;
+  paymentMethod: PaymentMethod;
+  amountCents: number;
+  currency: 'BRL';
+  /** Só quando a cobrança Pix foi criada/reconciliada e ainda está pending. */
+  pix?: NauticFlowPixData;
+}
+
+/** "View" devolvida por `GET .../bookings/{id}` — e pela rota POST do ToursFlow, já normalizada. */
 export interface NauticFlowBookingPaymentView {
   bookingId: string;
   bookingStatus: string;

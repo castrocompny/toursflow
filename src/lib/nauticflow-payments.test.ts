@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PaymentApiError } from './payment-errors';
 import { getPaymentErrorMessage } from './payment-error-messages';
-import { createNauticFlowPayment, getNauticFlowBookingStatus } from './nauticflow-payments';
+import { createNauticFlowPayment, getNauticFlowBookingStatus, mergePaymentAttemptIntoView } from './nauticflow-payments';
+import type { NauticFlowBookingPaymentView, NauticFlowPaymentAttempt } from '@/types/payment';
 
 const BOOKING_ID = '9c858901-8a57-4791-81fe-4c455b099bc9';
 const IDEMPOTENCY_KEY = 'b1f4a6c2-2222-4444-8888-0123456789ab';
@@ -47,7 +48,7 @@ describe('nauticflow-payments', () => {
         capturedUrl = String(url);
         capturedInit = init;
         return jsonResponse(
-          { data: { bookingId: BOOKING_ID, bookingStatus: 'pending', holdExpiresAt: '2026-09-01T12:15:00Z', quantity: 1, priceCents: 15000, totalCents: 15000, payment: { status: 'pending', method: 'pix' } } },
+          { data: { paymentId: 'pay-1', status: 'pending', paymentMethod: 'pix', amountCents: 15000, currency: 'BRL' } },
           { status: 201 },
         );
       }),
@@ -61,7 +62,7 @@ describe('nauticflow-payments', () => {
     expect(headers['Idempotency-Key']).toBe(IDEMPOTENCY_KEY);
     expect(headers['X-ToursFlow-Client-Key']).toBe(CLIENT_KEY);
     expect(JSON.parse(String(capturedInit.body))).toEqual({ paymentMethod: 'pix' });
-    expect(result.bookingId).toBe(BOOKING_ID);
+    expect(result.paymentId).toBe('pay-1');
     expect(JSON.stringify(result)).not.toContain('segredo-de-teste-nao-real');
   });
 
@@ -147,3 +148,49 @@ describe('nauticflow-payments', () => {
     }
   });
 });
+
+describe('mergePaymentAttemptIntoView', () => {
+  const NOW = new Date('2026-09-01T12:00:00Z').getTime();
+  const attempt: NauticFlowPaymentAttempt = {
+    paymentId: 'pay-1',
+    status: 'pending',
+    paymentMethod: 'pix',
+    amountCents: 15000,
+    currency: 'BRL',
+    pix: { payload: 'pix-da-tentativa', expirationDate: '2026-09-01T12:15:00Z' },
+  };
+  const view: NauticFlowBookingPaymentView = {
+    bookingId: 'b-1',
+    bookingStatus: 'pendente',
+    holdExpiresAt: '2026-09-01T12:15:00Z',
+    quantity: 1,
+    priceCents: 15000,
+    totalCents: 15000,
+    payment: { status: 'pending', method: 'pix' },
+  };
+
+  it('status/valores vêm sempre do GET', () => {
+    const merged = mergePaymentAttemptIntoView({ ...attempt, status: 'pending' }, { ...view, payment: { status: 'paid', method: 'pix' } }, NOW);
+    expect(merged.payment?.status).toBe('paid');
+    expect(merged.totalCents).toBe(15000);
+  });
+
+  it('Pix do GET tem prioridade sobre o da tentativa', () => {
+    const merged = mergePaymentAttemptIntoView(attempt, { ...view, pix: { payload: 'pix-do-get', expirationDate: '2026-09-01T12:15:00Z' } }, NOW);
+    expect(merged.pix?.payload).toBe('pix-do-get');
+  });
+
+  it('GET sem QR, pending e hold válido: usa o Pix da tentativa', () => {
+    expect(mergePaymentAttemptIntoView(attempt, view, NOW).pix?.payload).toBe('pix-da-tentativa');
+  });
+
+  it('nunca reexibe o Pix da tentativa com hold vencido ou pagamento fora de pending', () => {
+    expect(mergePaymentAttemptIntoView(attempt, view, new Date('2026-09-01T12:16:00Z').getTime()).pix).toBeUndefined();
+    expect(mergePaymentAttemptIntoView(attempt, { ...view, payment: { status: 'failed', method: 'pix' } }, NOW).pix).toBeUndefined();
+  });
+
+  it('GET ainda sem payment: usa o status da tentativa', () => {
+    expect(mergePaymentAttemptIntoView(attempt, { ...view, payment: null }, NOW).payment).toEqual({ status: 'pending', method: 'pix' });
+  });
+});
+

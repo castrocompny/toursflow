@@ -303,4 +303,25 @@ describe('BookingSelector — confirmação de reserva (BOOKING_CHECKOUT_ENABLED
     expect(screen.getByText(/pagamento online será disponibilizado em breve/i)).toBeTruthy();
     expect(screen.queryByText(/fale com o operador/i)).toBeNull();
   });
+
+  it('política de cancelamento do marketplace aparece na revisão ANTES de "Confirmar reserva", da fonte central, e o botão segue funcional', async () => {
+    const { MARKETPLACE_CANCELLATION_POLICY } = await import('@/lib/marketplace-cancellation-policy');
+    const fetchSpy = mockFetchResponse({ ok: true, status: 201, body: { data: successData } });
+    vi.stubGlobal('fetch', fetchSpy);
+
+    goToReview();
+
+    const policy = screen.getByTestId('booking-review-cancellation-policy');
+    expect(within(policy).getByRole('heading').textContent).toBe(MARKETPLACE_CANCELLATION_POLICY.title);
+    expect(policy.textContent).toContain(MARKETPLACE_CANCELLATION_POLICY.summary);
+    expect(policy.getAttribute('data-policy-id')).toBe(MARKETPLACE_CANCELLATION_POLICY.id);
+    expect(policy.getAttribute('data-policy-version')).toBe(MARKETPLACE_CANCELLATION_POLICY.version);
+
+    const confirm = screen.getByRole('button', { name: /confirmar reserva/i });
+    expect(policy.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+
+    await confirmAndWaitFor(/sua vaga está garantida/i);
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
 });
+

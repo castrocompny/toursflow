@@ -12,7 +12,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * headers corretos, não chega ao NauticFlow.
  */
 
-vi.mock('@/lib/nauticflow-payments', () => ({
+// Só as chamadas de rede são mockadas; `mergePaymentAttemptIntoView` é pura e roda de verdade.
+vi.mock('@/lib/nauticflow-payments', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/lib/nauticflow-payments')>()),
   createNauticFlowPayment: vi.fn(),
   getNauticFlowBookingStatus: vi.fn(),
 }));
