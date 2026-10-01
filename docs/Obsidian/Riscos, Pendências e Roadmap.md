@@ -21,7 +21,8 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
 
 ## Bloqueio do 1º E2E financeiro (29/09/2026)
 
-- **TOURSFLOW_AUTH=FAILED**: Preview → NauticFlow Production responde
+- **TOURSFLOW_AUTH=FAILED** (repetido em 01/10/2026 com o Preview `fcc6321`,
+  ainda 401 depois da rotação informada): Preview → NauticFlow Production responde
   401. Alinhar `TOURSFLOW_API_SECRET` (escopo Preview no ToursFlow) com o
   NauticFlow Production e redeployar o Preview. Ver
   [[Reservas e Pagamentos (Pix)]].

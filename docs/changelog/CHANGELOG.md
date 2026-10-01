@@ -71,6 +71,18 @@ antes de "Confirmar reserva".
 Nenhuma reserva, cobrança ou Pix real foi criado. NauticFlow só foi
 lido, nada foi alterado. O E2E financeiro continua pendente.
 
+**Deploy e auth (01/10/2026):**
+
+- O push de `fcc6321` não gerou deployment pelo webhook do Git. O
+  Preview foi criado via API da Vercel a partir do mesmo commit da
+  branch: `dpl_2uA7WGZAgynQftW4zjbTzKDie29q`, READY.
+- Bundles verificados:
+  - Preview: flags ON e código novo presente.
+  - Production (`8acc69f`): flags OFF.
+- Sonda de auth: **HTTP 401 `UNAUTHORIZED`**, logo
+  `TOURSFLOW_AUTH=FAILED`. É preciso conferir `TOURSFLOW_API_SECRET` no
+  escopo Preview do projeto ToursFlow.
+
 ---
 
 ## 2026-09-29 — Pix: reconciliação depois da expiração local (achado HIGH do Codex)

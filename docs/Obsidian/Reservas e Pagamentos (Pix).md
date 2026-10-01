@@ -244,3 +244,23 @@ Review `review-muni5eye-qgk5sn` (`--base main`, `needs-attention`):
   - 1 de política na revisão, e asserção de que ela fica oculta com as
     flags OFF.
 
+**Sonda de auth repetida em 01/10/2026: `TOURSFLOW_AUTH=FAILED`.**
+
+| Item | Valor |
+|---|---|
+| Preview | `fcc6321` (`dpl_2uA7WGZAgynQftW4zjbTzKDie29q`) |
+| Requisição | POST `/api/bookings` com departure inexistente (UUID zerado) |
+| Resposta | **HTTP 401 `UNAUTHORIZED`** |
+
+- O ToursFlow só produz `UNAUTHORIZED` quando o NauticFlow responde 401.
+  Então o Bearer enviado pelo Preview não bate com o secret do NauticFlow
+  Production.
+- O NauticFlow Production foi redeployado em `5e5c6f2`, antes do build
+  deste Preview. Entre `ede8fb0` e `5e5c6f2` só mudaram docs, o webhook
+  Asaas e a migration 0079. O contrato de booking/pagamento ficou igual.
+- **Ação do usuário:** conferir no projeto ToursFlow da Vercel se
+  `TOURSFLOW_API_SECRET` foi atualizada também no escopo **Preview**
+  (não só Production), sem espaço nem quebra de linha. Depois, redeployar
+  o Preview e repetir a sonda. Esperado: `404 DEPARTURE_NOT_FOUND`.
+- Nenhum valor de secret foi lido ou exibido. Nenhum booking válido foi
+  criado.
