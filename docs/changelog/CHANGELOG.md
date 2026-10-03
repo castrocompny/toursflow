@@ -14,6 +14,65 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-02 — Recuperação desacoplada do catálogo de venda + reserva expirada (achados do Codex)
+
+O Codex review `review-murq0mbc-75mrlm` (`--base main`) teve verdict
+`needs-attention`, com 2 achados.
+
+**[high] Voucher dependia da saída estar à venda.**
+
+- Causa: a recuperação só rodava se a saída salva estivesse em
+  `departures` (saídas futuras à venda). O catálogo vazio retornava
+  antes, e a saída esgotada ou passada escondia o voucher de uma compra
+  paga.
+- `booking-recovery.ts` passa ao schema v2, com `tourSlug` + `departsAt`
+  no lugar de `departureId`. A v1 é tratada como inválida.
+- A página do passeio passa `tourSlug={tour.slug}`.
+- `BookingSelector` recupera pelo `tourSlug`, independentemente de
+  `departures`; as telas de recuperação vêm antes do "Nenhuma saída
+  programada".
+- Confirmação, Pix e voucher recebem só `{ departsAt }`, porque
+  `BookingConfirmation` e `BookingVoucher` passam a aceitar
+  `Pick<Departure, 'departsAt'>`.
+
+**[medium] Reserva vencida sem pagamento prendia a aba.**
+
+- Causa: toda reserva recuperada sem pagamento voltava para a
+  confirmação, inclusive com o hold vencido, sem nenhuma ação.
+- Novo estado "Esta reserva expirou." com "Fazer outra reserva" quando
+  `payment: null` e (hold vencido ou `bookingStatus: 'cancelada'`).
+  Limpa só a referência e não faz POST.
+- `BookingConfirmation` ao vivo, quando expira, também ganha "Fazer outra
+  reserva".
+- Com tentativa `pending`, nada muda: a reconciliação continua mesmo
+  com o prazo local vencido.
+
+**Testes:** `BookingSelector.recovery.test.tsx` vai a 19 testes; 16 deles
+falham contra o código anterior. Cobrem:
+
+- `departures = []` com `paid`;
+- saída fora do catálogo com `pending` e com `paid`;
+- reserva expirada sem pagamento, mais um reload sem clicar;
+- "Fazer outra reserva" limpa só a referência;
+- reserva cancelada;
+- `pending` com prazo local vencido, seguido de paid tardio;
+- confirmação ao vivo que expira na tela;
+- `tourSlug` de outro passeio.
+
+O helper tem testes de schema v2, incluindo a v1 inválida.
+
+**Validações:**
+
+- `npm test`: 539/540. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+Nenhuma rota ou controle server-side foi alterado. Sem PII no storage.
+Nenhuma reserva, cobrança ou Pix real foi criado. O E2E financeiro
+ainda não foi executado. Production continua OFF/OFF.
+
+---
+
 ## 2026-10-02 — Checkout recuperável depois de reload (achado HIGH do Codex)
 
 O Codex review `review-murpf4bf-6614rm` (`--base main`) teve verdict

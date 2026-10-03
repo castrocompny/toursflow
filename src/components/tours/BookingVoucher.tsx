@@ -9,7 +9,8 @@ import type { NauticFlowBookingPaymentView } from '@/types/payment';
 import { LogoLockup } from '@/components/brand/Logo';
 
 interface BookingVoucherProps {
-  departure: Departure;
+  /** Só `departsAt` é exibido — permite montar a tela a partir da recuperação (ADR-018) mesmo quando a saída já saiu do catálogo de venda. */
+  departure: Pick<Departure, 'departsAt'>;
   bookingId: string;
   payment: NauticFlowBookingPaymentView;
   /** Nome do passeio — vem de `tour.name` (página), não do payment. Ausente: a linha some, nunca um placeholder. */

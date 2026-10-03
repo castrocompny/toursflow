@@ -22,26 +22,22 @@ function memoryStorage(): Storage {
 
 const BOOKING_ID = '9c858901-8a57-4791-81fe-4c455b099bc9';
 const PAYMENT_KEY = 'b1f4a6c2-2222-4444-8888-0123456789ab';
+const DEPARTS_AT = '2026-10-11T17:00:00+00:00';
+const STATE = { bookingId: BOOKING_ID, tourSlug: 'passeio-1', departsAt: DEPARTS_AT, paymentIdempotencyKey: PAYMENT_KEY };
 
 describe('booking-recovery', () => {
-  it('grava e lê de volta só as referências opacas', () => {
+  it('grava e lê de volta só as referências opacas (v2: tourSlug + departsAt, sem departureId)', () => {
     const storage = memoryStorage();
-    saveBookingRecovery({ bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: PAYMENT_KEY }, storage);
+    saveBookingRecovery(STATE, storage);
 
-    expect(readBookingRecovery(storage)).toEqual({ bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: PAYMENT_KEY });
-    expect(JSON.parse(storage.getItem(BOOKING_RECOVERY_STORAGE_KEY)!)).toEqual({
-      version: 1,
-      bookingId: BOOKING_ID,
-      departureId: 'dep-1',
-      paymentIdempotencyKey: PAYMENT_KEY,
-    });
+    expect(readBookingRecovery(storage)).toEqual(STATE);
+    expect(JSON.parse(storage.getItem(BOOKING_RECOVERY_STORAGE_KEY)!)).toEqual({ version: 2, ...STATE });
   });
 
   it('whitelist: campos extras (ex.: PII) nunca são gravados', () => {
     const storage = memoryStorage();
     const withExtras = {
-      bookingId: BOOKING_ID,
-      departureId: 'dep-1',
+      ...STATE,
       paymentIdempotencyKey: null,
       email: 'turista@example.com',
       cpf: '11144477735',
@@ -54,10 +50,11 @@ describe('booking-recovery', () => {
 
   it.each([
     ['JSON corrompido', '{nao-e-json'],
-    ['versão antiga', JSON.stringify({ version: 0, bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: null })],
-    ['bookingId inválido', JSON.stringify({ version: 1, bookingId: 'x', departureId: 'dep-1', paymentIdempotencyKey: null })],
-    ['sem departureId', JSON.stringify({ version: 1, bookingId: BOOKING_ID, paymentIdempotencyKey: null })],
-    ['key inválida', JSON.stringify({ version: 1, bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: 'abc' })],
+    ['versão 1 (departureId, antes do desacoplamento do catálogo)', JSON.stringify({ version: 1, bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: null })],
+    ['bookingId inválido', JSON.stringify({ version: 2, ...STATE, bookingId: 'x' })],
+    ['sem tourSlug', JSON.stringify({ version: 2, ...STATE, tourSlug: undefined })],
+    ['departsAt inválido', JSON.stringify({ version: 2, ...STATE, departsAt: 'ontem' })],
+    ['key inválida', JSON.stringify({ version: 2, ...STATE, paymentIdempotencyKey: 'abc' })],
   ])('%s: devolve null e apaga só a chave de recuperação', (_label, raw) => {
     const storage = memoryStorage();
     storage.setItem(BOOKING_RECOVERY_STORAGE_KEY, raw);
@@ -83,13 +80,13 @@ describe('booking-recovery', () => {
 
     expect(readBookingRecovery(null)).toBeNull();
     expect(readBookingRecovery(throwing)).toBeNull();
-    expect(() => saveBookingRecovery({ bookingId: BOOKING_ID, departureId: 'd', paymentIdempotencyKey: null }, throwing)).not.toThrow();
+    expect(() => saveBookingRecovery(STATE, throwing)).not.toThrow();
     expect(() => clearBookingRecovery(throwing)).not.toThrow();
   });
 
   it('clear remove só a chave de recuperação', () => {
     const storage = memoryStorage();
-    saveBookingRecovery({ bookingId: BOOKING_ID, departureId: 'dep-1', paymentIdempotencyKey: null }, storage);
+    saveBookingRecovery(STATE, storage);
     storage.setItem('outra-chave', 'intacta');
     clearBookingRecovery(storage);
     expect(readBookingRecovery(storage)).toBeNull();

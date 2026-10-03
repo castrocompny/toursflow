@@ -34,6 +34,7 @@ import {
 import { buildBookingPayload, submitBooking } from '@/lib/booking-submission';
 import type { ClientBookingErrorCode } from '@/lib/booking-error-messages';
 import { BOOKING_CHECKOUT_ENABLED, PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
+import { isHoldExpired } from '@/lib/hold-countdown';
 import { PaymentClientError, ToursFlowPaymentClient } from '@/lib/payment-client';
 import {
   clearBookingRecovery,
@@ -145,6 +146,13 @@ interface BookingSelectorProps {
   tourName?: string;
   boardingPointName?: string;
   boardingPointReference?: string;
+  /**
+   * `tour.slug` — identificador estável do passeio que liga a recuperação
+   * depois de reload (`booking-recovery.ts`) a esta página. Independe do
+   * catálogo de saídas à venda: a compra continua recuperável mesmo quando a
+   * saída esgota ou sai da lista. Ausente: sem recuperação.
+   */
+  tourSlug?: string;
 }
 
 type Step =
@@ -156,7 +164,9 @@ type Step =
   | 'voucher'
   // Recuperação depois de reload (`booking-recovery.ts`): só GET, nunca POST.
   | 'recovering'
-  | 'recovery-error';
+  | 'recovery-error'
+  // Recuperada sem pagamento e com o hold vencido: só "Fazer outra reserva".
+  | 'recovery-expired';
 type SubmissionStatus = 'idle' | 'submitting' | 'error';
 
 /**
@@ -202,7 +212,7 @@ type SubmissionStatus = 'idle' | 'submitting' | 'error';
  * resposta (`BookingConfirmationData`) é guardado — nunca a resposta bruta
  * inteira, nunca PII em nenhum lugar persistente. Exceção deliberada, só com
  * `PAYMENTS_UI_ENABLED`: referências OPACAS da reserva já criada
- * (`bookingId`, `departureId`, key do pagamento) em `sessionStorage`, para
+ * (`bookingId`, `tourSlug`, `departsAt`, key do pagamento) em `sessionStorage`, para
  * recuperar o fluxo depois de um reload — ver `src/lib/booking-recovery.ts`.
  *
  * NÃO IMPLEMENTADO: pagamento (Asaas/PIX/cartão/split/webhook/voucher) —
@@ -215,6 +225,7 @@ export function BookingSelector({
   tourName,
   boardingPointName,
   boardingPointReference,
+  tourSlug,
 }: BookingSelectorProps) {
   const router = useRouter();
   const dateWindowSize = useDateWindowSize();
@@ -310,15 +321,17 @@ export function BookingSelector({
   }, [maxWindowStart]);
 
   // Recuperação depois de reload: só com o checkout de pagamento ligado, só
-  // para uma saída desta página (reserva de outro passeio fica guardada
-  // para a página dele) e sempre por GET — nunca POST de reserva ou de Pix.
+  // para uma reserva DESTE passeio (`tourSlug`; reserva de outro passeio
+  // fica guardada para a página dele) e sempre por GET — nunca POST de
+  // reserva ou de Pix. Não depende da saída continuar no catálogo de venda
+  // (`departures`): esgotada, passada ou lista vazia, a compra continua
+  // recuperável (achado HIGH do Codex, 02/10/2026).
   useEffect(() => {
-    if (!PAYMENTS_UI_ENABLED || recoveryStartedRef.current) return;
+    if (!PAYMENTS_UI_ENABLED || !tourSlug || recoveryStartedRef.current) return;
     recoveryStartedRef.current = true;
     const saved = readBookingRecovery();
-    if (!saved || !departures.some((departure) => departure.id === saved.departureId)) return;
+    if (!saved || saved.tourSlug !== tourSlug) return;
     setRecoveryState(saved);
-    setSelectedDepartureId(saved.departureId);
     void recoverBooking(saved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -337,7 +350,6 @@ export function BookingSelector({
         // recuperar — limpa só a referência e volta ao fluxo normal.
         clearBookingRecovery();
         setRecoveryState(null);
-        setSelectedDepartureId(null);
         setStep('selection');
       } else {
         // Falha transitória: mantém a referência, nunca cria nada — o
@@ -365,6 +377,16 @@ export function BookingSelector({
       return;
     }
     if (!view.payment) {
+      // Sem NENHUMA tentativa de pagamento, não há dinheiro em jogo: hold
+      // vencido (`holdExpiresAt` do servidor) ou reserva cancelada vira um
+      // estado final com "Fazer outra reserva" (achado MEDIUM do Codex) —
+      // nunca uma confirmação inutilizável restaurada a cada reload. Com
+      // tentativa existente (abaixo) isso NUNCA acontece: pending segue para
+      // reconciliação no PixPayment, mesmo com o prazo local vencido.
+      if (view.bookingStatus === 'cancelada' || isHoldExpired(view.holdExpiresAt)) {
+        setStep('recovery-expired');
+        return;
+      }
       // Reserva criada, Pix ainda não iniciado: volta à confirmação — só o
       // clique em "Pagar com Pix" cria o pagamento.
       setStep('confirmation');
@@ -389,8 +411,19 @@ export function BookingSelector({
     setStep('selection');
   }
 
+  /** Grava a referência opaca de recuperação (só no checkout com Pix e com `tourSlug`). */
+  function persistRecovery(bookingId: string, departsAt: string, paymentIdempotencyKey: string | null) {
+    if (!PAYMENTS_UI_ENABLED || !tourSlug) return;
+    saveBookingRecovery({ bookingId, tourSlug, departsAt, paymentIdempotencyKey });
+  }
+
   const selectedGroup = groups.find((group) => group.dateKey === selectedDateKey) ?? groups[0] ?? null;
   const selectedDeparture = sorted.find((departure) => departure.id === selectedDepartureId) ?? null;
+  // Confirmação/Pix/voucher só exibem `departsAt`: vem da saída escolhida
+  // ou, depois de reload, da referência de recuperação — nunca exige que a
+  // saída ainda esteja no catálogo de venda.
+  const bookedDeparture: { departsAt: string } | null =
+    selectedDeparture ?? (recoveryState ? { departsAt: recoveryState.departsAt } : null);
   const estimatedTotal = selectedDeparture ? calculateEstimatedTotal(selectedDeparture, quantity) : null;
   const canContinue = canContinueBooking(selectedDeparture, quantity);
 
@@ -466,9 +499,7 @@ export function BookingSelector({
       // Referência opaca da reserva já criada ANTES de qualquer outra coisa:
       // um reload a partir daqui recupera a mesma reserva (GET), nunca cria
       // outra. Só no checkout com Pix (sem ele não há o que recuperar).
-      if (PAYMENTS_UI_ENABLED) {
-        saveBookingRecovery({ bookingId: result.data.bookingId, departureId: selectedDeparture.id, paymentIdempotencyKey: null });
-      }
+      persistRecovery(result.data.bookingId, selectedDeparture.departsAt, null);
       // Só o subconjunto seguro em memória — nunca a resposta bruta inteira.
       setBookingResult({
         bookingId: result.data.bookingId,
@@ -506,7 +537,44 @@ export function BookingSelector({
     }
   }
 
-  if (departures.length === 0) {
+  if (step === 'recovering') {
+    return (
+      <div className="rounded-card border border-ink/10 bg-white p-6" role="status">
+        <p className="text-sm text-ink-muted">Verificando sua reserva...</p>
+      </div>
+    );
+  }
+
+  if (step === 'recovery-error' && recoveryState) {
+    return (
+      <div className="rounded-card border border-ink/10 bg-white p-6">
+        <p role="alert" className="text-sm text-red-700">
+          {recoveryErrorMessage}
+        </p>
+        <p className="mt-2 text-sm text-ink-muted">Sua reserva continua guardada — não faça outra reserva nem outro pagamento.</p>
+        <button type="button" onClick={() => void recoverBooking(recoveryState)} className="btn-primary mt-4 w-full">
+          Verificar novamente
+        </button>
+      </div>
+    );
+  }
+
+  if (step === 'recovery-expired' && bookingResult) {
+    return (
+      <div className="rounded-card border border-ink/10 bg-white p-6">
+        <p className="eyebrow">Reserva expirada</p>
+        <h3 className="mt-2 font-display text-xl font-bold">Esta reserva expirou.</h3>
+        <p className="mt-2 text-sm text-ink-muted">
+          O prazo para pagar a reserva {bookingResult.bookingId} acabou sem nenhum pagamento iniciado. Nenhum valor foi cobrado.
+        </p>
+        <button type="button" onClick={handleStartNewBooking} className="btn-primary mt-4 w-full">
+          Fazer outra reserva
+        </button>
+      </div>
+    );
+  }
+
+  if (departures.length === 0 && step === 'selection') {
     return (
       <p className="rounded-card border border-dashed border-ink/20 bg-sand px-5 py-6 text-center text-sm text-ink-muted">
         Nenhuma saída programada no momento. Volte em breve para conferir novas datas.
@@ -544,10 +612,11 @@ export function BookingSelector({
     );
   }
 
-  if (step === 'confirmation' && selectedDeparture && bookingResult) {
+  if (step === 'confirmation' && bookedDeparture && bookingResult) {
     return (
       <BookingConfirmation
-        departure={selectedDeparture}
+        departure={bookedDeparture}
+        onStartNewBooking={handleStartNewBooking}
         booking={bookingResult}
         onPayWithPix={
           PAYMENTS_UI_ENABLED
@@ -559,7 +628,7 @@ export function BookingSelector({
                 // reaproveita a mesma tentativa, nunca abre outra.
                 const key = resolvePaymentIdempotencyKey(paymentIdempotencyKey);
                 setPaymentIdempotencyKey(key);
-                saveBookingRecovery({ bookingId: bookingResult.bookingId, departureId: selectedDeparture.id, paymentIdempotencyKey: key });
+                persistRecovery(bookingResult.bookingId, bookedDeparture.departsAt, key);
                 setStep('payment-pix');
               }
             : undefined
@@ -583,9 +652,7 @@ export function BookingSelector({
           const key = createIdempotencyKey();
           setRecoveredView(null);
           setPaymentIdempotencyKey(key);
-          if (selectedDepartureId) {
-            saveBookingRecovery({ bookingId: bookingResult.bookingId, departureId: selectedDepartureId, paymentIdempotencyKey: key });
-          }
+          if (bookedDeparture) persistRecovery(bookingResult.bookingId, bookedDeparture.departsAt, key);
         }}
         initialView={recoveredView ?? undefined}
         onPaid={(data) => {
@@ -602,11 +669,11 @@ export function BookingSelector({
     );
   }
 
-  if (step === 'voucher' && selectedDeparture && paymentResult) {
+  if (step === 'voucher' && bookedDeparture && paymentResult) {
     return (
       <div className="space-y-3">
         <BookingVoucher
-          departure={selectedDeparture}
+          departure={bookedDeparture}
           bookingId={paymentResult.bookingId}
           payment={paymentResult}
           tourName={tourName}
@@ -616,28 +683,6 @@ export function BookingSelector({
         {/* Pagamento já confirmado pelo servidor: começar outra reserva é seguro (nunca reaproveita esta). */}
         <button type="button" onClick={handleStartNewBooking} className="btn-secondary w-full">
           Fazer outra reserva
-        </button>
-      </div>
-    );
-  }
-
-  if (step === 'recovering') {
-    return (
-      <div className="rounded-card border border-ink/10 bg-white p-6" role="status">
-        <p className="text-sm text-ink-muted">Verificando sua reserva...</p>
-      </div>
-    );
-  }
-
-  if (step === 'recovery-error' && recoveryState) {
-    return (
-      <div className="rounded-card border border-ink/10 bg-white p-6">
-        <p role="alert" className="text-sm text-red-700">
-          {recoveryErrorMessage}
-        </p>
-        <p className="mt-2 text-sm text-ink-muted">Sua reserva continua guardada — não faça outra reserva nem outro pagamento.</p>
-        <button type="button" onClick={() => void recoverBooking(recoveryState)} className="btn-primary mt-4 w-full">
-          Verificar novamente
         </button>
       </div>
     );

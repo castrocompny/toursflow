@@ -8,8 +8,14 @@
  * Só referências OPACAS, nunca PII (nome, e-mail, telefone, CPF, QR, valor):
  * - `bookingId` — UUID que o NauticFlow devolveu; o status autoritativo é
  *   reconsultado sempre por `GET /api/bookings/{bookingId}/payment`.
- * - `departureId` — só para saber se a recuperação pertence ao passeio da
- *   página atual e reexibir o resumo da saída.
+ * - `tourSlug` — identificador estável do PASSEIO (não da saída): diz se a
+ *   recuperação pertence à página atual. A saída pode sair do catálogo de
+ *   VENDA (esgotou, passou) e a compra continua precisando ser recuperável
+ *   (achado HIGH do Codex, 02/10/2026) — por isso a recuperação não depende
+ *   mais da saída estar listada.
+ * - `departsAt` — data/hora pública da saída (não é PII), única informação
+ *   da saída que confirmação/voucher exibem; o GET do NauticFlow não a
+ *   devolve. Gravada no momento da reserva, quando a saída é conhecida.
  * - `paymentIdempotencyKey` — a key da tentativa de pagamento em curso, para
  *   que um retry depois do reload seja replay da MESMA tentativa (nunca uma
  *   cobrança nova); `null` antes de "Pagar com Pix".
@@ -23,14 +29,18 @@
  */
 
 export const BOOKING_RECOVERY_STORAGE_KEY = 'toursflow:booking-recovery';
-const BOOKING_RECOVERY_VERSION = 1;
+// v2 (02/10/2026): `departureId` → `tourSlug` + `departsAt`. v1 é tratado
+// como inválido (só existiu no Preview, nunca em Production).
+const BOOKING_RECOVERY_VERSION = 2;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const MAX_DEPARTURE_ID_LENGTH = 100;
+const MAX_TOUR_SLUG_LENGTH = 200;
+const MAX_DEPARTS_AT_LENGTH = 40;
 
 export interface BookingRecoveryState {
   bookingId: string;
-  departureId: string;
+  tourSlug: string;
+  departsAt: string;
   paymentIdempotencyKey: string | null;
 }
 
@@ -49,9 +59,12 @@ function isValidState(value: unknown): value is BookingRecoveryState & { version
     v.version === BOOKING_RECOVERY_VERSION &&
     typeof v.bookingId === 'string' &&
     UUID_RE.test(v.bookingId) &&
-    typeof v.departureId === 'string' &&
-    v.departureId.length > 0 &&
-    v.departureId.length <= MAX_DEPARTURE_ID_LENGTH &&
+    typeof v.tourSlug === 'string' &&
+    v.tourSlug.length > 0 &&
+    v.tourSlug.length <= MAX_TOUR_SLUG_LENGTH &&
+    typeof v.departsAt === 'string' &&
+    v.departsAt.length <= MAX_DEPARTS_AT_LENGTH &&
+    !Number.isNaN(new Date(v.departsAt).getTime()) &&
     (v.paymentIdempotencyKey === null ||
       (typeof v.paymentIdempotencyKey === 'string' && UUID_RE.test(v.paymentIdempotencyKey)))
   );
@@ -71,7 +84,12 @@ export function readBookingRecovery(storage: Storage | null = getStorage()): Boo
       storage.removeItem(BOOKING_RECOVERY_STORAGE_KEY);
       return null;
     }
-    return { bookingId: parsed.bookingId, departureId: parsed.departureId, paymentIdempotencyKey: parsed.paymentIdempotencyKey };
+    return {
+      bookingId: parsed.bookingId,
+      tourSlug: parsed.tourSlug,
+      departsAt: parsed.departsAt,
+      paymentIdempotencyKey: parsed.paymentIdempotencyKey,
+    };
   } catch {
     try {
       storage.removeItem(BOOKING_RECOVERY_STORAGE_KEY);
@@ -91,7 +109,8 @@ export function saveBookingRecovery(state: BookingRecoveryState, storage: Storag
       JSON.stringify({
         version: BOOKING_RECOVERY_VERSION,
         bookingId: state.bookingId,
-        departureId: state.departureId,
+        tourSlug: state.tourSlug,
+        departsAt: state.departsAt,
         paymentIdempotencyKey: state.paymentIdempotencyKey,
       }),
     );

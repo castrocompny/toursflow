@@ -16,10 +16,13 @@ export interface BookingConfirmationData {
 }
 
 interface BookingConfirmationProps {
-  departure: Departure;
+  /** Só `departsAt` é exibido — permite montar a tela a partir da recuperação (ADR-018) mesmo quando a saída já saiu do catálogo de venda. */
+  departure: Pick<Departure, 'departsAt'>;
   booking: BookingConfirmationData;
   /** Presente só quando `PAYMENTS_UI_ENABLED` está ligada (`src/lib/feature-flags.ts`) — hoje nunca é passado pela UI real. */
   onPayWithPix?: () => void;
+  /** Hold expirado sem pagamento: limpa a recuperação e volta à seleção (nunca cria nada sozinho). */
+  onStartNewBooking?: () => void;
 }
 
 /** Recalcula a cada segundo a partir de `holdExpiresAt` — nunca assume 15:00 fixo no cliente. */
@@ -49,7 +52,7 @@ function useHoldCountdown(holdExpiresAtIso: string) {
  * NauticFlow), não pela ausência de integração. Cartão/split visível ao
  * ToursFlow/webhook/voucher real continuam fora do escopo.
  */
-export function BookingConfirmation({ departure, booking, onPayWithPix }: BookingConfirmationProps) {
+export function BookingConfirmation({ departure, booking, onPayWithPix, onStartNewBooking }: BookingConfirmationProps) {
   const { date, time } = formatDepartureDateTime(departure.departsAt);
   const { remainingMs, expired } = useHoldCountdown(booking.holdExpiresAt);
 
@@ -106,6 +109,10 @@ export function BookingConfirmation({ departure, booking, onPayWithPix }: Bookin
         <p className="mt-4 rounded-2xl bg-foam px-4 py-3 text-xs text-ink-muted">
           Pagamento online será disponibilizado em breve pelo ToursFlow.
         </p>
+      ) : onStartNewBooking ? (
+        <button type="button" onClick={onStartNewBooking} className="btn-primary mt-4 w-full">
+          Fazer outra reserva
+        </button>
       ) : null}
     </div>
   );

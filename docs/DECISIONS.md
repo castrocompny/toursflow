@@ -1049,3 +1049,29 @@ reconstrói:
   usada.
 - Não existe página dedicada de "minha reserva".
 
+**Atualização (02/10/2026, Codex `review-murq0mbc-75mrlm`).**
+
+- **[high] Recuperação desacoplada do catálogo de VENDA.** Antes, a
+  recuperação só rodava se a saída salva ainda estivesse em `departures`
+  (lista de saídas futuras à venda). Com o catálogo vazio, a página
+  retornava antes; com a saída esgotada ou passada, o voucher de uma
+  compra paga ficava inacessível.
+  - Schema `version: 2`: `departureId` sai e entram `tourSlug` (passeio,
+    identificador estável vindo da página) e `departsAt` (horário
+    público, não é PII; é o único dado da saída que confirmação e voucher
+    exibem, e o GET não o devolve).
+  - A recuperação roda quando `tourSlug` bate, independentemente de
+    `departures`. Confirmação, Pix e voucher recebem só `{ departsAt }`.
+  - A v1 é tratada como inválida: só existiu no Preview.
+- **[medium] Reserva vencida sem pagamento.** Se o GET devolve
+  `payment: null` e o hold venceu (`holdExpiresAt` do servidor
+  comparado com o relógio local) ou `bookingStatus: 'cancelada'`, a tela
+  mostra "Esta reserva expirou." com "Fazer outra reserva", que limpa só
+  a referência e volta à seleção.
+  - O relógio local só decide isso quando **não existe tentativa de
+    pagamento**, ou seja, sem dinheiro em jogo.
+  - Com tentativa `pending`, a reconciliação do `PixPayment` continua,
+    mesmo com o prazo local vencido.
+  - A confirmação ao vivo que expira na tela ganhou o mesmo botão.
+- Contrato do GET sem mudança, e nenhum controle server-side alterado.
+

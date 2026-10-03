@@ -222,6 +222,7 @@ export default async function TourPage({ params, searchParams }: PageProps) {
                 tourName={tour.name}
                 boardingPointName={tour.boardingPoint.name}
                 boardingPointReference={tour.boardingPoint.reference}
+                tourSlug={tour.slug}
               />
             </div>
           </section>

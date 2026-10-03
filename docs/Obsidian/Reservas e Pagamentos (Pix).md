@@ -331,3 +331,13 @@ mais 9 do helper.
 consegue consultar status e Pix pendente. Não há PII na resposta e nenhum
 controle foi relaxado.
 
+**Atualização v2 (Codex `review-murq0mbc-75mrlm`).**
+
+- **Desacoplada do catálogo de venda:** o escopo agora é `tourSlug` mais
+  `departsAt` (antes era `departureId`). Com catálogo vazio ou saída
+  esgotada, o voucher e o Pix continuam recuperáveis.
+- **Reserva sem pagamento, hold vencido ou cancelada:** aparece "Esta
+  reserva expirou." com "Fazer outra reserva".
+- **Pagamento `pending`:** nunca é tratado como reserva abandonada; a
+  reconciliação continua.
+

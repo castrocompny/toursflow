@@ -231,6 +231,17 @@ app do banco).
 - **Depois de pago:** a referência continua, para mostrar o voucher num
   novo reload. Sai em "Fazer outra reserva" ou ao fechar a aba.
 
+**Atualização (v2).** A recuperação não depende mais do catálogo de
+venda.
+
+- **Escopo:** é definido por `tourSlug`, e o storage guarda `departsAt`
+  para exibir a data. Com catálogo vazio ou saída esgotada, o voucher e o
+  Pix continuam recuperáveis.
+- **Reserva sem pagamento, hold vencido ou cancelada:** a tela mostra
+  "Esta reserva expirou." com "Fazer outra reserva".
+- **Com tentativa `pending`:** a reconciliação continua, mesmo com o
+  prazo local vencido.
+
 ## CPF obrigatório no checkout com Pix
 
 Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF
