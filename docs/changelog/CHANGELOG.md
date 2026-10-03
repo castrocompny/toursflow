@@ -14,6 +14,59 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-02 — Política de cancelamento real no checkout (achado do Codex)
+
+O Codex review `review-muro2f8i-uca0v9` (`--base main`) teve verdict
+`needs-attention`, com 1 achado **[medium]**: o checkout mostrava só o
+placeholder "as condições serão apresentadas antes da confirmação".
+
+**Política aprovada.** O usuário aprovou a política comercial inicial.
+
+- `src/lib/marketplace-cancellation-policy.ts`:
+  - `version` passa de `2026-09` para `2026-10`; o id continua
+    `toursflow-standard`.
+  - Novo campo `terms` com as 6 condições aprovadas:
+    - pelo menos 48 horas de antecedência: reembolso integral;
+    - entre 24 e 48 horas: reembolso de 50%;
+    - menos de 24 horas: sem reembolso;
+    - no-show: sem reembolso;
+    - cancelamento pelo operador por clima, mar, segurança ou
+      impossibilidade operacional: remarcação ou reembolso integral;
+    - reembolso pelo mesmo meio de pagamento.
+  - O `summary` agora resume a regra real.
+  - Nenhuma multa nem prazo de estorno inventado.
+
+**Onde aparece.**
+
+- `BookingReview.tsx`: título, resumo e lista de condições logo antes de
+  "Confirmar reserva", só quando o checkout está ligado. Sem checkbox.
+- Página do passeio: mesma lista, vinda da mesma fonte. A política do
+  operador continua ignorada.
+
+**Testes:**
+
+- Política: versão `2026-10`, as 6 condições na ordem aprovada, sem
+  placeholder, sem multa nem prazo em dias.
+- Checkout: lista igual à fonte central, sem texto extra, posicionada
+  antes do botão.
+- Flags OFF: o bloco não aparece.
+
+**Validações:**
+
+- `npm test`: 500/501. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+**Auth.** `TOURSFLOW_AUTH=VALIDATED`: depois da nova rotação do secret e
+do Preview `dpl_CEvMisnmsSHjYTTkPnjSLJd8MAYw`, a sonda devolveu
+`404 DEPARTURE_NOT_FOUND`.
+
+**Pendente:** `CANCELLATION_POLICY_SNAPSHOT_PENDING` (a reserva não
+grava `id`/`version`). O E2E financeiro ainda não foi executado.
+Nenhuma reserva, cobrança ou Pix foi criado.
+
+---
+
 ## 2026-09-30 — Pagamento recuperável após falha na criação do Pix + política de cancelamento no checkout
 
 O Codex review `review-muni5eye-qgk5sn` (`--base main`) teve verdict

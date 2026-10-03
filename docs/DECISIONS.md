@@ -882,6 +882,18 @@ existindo o snapshot acima, a versão registrada na própria reserva).
 Nenhum checkbox de aceite jurídico ou termo extra é criado agora — isso
 depende de uma decisão de produto própria, fora desta tarefa.
 
+**Atualização (02/10/2026) — política aprovada.** O usuário aprovou a
+política comercial inicial; `MARKETPLACE_CANCELLATION_POLICY` passou à
+versão `2026-10` (mesmo id `toursflow-standard`), com `summary` real e
+`terms` concretos (48h+ integral; 24–48h 50%; <24h e no-show sem
+reembolso; cancelamento pelo operador por clima/mar/segurança/operação →
+remarcação ou reembolso integral; reembolso pelo mesmo meio de
+pagamento). Exibida no `BookingReview` antes de "Confirmar reserva" e na
+página do passeio. Checkbox de aceite continua fora (decisão de produto).
+Snapshot `id`/`version` na reserva continua pendente
+(`CANCELLATION_POLICY_SNAPSHOT_PENDING`) — requisito antes do go-live
+público definitivo.
+
 ---
 
 ## ADR-017 — Voucher/comprovante ToursFlow com compartilhamento manual via WhatsApp

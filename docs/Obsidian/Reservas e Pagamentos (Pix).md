@@ -69,14 +69,32 @@ fluxo completo: uma para a reserva, outra para o pagamento.
 ## Política de cancelamento (ADR-016)
 
 `src/lib/marketplace-cancellation-policy.ts` — objeto
-`MARKETPLACE_CANCELLATION_POLICY` (id/version/title/summary) substitui,
-na UI pública, a antiga política por operador
-(`tour.cancellationPolicy`). Deliberadamente **sem nenhum número
-financeiro ou prazo inventado ainda** — os requisitos da política oficial
-já estão enumerados (cancelamento pelo turista, no-show, condições
-climáticas/marítimas, segurança, cancelamento operacional, remarcação,
-elegibilidade de reembolso, prazo de reembolso), mas nenhum foi decidido.
-**Pendente formal**, não um esquecimento.
+`MARKETPLACE_CANCELLATION_POLICY` (id/version/title/summary/terms)
+substitui, na UI pública, a antiga política por operador
+(`tour.cancellationPolicy`).
+
+**Política comercial aprovada pelo usuário em 02/10/2026** —
+`toursflow-standard`, versão **`2026-10`**:
+
+1. Cancelamentos com pelo menos 48 horas de antecedência: reembolso integral.
+2. Cancelamentos entre 24 e 48 horas antes do passeio: reembolso de 50%.
+3. Cancelamentos com menos de 24 horas de antecedência: sem reembolso.
+4. Não comparecimento (no-show): sem reembolso.
+5. Cancelamento pelo operador por condições climáticas, condições
+   marítimas, segurança ou impossibilidade operacional: o cliente escolhe
+   entre remarcação ou reembolso integral.
+6. Reembolsos aprovados são processados pelo mesmo meio de pagamento da
+   reserva, respeitando o prazo operacional desse meio.
+
+Exibida integralmente (resumo + lista) no checkout (`BookingReview`,
+logo antes de "Confirmar reserva", só quando o botão existe) e na página
+do passeio. Sem checkbox de aceite (ADR-016). Motivo: achado [medium] do
+Codex (02/10/2026, `review-muro2f8i-uca0v9`): o checkout mostrava só o
+placeholder "serão apresentadas antes da confirmação".
+
+**`CANCELLATION_POLICY_SNAPSHOT_PENDING`**: a reserva ainda não grava
+`id`/`version`/snapshot da política (exige NauticFlow/banco). Não bloqueia
+o E2E interno no Preview; bloqueia o go-live público definitivo.
 
 ## Componentes e arquivos principais
 
@@ -264,3 +282,13 @@ Review `review-muni5eye-qgk5sn` (`--base main`, `needs-attention`):
   o Preview e repetir a sonda. Esperado: `404 DEPARTURE_NOT_FOUND`.
 - Nenhum valor de secret foi lido ou exibido. Nenhum booking válido foi
   criado.
+
+### Auth revalidada (02/10/2026): **TOURSFLOW_AUTH=VALIDATED**
+
+Depois da nova rotação do `TOURSFLOW_API_SECRET` e de um Preview criado
+após a atualização (`dpl_CEvMisnmsSHjYTTkPnjSLJd8MAYw`, commit `cd06ab3`),
+a sonda `POST /api/bookings` com departure inexistente retornou
+`HTTP_STATUS=404`, `ERROR_CODE=DEPARTURE_NOT_FOUND` — o NauticFlow
+Production aceitou a autenticação. Nenhum booking/cobrança/Pix criado.
+E2E financeiro ainda **não executado**.
+

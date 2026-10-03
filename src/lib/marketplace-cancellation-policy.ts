@@ -11,16 +11,17 @@
  * fora do marketplace público) — só deixou de ser a fonte da política
  * exibida nesta página. Ver ADR correspondente em docs/DECISIONS.md.
  *
- * Ainda não há autorização de produto para números financeiros/prazos
- * definitivos (ex.: "grátis até 24h", "50% após X horas") — enquanto
- * isso não for decidido (e enquanto booking/pagamento reais estiverem
- * desligados via BOOKING_CHECKOUT_ENABLED/PAYMENTS_UI_ENABLED), o `summary`
- * abaixo é a única copy pública: factual, sem prometer reembolso ou
- * gratuidade, sem inventar prazo, sem instruir a falar com o operador.
+ * Condições comerciais aprovadas pelo usuário em 02/10/2026 (versão
+ * `2026-10`, achado do Codex de 02/10/2026: o checkout não podia exibir só
+ * um placeholder). `summary` resume a regra; `terms` é a lista completa,
+ * exibida no checkout (`BookingReview`) antes de "Confirmar reserva" e na
+ * página do passeio. Nenhuma condição além das aprovadas — sem multa, sem
+ * prazo de estorno específico.
  *
- * Versionada desde já (`id`/`version`) para quando a regra financeira
- * real for aprovada: vira uma nova versão neste mesmo objeto, não uma
- * reescrita ad-hoc espalhada pela UI.
+ * Versionada (`id`/`version`): toda mudança de texto vira uma nova
+ * versão neste mesmo objeto, não uma reescrita ad-hoc espalhada pela UI.
+ * A reserva ainda NÃO grava `id`/`version` (CANCELLATION_POLICY_SNAPSHOT_PENDING,
+ * ADR-016).
  */
 export interface MarketplaceCancellationPolicy {
   /** Identificador estável da política — não muda entre versões. */
@@ -29,14 +30,24 @@ export interface MarketplaceCancellationPolicy {
   version: string;
   title: string;
   summary: string;
+  /** Condições concretas, na ordem em que são exibidas. */
+  terms: readonly string[];
 }
 
 export const MARKETPLACE_CANCELLATION_POLICY: MarketplaceCancellationPolicy = {
   id: 'toursflow-standard',
-  version: '2026-09',
+  version: '2026-10',
   title: 'Cancelamento e reembolso',
   summary:
-    'As condições de cancelamento e reembolso das reservas feitas pelo ToursFlow são definidas pelo próprio marketplace e serão apresentadas antes da confirmação da reserva.',
+    'Reembolso integral com pelo menos 48 horas de antecedência, 50% entre 24 e 48 horas antes do passeio e sem reembolso com menos de 24 horas ou em caso de não comparecimento.',
+  terms: [
+    'Cancelamentos solicitados com pelo menos 48 horas de antecedência: reembolso integral.',
+    'Cancelamentos solicitados entre 24 e 48 horas antes do passeio: reembolso de 50%.',
+    'Cancelamentos com menos de 24 horas de antecedência: sem reembolso.',
+    'Não comparecimento (no-show): sem reembolso.',
+    'Se o passeio for cancelado pelo operador por condições climáticas, condições marítimas, segurança ou impossibilidade operacional, você pode escolher entre remarcação ou reembolso integral.',
+    'Reembolsos aprovados são processados pelo mesmo meio de pagamento utilizado na reserva, respeitando o prazo operacional do meio de pagamento.',
+  ],
 };
 
 /**

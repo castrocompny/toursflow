@@ -315,7 +315,20 @@ describe('BookingSelector — confirmação de reserva (BOOKING_CHECKOUT_ENABLED
     expect(within(policy).getByRole('heading').textContent).toBe(MARKETPLACE_CANCELLATION_POLICY.title);
     expect(policy.textContent).toContain(MARKETPLACE_CANCELLATION_POLICY.summary);
     expect(policy.getAttribute('data-policy-id')).toBe(MARKETPLACE_CANCELLATION_POLICY.id);
-    expect(policy.getAttribute('data-policy-version')).toBe(MARKETPLACE_CANCELLATION_POLICY.version);
+    expect(policy.getAttribute('data-policy-version')).toBe('2026-10');
+
+    // Condições concretas visíveis (não só o resumo), cada uma vinda da fonte central, sem texto extra.
+    const terms = within(policy).getAllByRole('listitem').map((li) => li.textContent);
+    expect(terms).toEqual([...MARKETPLACE_CANCELLATION_POLICY.terms]);
+    expect(policy.textContent).toBe(
+      MARKETPLACE_CANCELLATION_POLICY.title + MARKETPLACE_CANCELLATION_POLICY.summary + MARKETPLACE_CANCELLATION_POLICY.terms.join(''),
+    );
+    const text = policy.textContent ?? '';
+    expect(text).toMatch(/pelo menos 48 horas de antecedência: reembolso integral/);
+    expect(text).toMatch(/entre 24 e 48 horas antes do passeio: reembolso de 50%/);
+    expect(text).toMatch(/menos de 24 horas de antecedência: sem reembolso/);
+    expect(text).toMatch(/no-show\): sem reembolso/);
+    expect(text).toMatch(/condições climáticas, condições marítimas, segurança ou impossibilidade operacional.*remarcação ou reembolso integral/);
 
     const confirm = screen.getByRole('button', { name: /confirmar reserva/i });
     expect(policy.compareDocumentPosition(confirm) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();

@@ -264,9 +264,14 @@ export default async function TourPage({ params, searchParams }: PageProps) {
             <h2 id="cancelamento" className="text-xl font-bold sm:text-2xl">
               {cancellationPolicy.title}
             </h2>
-            <p className="mt-3 rounded-card border border-ink/10 bg-sand p-4 text-sm text-ink-muted sm:mt-4 sm:p-5">
-              {cancellationPolicy.summary}
-            </p>
+            <div className="mt-3 rounded-card border border-ink/10 bg-sand p-4 text-sm text-ink-muted sm:mt-4 sm:p-5">
+              <p>{cancellationPolicy.summary}</p>
+              <ul className="mt-3 list-disc space-y-1 pl-5">
+                {cancellationPolicy.terms.map((term) => (
+                  <li key={term}>{term}</li>
+                ))}
+              </ul>
+            </div>
           </section>
 
           <section aria-labelledby="operador">

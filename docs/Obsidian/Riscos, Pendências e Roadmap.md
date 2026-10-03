@@ -21,20 +21,19 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
 
 ## Bloqueio do 1º E2E financeiro (29/09/2026)
 
-- **TOURSFLOW_AUTH=FAILED** (repetido em 01/10/2026 com o Preview `fcc6321`,
-  ainda 401 depois da rotação informada): Preview → NauticFlow Production responde
-  401. Alinhar `TOURSFLOW_API_SECRET` (escopo Preview no ToursFlow) com o
-  NauticFlow Production e redeployar o Preview. Ver
+- ~~TOURSFLOW_AUTH=FAILED~~ — **VALIDATED em 02/10/2026** (404
+  `DEPARTURE_NOT_FOUND` após nova rotação + Preview redeployado). Ver
   [[Reservas e Pagamentos (Pix)]].
 - 1º E2E financeiro real (booking → Pix → pagamento → voucher) ainda
   **pendente** — nenhum booking válido, cobrança ou Pix foi criado.
 - ~~Sem retry de Pix na UI em `error`/`failed`~~ — **resolvido em
   30/09/2026** (retry com mesma key, "Verificar pagamento", "Gerar novo
   Pix" após `failed` com key nova). Ver [[Reservas e Pagamentos (Pix)]].
-- **Política de cancelamento sem condições concretas**: exibida na
-  revisão desde 30/09/2026, mas o texto oficial (ADR-016) e o snapshot
-  `id`/`version` na reserva continuam pendentes — bloqueiam Production,
-  não o E2E interno no Preview (protegido por SSO).
+- ~~Política de cancelamento sem condições concretas~~ — **política
+  aprovada e exibida no checkout em 02/10/2026** (`toursflow-standard`
+  `2026-10`). Continua pendente **`CANCELLATION_POLICY_SNAPSHOT_PENDING`**
+  (reserva não grava `id`/`version`) — bloqueia o go-live público, não o
+  E2E interno no Preview.
 - CPF é opcional no formulário, mas o NauticFlow exige CPF/CNPJ válido
   para gerar Pix (`CUSTOMER_DOCUMENT_REQUIRED`, não recuperável na tela
   do Pix) — no E2E, preencher CPF.

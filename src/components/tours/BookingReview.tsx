@@ -119,10 +119,11 @@ export function BookingReview({
       </div>
 
       {/* Política de cancelamento do MARKETPLACE (ADR-016), sempre antes do
-          botão "Confirmar reserva" — vem só de `MARKETPLACE_CANCELLATION_POLICY`,
-          nunca de `tour.cancellationPolicy` do operador. Só exibição: nenhum
-          checkbox de aceite (decisão de produto pendente, ADR-016); `id`/`version`
-          ainda não são gravados na reserva (follow-up do snapshot). */}
+          botão "Confirmar reserva", com as condições concretas visíveis — vem
+          só de `MARKETPLACE_CANCELLATION_POLICY`, nunca de
+          `tour.cancellationPolicy` do operador. Só exibição: nenhum checkbox de
+          aceite (decisão de produto pendente, ADR-016); `id`/`version` ainda
+          não são gravados na reserva (CANCELLATION_POLICY_SNAPSHOT_PENDING). */}
       {onConfirm ? (
         <section
           aria-labelledby="booking-review-cancellation-policy"
@@ -135,6 +136,11 @@ export function BookingReview({
             {MARKETPLACE_CANCELLATION_POLICY.title}
           </h4>
           <p className="mt-1 text-xs text-ink-muted">{MARKETPLACE_CANCELLATION_POLICY.summary}</p>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-ink-muted" data-testid="booking-review-cancellation-terms">
+            {MARKETPLACE_CANCELLATION_POLICY.terms.map((term) => (
+              <li key={term}>{term}</li>
+            ))}
+          </ul>
         </section>
       ) : null}
       {onConfirm ? (

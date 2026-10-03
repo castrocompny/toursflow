@@ -205,6 +205,30 @@ ambíguo/transitório (`NETWORK_ERROR`, `PAYMENT_SERVICE_UNAVAILABLE`,
 servidor → "Gerar novo Pix" com key **nova** (`BookingSelector` remonta
 o `PixPayment` com `key={paymentIdempotencyKey}`).
 
+## Política de cancelamento no checkout
+
+Desde 02/10/2026 o `BookingReview` exibe, antes de "Confirmar reserva",
+a política aprovada `MARKETPLACE_CANCELLATION_POLICY`
+(`toursflow-standard`, versão `2026-10`; texto em
+`src/lib/marketplace-cancellation-policy.ts`):
+
+1. Cancelamentos com pelo menos 48 horas de antecedência: reembolso integral.
+2. Cancelamentos entre 24 e 48 horas antes do passeio: reembolso de 50%.
+3. Cancelamentos com menos de 24 horas de antecedência: sem reembolso.
+4. Não comparecimento (no-show): sem reembolso.
+5. Cancelamento pelo operador por condições climáticas, condições
+   marítimas, segurança ou impossibilidade operacional: o cliente escolhe
+   entre remarcação ou reembolso integral.
+6. Reembolsos aprovados são processados pelo mesmo meio de pagamento da
+   reserva, respeitando o prazo operacional desse meio.
+
+Sem checkbox de aceite (ADR-016). A reserva ainda **não** grava
+`id`/`version` da política — `CANCELLATION_POLICY_SNAPSHOT_PENDING`.
+
+`TOURSFLOW_AUTH=VALIDATED` em 02/10/2026 (sonda com departure
+inexistente: `404 DEPARTURE_NOT_FOUND`). E2E financeiro ainda não
+executado.
+
 ## Segurança
 
 - **`amount` nunca sai do ToursFlow.** Nem o `PaymentClient` do

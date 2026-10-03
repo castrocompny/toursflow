@@ -4,20 +4,40 @@ import { MARKETPLACE_CANCELLATION_POLICY, resolveCancellationPolicy } from './ma
 describe('MARKETPLACE_CANCELLATION_POLICY', () => {
   it('é versionada e identificável, independente de passeio/operador', () => {
     expect(MARKETPLACE_CANCELLATION_POLICY.id).toBe('toursflow-standard');
-    expect(MARKETPLACE_CANCELLATION_POLICY.version).toMatch(/^\d{4}-\d{2}$/);
+    expect(MARKETPLACE_CANCELLATION_POLICY.version).toBe('2026-10');
   });
 
   it('título é "Cancelamento e reembolso"', () => {
     expect(MARKETPLACE_CANCELLATION_POLICY.title).toBe('Cancelamento e reembolso');
   });
 
-  it('não promete reembolso, gratuidade, prazo financeiro ou contato com operador (ainda sem autorização de produto para isso)', () => {
-    const forbidden = /grátis|gratuit|reembolsad[oa]|\d+\s*%|\d+\s*horas?|\d+\s*dias?|fale com o operador|entre em contato com o operador/i;
-    expect(MARKETPLACE_CANCELLATION_POLICY.summary).not.toMatch(forbidden);
+  it('summary resume a regra real — não é mais o placeholder "serão apresentadas"', () => {
+    const { summary } = MARKETPLACE_CANCELLATION_POLICY;
+    expect(summary).not.toMatch(/serão apresentadas/i);
+    expect(summary).toMatch(/48 horas/);
+    expect(summary).toMatch(/50%/);
+    expect(summary).toMatch(/menos de 24 horas/);
   });
 
-  it('deixa claro que a política é do marketplace, não do operador individual', () => {
-    expect(MARKETPLACE_CANCELLATION_POLICY.summary.toLowerCase()).toContain('marketplace');
+  it('condições aprovadas (02/10/2026), exatamente nesta ordem', () => {
+    const [full, half, late, noShow, operator, refunds, ...extra] = MARKETPLACE_CANCELLATION_POLICY.terms;
+    expect(full).toMatch(/pelo menos 48 horas.*reembolso integral/i);
+    expect(half).toMatch(/entre 24 e 48 horas.*reembolso de 50%/i);
+    expect(late).toMatch(/menos de 24 horas.*sem reembolso/i);
+    expect(noShow).toMatch(/no-show.*sem reembolso/i);
+    expect(operator).toMatch(/cancelado pelo operador/i);
+    expect(operator).toMatch(/climáticas/i);
+    expect(operator).toMatch(/marítimas/i);
+    expect(operator).toMatch(/segurança/i);
+    expect(operator).toMatch(/impossibilidade operacional/i);
+    expect(operator).toMatch(/remarcação ou reembolso integral/i);
+    expect(refunds).toMatch(/mesmo meio de pagamento/i);
+    expect(extra).toEqual([]);
+  });
+
+  it('não inventa multa, prazo de estorno em dias nem instrui a falar com o operador', () => {
+    const text = [MARKETPLACE_CANCELLATION_POLICY.summary, ...MARKETPLACE_CANCELLATION_POLICY.terms].join(' ');
+    expect(text).not.toMatch(/multa|\d+\s*dias?|fale com o operador|entre em contato com o operador|grátis|gratuit/i);
   });
 });
 
