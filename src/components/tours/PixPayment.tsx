@@ -94,6 +94,13 @@ interface PixPaymentProps {
    * "retry legítimo") e remonta este componente. Ausente = sem botão.
    */
   onNewAttempt?: () => void;
+  /**
+   * Recuperação depois de reload (`booking-recovery.ts`): a view já lida por
+   * `GET` — a tentativa existente é exibida/consultada a partir dela, SEM o
+   * `POST` de criação. Só um clique explícito ("Tentar gerar Pix novamente",
+   * mesma key = replay) ou "Gerar novo Pix" (depois de `failed`) faz POST.
+   */
+  initialView?: NauticFlowBookingPaymentView;
 }
 
 /**
@@ -113,7 +120,7 @@ interface PixPaymentProps {
  * 29/09/2026). `manual_review` foi removido: não é um `PaymentStatus`
  * confirmado no contrato real.
  */
-export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, onNewAttempt }: PixPaymentProps) {
+export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, onNewAttempt, initialView }: PixPaymentProps) {
   const [phase, setPhase] = useState<Phase>('creating');
   const [view, setView] = useState<NauticFlowBookingPaymentView | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -155,6 +162,11 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, o
 
   useEffect(() => {
     let cancelled = false;
+
+    if (createRun === 0 && initialView) {
+      if (applyServerView(initialView) === 'pending') setPhase('pending');
+      return;
+    }
 
     async function create() {
       creatingRef.current = true;

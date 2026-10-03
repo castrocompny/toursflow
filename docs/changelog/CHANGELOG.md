@@ -14,6 +14,67 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-02 — Checkout recuperável depois de reload (achado HIGH do Codex)
+
+O Codex review `review-murpf4bf-6614rm` (`--base main`) teve verdict
+`needs-attention`, com 1 achado **[high]**: reserva, key e resultado do
+pagamento viviam só em estado React. Um reload, como ao voltar do app do
+banco, perdia tudo, e o turista podia reservar e pagar de novo.
+
+**Mudanças:**
+
+- `src/lib/booking-recovery.ts` (novo): grava em `sessionStorage`, com
+  versão e whitelist, só `bookingId`, `departureId` e
+  `paymentIdempotencyKey`. Sem PII. Conteúdo corrompido é limpo, e falha
+  do storage nunca quebra a página.
+- `BookingSelector.tsx`:
+  - grava a referência logo após a reserva e a key antes do POST do Pix;
+  - recupera na montagem só por GET:
+
+| Resposta do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| sem pagamento | confirmação |
+| tentativa existente | `PixPayment` com `initialView` |
+
+  - "Verificar novamente" em erro de rede;
+  - `BOOKING_NOT_FOUND` limpa a referência;
+  - novo botão "Fazer outra reserva" no voucher;
+  - a referência é ignorada se a saída não está na página atual.
+- `PixPayment.tsx`: prop `initialView`, que exibe a tentativa existente
+  sem o POST de criação.
+- ADR-018 em `docs/DECISIONS.md`.
+
+**Testes:**
+
+- `booking-recovery.test.ts`: 9 testes.
+- `BookingSelector.recovery.test.tsx`: 10 testes; 9 deles falham contra
+  o código anterior. Cobrem:
+  - nada de PII no storage;
+  - key gravada antes do POST;
+  - reload com Pix pendente: QR restaurado sem POST, paid tardio, mesma
+    key;
+  - reload depois de pago: voucher;
+  - reload antes do Pix: confirmação;
+  - `failed` → "Gerar novo Pix" com key nova;
+  - erro de rede → "Verificar novamente";
+  - `BOOKING_NOT_FOUND`;
+  - storage corrompido;
+  - reserva de outro passeio;
+  - Strict Mode com um único GET.
+
+**Validações:**
+
+- `npm test`: 529/530. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom; o `sessionStorage` funciona no jsdom.
+- typecheck, lint e build OK.
+
+CPF obrigatório, política `2026-10`, retry e reconciliação do Pix
+preservados. Nenhuma reserva, cobrança ou Pix real foi criado. O E2E
+financeiro ainda não foi executado. Production continua OFF/OFF.
+
+---
+
 ## 2026-10-02 — CPF obrigatório antes da reserva no checkout com Pix (achado do Codex)
 
 O Codex review `review-muroohvc-k067jh` (`--base main`) teve verdict

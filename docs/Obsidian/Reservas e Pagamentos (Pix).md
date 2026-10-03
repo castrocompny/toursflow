@@ -301,3 +301,33 @@ obrigatório no `CustomerForm`, conferido de novo antes do POST e exigido
 por `/api/bookings` (400 sem chamar o NauticFlow). Pagamentos OFF: CPF
 segue opcional. Detalhes em `docs/PAYMENTS.md`.
 
+### Recuperação depois de reload (02/10/2026, ADR-018)
+
+Achado [high] do Codex (`review-murpf4bf-6614rm`). Sintoma: um reload no
+meio do Pix (app do banco) perdia o `bookingId` e a key, e o turista
+podia pagar duas vezes.
+
+**O que mudou:**
+
+- `src/lib/booking-recovery.ts` guarda em `sessionStorage` só
+  `bookingId`, `departureId` e `paymentIdempotencyKey`. Sem PII.
+- O `BookingSelector` recupera na montagem **só por GET**:
+
+| Resposta do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| sem pagamento | confirmação |
+| tentativa existente | `PixPayment` com `initialView`, sem POST |
+
+- Erro de rede: "Verificar novamente".
+- `BOOKING_NOT_FOUND`: limpa a referência.
+- Depois de pago: a referência continua até "Fazer outra reserva" ou o
+  fechamento da aba.
+
+**Testes:** 10 de integração (9 deles falham contra o código anterior),
+mais 9 do helper.
+
+**Observação de segurança, pré-existente:** quem tem o `bookingId` (UUID)
+consegue consultar status e Pix pendente. Não há PII na resposta e nenhum
+controle foi relaxado.
+

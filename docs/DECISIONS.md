@@ -977,3 +977,75 @@ as credenciais entram como variável de ambiente nova, documentada aqui,
 nunca hardcoded.
 
 ---
+
+## ADR-018 — Recuperação do checkout depois de reload via `sessionStorage` (só referências opacas)
+
+**Contexto:** achado HIGH do Codex (`review-murpf4bf-6614rm`, 02/10/2026).
+O `BookingSelector` guardava `bookingResult`, a key do pagamento e o
+resultado só em estado React. No Pix, o turista vai ao app do banco e o
+navegador pode recarregar a aba. A reserva e a tentativa se perdiam, e
+ele podia reservar e pagar de novo.
+
+**Decisão:** com `PAYMENTS_UI_ENABLED`, `src/lib/booking-recovery.ts`
+grava em `sessionStorage` (`toursflow:booking-recovery`, `version: 1`)
+**só** os campos abaixo:
+
+- `bookingId`;
+- `departureId`;
+- `paymentIdempotencyKey`, ou `null` antes de "Pagar com Pix".
+
+Nenhuma PII entra no storage: nada de nome, e-mail, telefone, CPF, QR ou
+valor.
+
+**Quando grava:**
+
+- logo depois do sucesso de `POST /api/bookings`;
+- na entrada do passo de Pix (a key vai **antes** do POST de pagamento);
+- em "Gerar novo Pix" (key nova).
+
+**Na montagem:** se a referência é de uma saída desta página, a UI faz
+**só** `GET /api/bookings/{id}/payment`, nunca POST automático, e
+reconstrói:
+
+| Resposta do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| sem pagamento | confirmação (o clique em "Pagar com Pix" é que cria o pagamento) |
+| tentativa existente | `PixPayment` com `initialView`, sem POST de criação; a key salva mantém o retry como replay |
+
+**Limpeza:**
+
+- `BOOKING_NOT_FOUND`: apaga a referência.
+- Conteúdo inválido ou corrompido: apaga só essa chave.
+- "Fazer outra reserva" (no voucher): apaga a referência.
+- Fechar a aba: o `sessionStorage` some sozinho.
+- Erro de rede **não** apaga a referência: aparece "Verificar novamente",
+  que faz outro GET.
+- Depois de `paid`, a referência **não** é apagada: um reload ainda
+  mostra o voucher.
+
+**Por que `sessionStorage`:**
+
+- Sobrevive a reload e a descarte e restauração da aba (o caso do app do
+  banco).
+- Não fica para sempre no aparelho e não vaza para outras abas.
+- O prazo é a vida da aba, então não precisei inventar um TTL.
+- `localStorage` foi evitado de propósito.
+
+**Segurança:** a referência é um UUID gerado pelo NauticFlow.
+
+- O GET continua passando pelos mesmos controles da rota: flag, Origin,
+  HMAC do IP, Bearer server-side e rate limit.
+- Nenhum controle foi relaxado, e nenhum secret vai ao navegador.
+- Observação pré-existente, não introduzida aqui: quem tem o `bookingId`
+  consegue consultar o status e o Pix pendente daquela reserva. O
+  identificador funciona como referência de capacidade; não há conta de
+  usuário. A view não traz PII.
+
+**Limites conhecidos:**
+
+- Recuperação só na mesma aba.
+- Saída que sumiu da página: a referência fica guardada, mas não é
+  usada.
+- Não existe página dedicada de "minha reserva".
+

@@ -34,6 +34,9 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
   `2026-10`). Continua pendente **`CANCELLATION_POLICY_SNAPSHOT_PENDING`**
   (reserva não grava `id`/`version`) — bloqueia o go-live público, não o
   E2E interno no Preview.
+- ~~Reload no meio do pagamento perdia `bookingId`/key~~ — **resolvido em
+  02/10/2026** (recuperação por `sessionStorage` + GET, ADR-018). Limites:
+  só na mesma aba; sem página "minha reserva".
 - ~~CPF opcional no formulário vs. CPF exigido no Pix~~ — **resolvido em
   02/10/2026**: com `PAYMENTS_UI_ENABLED`, CPF válido é obrigatório antes
   de criar a reserva (formulário + `/api/bookings`).

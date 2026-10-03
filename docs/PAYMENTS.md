@@ -205,6 +205,32 @@ ambíguo/transitório (`NETWORK_ERROR`, `PAYMENT_SERVICE_UNAVAILABLE`,
 servidor → "Gerar novo Pix" com key **nova** (`BookingSelector` remonta
 o `PixPayment` com `key={paymentIdempotencyKey}`).
 
+## Recuperação depois de reload (ADR-018)
+
+Achado HIGH do Codex `review-murpf4bf-6614rm`. Desde 02/10/2026, com
+`PAYMENTS_UI_ENABLED`, o checkout sobrevive a um reload da aba (o caso do
+app do banco).
+
+- **O que fica guardado:** `sessionStorage` com `bookingId`,
+  `departureId` e `paymentIdempotencyKey`. Sem PII. Detalhes em
+  `src/lib/booking-recovery.ts`.
+- **Ao recarregar:** a UI faz só `GET /api/bookings/{id}/payment`, nunca
+  POST automático, e reconstrói:
+
+| Resposta do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| sem pagamento | confirmação |
+| `pending`, `failed` ou estorno | a tentativa existente, com `PixPayment` em `initialView` |
+
+- **Retry:** usa a key salva, então é replay da mesma tentativa. "Gerar
+  novo Pix" depois de `failed` usa key nova.
+- **Erro de rede:** a referência é mantida e aparece "Verificar
+  novamente".
+- **`BOOKING_NOT_FOUND`:** a referência é limpa.
+- **Depois de pago:** a referência continua, para mostrar o voucher num
+  novo reload. Sai em "Fazer outra reserva" ou ao fechar a aba.
+
 ## CPF obrigatório no checkout com Pix
 
 Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF
