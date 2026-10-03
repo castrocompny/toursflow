@@ -292,3 +292,12 @@ a sonda `POST /api/bookings` com departure inexistente retornou
 Production aceitou a autenticação. Nenhum booking/cobrança/Pix criado.
 E2E financeiro ainda **não executado**.
 
+### CPF obrigatório antes da reserva no checkout com Pix (02/10/2026)
+
+Achado [medium] do Codex (`review-muroohvc-k067jh`): CPF vazio criava a
+reserva e o Pix falhava depois com `CUSTOMER_DOCUMENT_REQUIRED`, deixando
+o hold preso. Agora, com `PAYMENTS_UI_ENABLED`, o CPF válido é
+obrigatório no `CustomerForm`, conferido de novo antes do POST e exigido
+por `/api/bookings` (400 sem chamar o NauticFlow). Pagamentos OFF: CPF
+segue opcional. Detalhes em `docs/PAYMENTS.md`.
+

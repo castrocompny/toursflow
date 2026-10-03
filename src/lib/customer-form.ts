@@ -5,9 +5,12 @@
  *
  * Os limites de tamanho (name/email/phone/cpf) espelham exatamente o que
  * `src/lib/booking-validation.ts` já aceita no backend — nunca inventa um
- * limite mais apertado nem mais permissivo que o contrato real. CPF
- * continua opcional aqui pela mesma razão que é opcional em
- * `BookingCustomerInput` (`src/types/booking.ts`): o NauticFlow não exige.
+ * limite mais apertado nem mais permissivo que o contrato real. CPF é
+ * opcional para CRIAR a reserva no NauticFlow (`BookingCustomerInput.cpf?`),
+ * mas obrigatório para GERAR o Pix (`CUSTOMER_DOCUMENT_REQUIRED`, migration
+ * 0059 do NauticFlow) — por isso `cpfRequired` (ligado quando
+ * `PAYMENTS_UI_ENABLED`): sem isso a reserva seria criada e o Pix falharia
+ * depois, sem caminho para corrigir o CPF da reserva já criada.
  *
  * A regra de "10 ou 11 dígitos" para telefone é UX própria do ToursFlow
  * (dar um erro específico e cedo ao turista), não um requisito do
@@ -90,10 +93,13 @@ function isCpfChecksumValid(digits: string): boolean {
   return cpfChecksumDigit(digits, 9) === Number(digits[9]) && cpfChecksumDigit(digits, 10) === Number(digits[10]);
 }
 
-/** CPF é opcional — string vazia é válida (não confunde "não informado" com "inválido"). */
-export function validateCpf(raw: string): string | null {
+/**
+ * Sem `required`, string vazia é válida (não confunde "não informado" com
+ * "inválido"). Com `required` (checkout com Pix), vazio é erro.
+ */
+export function validateCpf(raw: string, { required = false }: { required?: boolean } = {}): string | null {
   const trimmed = raw.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return required ? 'Informe o CPF — é necessário para pagar com Pix.' : null;
   const digits = normalizeCpf(trimmed);
   if (!isCpfChecksumValid(digits)) return 'CPF inválido.';
   return null;
@@ -115,12 +121,15 @@ export interface CustomerFormErrors {
   cpf: string | null;
 }
 
-export function validateCustomerForm(values: CustomerFormValues): CustomerFormErrors {
+export function validateCustomerForm(
+  values: CustomerFormValues,
+  { cpfRequired = false }: { cpfRequired?: boolean } = {},
+): CustomerFormErrors {
   return {
     name: validateName(values.name),
     email: validateEmail(values.email),
     phone: validatePhone(values.phone),
-    cpf: validateCpf(values.cpf),
+    cpf: validateCpf(values.cpf, { required: cpfRequired }),
   };
 }
 

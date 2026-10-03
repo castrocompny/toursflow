@@ -176,6 +176,9 @@ describe('BookingSelector', () => {
 
     it('dados válidos (CPF opcional em branco) avançam para a revisão', () => {
       goToCustomerForm();
+      // Flags reais OFF (sem Pix): CPF continua opcional — só o checkout com Pix o exige.
+      expect(screen.getByText(/\(opcional\)/i)).toBeTruthy();
+      expect(screen.getByLabelText(/^cpf/i).getAttribute('aria-required')).toBe('false');
       fillValidForm();
       fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
 

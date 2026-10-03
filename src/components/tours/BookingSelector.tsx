@@ -23,7 +23,7 @@ import {
   sortDeparturesByDate,
   type DepartureGroup,
 } from '@/lib/booking-selection';
-import { EMPTY_CUSTOMER_FORM_VALUES, type CustomerFormValues } from '@/lib/customer-form';
+import { EMPTY_CUSTOMER_FORM_VALUES, validateCpf, type CustomerFormValues } from '@/lib/customer-form';
 import {
   createIdempotencyKey,
   idempotencyFingerprint,
@@ -342,6 +342,12 @@ export function BookingSelector({
 
   async function handleConfirmBooking() {
     if (isSubmittingRef.current || !selectedDeparture || !idempotencyKeyState.key) return;
+    // Mesma regra do formulário, conferida de novo antes do POST: nunca cria
+    // uma reserva que não conseguirá gerar o Pix.
+    if (PAYMENTS_UI_ENABLED && validateCpf(customer.cpf, { required: true })) {
+      setStep('customer-form');
+      return;
+    }
     isSubmittingRef.current = true;
     setSubmissionStatus('submitting');
     setSubmissionError(null);
@@ -402,6 +408,9 @@ export function BookingSelector({
         onChange={setCustomer}
         onSubmit={handleCustomerSubmit}
         onBack={() => setStep('selection')}
+        // Checkout com Pix: CPF válido ANTES de criar a reserva — o NauticFlow
+        // só exige no Pix, e a reserva já criada não tem como corrigir o CPF.
+        cpfRequired={PAYMENTS_UI_ENABLED}
       />
     );
   }

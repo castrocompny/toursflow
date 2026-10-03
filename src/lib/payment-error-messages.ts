@@ -20,7 +20,12 @@ export const PAYMENT_ERROR_MESSAGES: Record<PaymentErrorCode, string> = {
     'Detectamos uma tentativa anterior com dados diferentes. Atualize a página e tente novamente.',
   PAYMENT_ALREADY_ACTIVE: 'Já existe um pagamento em andamento para esta reserva.',
   PAYMENT_PROVIDER_NOT_ENABLED: 'Pagamento online ainda não está disponível. Volte em breve.',
-  CUSTOMER_DOCUMENT_REQUIRED: 'Para pagar com Pix, informe o CPF nos dados do comprador.',
+  // Defesa residual: a UI e `/api/bookings` já exigem CPF válido antes de
+  // criar a reserva no checkout com Pix. Se ainda assim acontecer, não há
+  // endpoint para corrigir o CPF de uma reserva existente — a mensagem não
+  // promete uma ação que esta tela não oferece.
+  CUSTOMER_DOCUMENT_REQUIRED:
+    'Esta reserva foi criada sem um CPF válido, necessário para pagar com Pix, e o CPF não pode ser corrigido nela. Ela será liberada quando o prazo expirar; para pagar, faça uma nova reserva informando o CPF.',
   PAYMENT_PROVIDER_ERROR: 'Não foi possível processar o pagamento agora. Tente novamente em instantes.',
   RATE_LIMITED: 'Muitas tentativas em pouco tempo. Aguarde alguns instantes e tente novamente.',
   INTERNAL_ERROR: 'Não foi possível completar o pagamento agora. Tente novamente em instantes.',

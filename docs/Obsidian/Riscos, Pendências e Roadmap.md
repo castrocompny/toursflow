@@ -34,9 +34,10 @@ em aberto, para não precisar reconstruir esse quadro toda sessão.
   `2026-10`). Continua pendente **`CANCELLATION_POLICY_SNAPSHOT_PENDING`**
   (reserva não grava `id`/`version`) — bloqueia o go-live público, não o
   E2E interno no Preview.
-- CPF é opcional no formulário, mas o NauticFlow exige CPF/CNPJ válido
-  para gerar Pix (`CUSTOMER_DOCUMENT_REQUIRED`, não recuperável na tela
-  do Pix) — no E2E, preencher CPF.
+- ~~CPF opcional no formulário vs. CPF exigido no Pix~~ — **resolvido em
+  02/10/2026**: com `PAYMENTS_UI_ENABLED`, CPF válido é obrigatório antes
+  de criar a reserva (formulário + `/api/bookings`).
+  `CUSTOMER_DOCUMENT_REQUIRED` fica só como defesa residual.
 - Achado HIGH do Codex (expiração local escondia pagamento tardio):
   **corrigido** em 29/09/2026 (`reconciling` + consulta final +
   "Verificar pagamento"). Aprovação depende de novo

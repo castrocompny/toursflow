@@ -14,6 +14,59 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-02 — CPF obrigatório antes da reserva no checkout com Pix (achado do Codex)
+
+O Codex review `review-muroohvc-k067jh` (`--base main`) teve verdict
+`needs-attention`, com 1 achado **[medium]**: o formulário aceitava CPF
+vazio, a reserva era criada e depois o NauticFlow recusava o Pix com
+`CUSTOMER_DOCUMENT_REQUIRED`. O hold ficava preso, sem como corrigir o
+CPF.
+
+**Contrato confirmado no código do NauticFlow:** o booking aceita CPF
+opcional, mas o Pix exige CPF/CNPJ válido (RPC da migration 0059). Não
+existe endpoint para atualizar o CPF de uma reserva existente.
+
+**Mudanças:**
+
+- `customer-form.ts`: `validateCpf(raw, { required })` e
+  `validateCustomerForm(values, { cpfRequired })`.
+- `CustomerForm.tsx`: prop `cpfRequired`, rótulo "obrigatório para pagar
+  com Pix" e `aria-required`.
+- `BookingSelector.tsx`: `cpfRequired={PAYMENTS_UI_ENABLED}`, mais uma
+  checagem antes do POST da reserva.
+- `/api/bookings` (`route.ts`): com `PAYMENTS_UI_ENABLED`, responde 400
+  `INVALID_REQUEST` sem CPF válido e não chama o NauticFlow.
+- `payment-error-messages.ts`: a mensagem de `CUSTOMER_DOCUMENT_REQUIRED`
+  não promete mais uma ação que a tela não oferece. Isso fica como defesa
+  residual.
+- Pagamentos OFF: o CPF continua opcional.
+
+**Testes:**
+
+- `validateCpf` com required.
+- `validateCustomerForm` com `cpfRequired`.
+- Novo `route.cpf.test.ts`:
+  - sem CPF ou CPF inválido: 400 e nenhuma chamada ao NauticFlow;
+  - CPF válido: enviado só com dígitos.
+- Integração com Pix ON:
+  - rótulo e `aria-required`;
+  - CPF vazio ou inválido não chama `/api/bookings`;
+  - CPF válido cria uma única reserva, mesmo com duplo clique;
+  - `CUSTOMER_DOCUMENT_REQUIRED`: sem nova reserva nem nova cobrança.
+- Flags OFF: o rótulo continua "(opcional)".
+
+**Validações:**
+
+- `npm test`: 510/511. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+Retry e reconciliação do Pix, política `2026-10` e
+`TOURSFLOW_AUTH=VALIDATED` foram preservados. Nenhuma reserva, cobrança
+ou Pix foi criado. O E2E financeiro ainda não foi executado.
+
+---
+
 ## 2026-10-02 — Política de cancelamento real no checkout (achado do Codex)
 
 O Codex review `review-muro2f8i-uca0v9` (`--base main`) teve verdict

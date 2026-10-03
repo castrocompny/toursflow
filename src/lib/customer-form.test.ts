@@ -93,6 +93,13 @@ describe('CPF', () => {
     expect(validateCpf('11144477735')).toBeNull();
   });
 
+  it('com required (checkout com Pix): vazio vira erro; inválido continua erro; válido passa', () => {
+    expect(validateCpf('', { required: true })).toMatch(/necessário para pagar com pix/i);
+    expect(validateCpf('   ', { required: true })).not.toBeNull();
+    expect(validateCpf('123.456.789-00', { required: true })).toBe('CPF inválido.');
+    expect(validateCpf('111.444.777-35', { required: true })).toBeNull();
+  });
+
   it('normaliza e mascara mantendo só os 2 dígitos verificadores visíveis', () => {
     expect(normalizeCpf('111.444.777-35')).toBe('11144477735');
     expect(maskCpf('111.444.777-35')).toBe('***.***.***-35');
@@ -111,6 +118,12 @@ describe('validateCustomerForm / isCustomerFormValid', () => {
   it('formulário completo e válido (CPF vazio) passa', () => {
     const errors = validateCustomerForm(validValues);
     expect(isCustomerFormValid(errors)).toBe(true);
+  });
+
+  it('cpfRequired: CPF vazio reprova; sem a opção, o mesmo formulário passa', () => {
+    expect(isCustomerFormValid(validateCustomerForm(validValues, { cpfRequired: true }))).toBe(false);
+    expect(isCustomerFormValid(validateCustomerForm({ ...validValues, cpf: '111.444.777-35' }, { cpfRequired: true }))).toBe(true);
+    expect(isCustomerFormValid(validateCustomerForm(validValues))).toBe(true);
   });
 
   it('um campo inválido é suficiente para reprovar', () => {

@@ -9,6 +9,8 @@ interface CustomerFormProps {
   onChange: (values: CustomerFormValues) => void;
   onSubmit: (values: CustomerFormValues) => void;
   onBack: () => void;
+  /** Checkout com Pix (`PAYMENTS_UI_ENABLED`): o NauticFlow exige CPF válido para gerar o Pix. */
+  cpfRequired?: boolean;
 }
 
 type TouchedFields = Record<keyof CustomerFormValues, boolean>;
@@ -25,9 +27,9 @@ const NO_FIELDS_TOUCHED: TouchedFields = { name: false, email: false, phone: fal
  * nunca coloca PII em URL — só repassa `values` validados para o pai via
  * `onSubmit`, que decide o que fazer a seguir (avançar para a revisão).
  */
-export function CustomerForm({ values, onChange, onSubmit, onBack }: CustomerFormProps) {
+export function CustomerForm({ values, onChange, onSubmit, onBack, cpfRequired = false }: CustomerFormProps) {
   const [touched, setTouched] = useState<TouchedFields>(NO_FIELDS_TOUCHED);
-  const errors: CustomerFormErrors = validateCustomerForm(values);
+  const errors: CustomerFormErrors = validateCustomerForm(values, { cpfRequired });
 
   function update<K extends keyof CustomerFormValues>(field: K, value: CustomerFormValues[K]) {
     onChange({ ...values, [field]: value });
@@ -124,7 +126,10 @@ export function CustomerForm({ values, onChange, onSubmit, onBack }: CustomerFor
 
         <div>
           <label htmlFor="customer-cpf" className="text-sm font-semibold text-ink">
-            CPF <span className="font-normal text-ink-muted">(opcional)</span>
+            CPF{' '}
+            <span className="font-normal text-ink-muted">
+              {cpfRequired ? '(obrigatório para pagar com Pix)' : '(opcional)'}
+            </span>
           </label>
           <input
             id="customer-cpf"
@@ -136,6 +141,8 @@ export function CustomerForm({ values, onChange, onSubmit, onBack }: CustomerFor
             value={values.cpf}
             onChange={(event) => update('cpf', formatCpfMask(event.target.value))}
             onBlur={() => markTouched('cpf')}
+            required={cpfRequired}
+            aria-required={cpfRequired}
             aria-invalid={touched.cpf && !!errors.cpf}
             aria-describedby={touched.cpf && errors.cpf ? 'customer-cpf-error' : undefined}
             className="mt-1 w-full rounded-lg border border-ink/15 bg-white px-3 py-2 text-ink outline-none focus-visible:border-sea"

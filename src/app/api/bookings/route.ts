@@ -6,7 +6,8 @@ import { getTrustedClientIp } from '@/lib/client-ip';
 import { createNauticFlowBooking } from '@/lib/nauticflow-bookings';
 import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
 import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, noStoreJson, readBodyWithLimit } from '@/lib/http-guards';
-import { BOOKING_CHECKOUT_ENABLED } from '@/lib/feature-flags';
+import { BOOKING_CHECKOUT_ENABLED, PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
+import { validateCpf } from '@/lib/customer-form';
 
 /**
  * POST /api/bookings — única rota do ToursFlow que inicia uma reserva.
@@ -93,6 +94,14 @@ export async function POST(request: Request) {
 
     const input = validateBookingInput(rawBody);
     if (!input.ok) throw input.error;
+
+    // Checkout com Pix: o NauticFlow aceita reserva sem CPF, mas recusa o
+    // Pix depois (`CUSTOMER_DOCUMENT_REQUIRED`) e não há como corrigir o CPF
+    // da reserva já criada. A UI já exige CPF válido; esta trava cobre
+    // chamada direta/build antigo — nunca cria um hold que não poderá ser pago.
+    if (PAYMENTS_UI_ENABLED && validateCpf(input.data.customer.cpf ?? '', { required: true })) {
+      throw new BookingApiError(400, 'INVALID_REQUEST', 'customer.cpf válido é obrigatório para pagar com Pix.');
+    }
 
     const result = await createNauticFlowBooking(input.data, idempotency.data, clientKey);
 

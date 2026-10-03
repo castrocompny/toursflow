@@ -108,14 +108,22 @@ async function flush() {
   });
 }
 
-function fillAndReview() {
+// CPF de teste público com checksum válido — não pertence a ninguém real.
+const TEST_CPF = '111.444.777-35';
+
+function fillCustomerForm(cpf: string) {
   const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
   fireEvent.click(departureButton);
   fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
   fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });
   fireEvent.change(screen.getByLabelText(/e-mail/i), { target: { value: 'turista@example.com' } });
   fireEvent.change(screen.getByLabelText(/telefone/i), { target: { value: '11912345678' } });
+  fireEvent.change(screen.getByLabelText(/^cpf/i), { target: { value: cpf } });
   fireEvent.click(screen.getByRole('button', { name: /revisar reserva/i }));
+}
+
+function fillAndReview() {
+  fillCustomerForm(TEST_CPF);
 }
 
 describe('BookingSelector — integração do fluxo de pagamento (PAYMENTS_UI_ENABLED mockada true)', () => {
@@ -318,6 +326,71 @@ describe('BookingSelector — integração do fluxo de pagamento (PAYMENTS_UI_EN
     expect(posts[1][1].headers['Idempotency-Key']).not.toBe(posts[0][1].headers['Idempotency-Key']);
     expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
     expect(screen.getByText(/pague com pix/i)).toBeTruthy();
+  });
+
+  /**
+   * Codex review (02/10/2026, [medium]): com Pix ligado, o CPF é exigido
+   * ANTES de criar a reserva — o NauticFlow só exige no Pix, e a reserva
+   * já criada não tem como corrigir o CPF.
+   */
+  it('Pix ON: campo CPF é obrigatório (rótulo + aria-required)', () => {
+    vi.stubGlobal('fetch', makeRoutedFetch());
+    render(<BookingSelector departures={[available]} />);
+    const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+    fireEvent.click(departureButton);
+    fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
+
+    const cpf = screen.getByLabelText(/^cpf/i);
+    expect(cpf.getAttribute('aria-required')).toBe('true');
+    expect(screen.getByText(/obrigatório para pagar com pix/i)).toBeTruthy();
+    expect(screen.queryByText(/\(opcional\)/i)).toBeNull();
+  });
+
+  it.each([
+    ['vazio', ''],
+    ['inválido', '123.456.789-00'],
+  ])('Pix ON + CPF %s: não avança para a revisão e nunca chama /api/bookings', (_label, cpf) => {
+    const fetchSpy = makeRoutedFetch();
+    vi.stubGlobal('fetch', fetchSpy);
+    render(<BookingSelector departures={[available]} />);
+
+    fillCustomerForm(cpf);
+
+    expect(screen.queryByRole('button', { name: /confirmar reserva/i })).toBeNull();
+    expect(screen.getByRole('button', { name: /revisar reserva/i })).toBeTruthy();
+    expect(screen.getByText(/cpf/i, { selector: '#customer-cpf-error' })).toBeTruthy();
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(0);
+  });
+
+  it('Pix ON + CPF válido: cria UMA reserva com o CPF só em dígitos; duplo clique não duplica', async () => {
+    const fetchSpy = makeRoutedFetch();
+    vi.stubGlobal('fetch', fetchSpy);
+    render(<BookingSelector departures={[available]} />);
+    fillAndReview();
+
+    const confirm = screen.getByRole('button', { name: /confirmar reserva/i });
+    fireEvent.click(confirm);
+    fireEvent.click(confirm);
+    await flush();
+
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+    const sent = JSON.parse(bookingPostCalls(fetchSpy)[0][1].body);
+    expect(sent.customer.cpf).toBe('11144477735');
+  });
+
+  it('defesa residual: CUSTOMER_DOCUMENT_REQUIRED do backend mostra erro coerente, sem nova reserva, nova cobrança ou ação enganosa', async () => {
+    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'CUSTOMER_DOCUMENT_REQUIRED')] });
+    await reachPixStep(fetchSpy);
+
+    expect(screen.getByRole('alert').textContent).toMatch(/cpf não pode ser corrigido nela/i);
+    expect(screen.queryByRole('button', { name: /tentar gerar pix novamente/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000);
+    });
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
+    expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(1);
   });
 });
 

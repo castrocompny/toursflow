@@ -205,6 +205,29 @@ ambíguo/transitório (`NETWORK_ERROR`, `PAYMENT_SERVICE_UNAVAILABLE`,
 servidor → "Gerar novo Pix" com key **nova** (`BookingSelector` remonta
 o `PixPayment` com `key={paymentIdempotencyKey}`).
 
+## CPF obrigatório no checkout com Pix
+
+Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF
+opcional (11 dígitos se informado), mas a criação do Pix exige CPF/CNPJ
+válido do cliente, senão devolve `CUSTOMER_DOCUMENT_REQUIRED` (checagem
+dentro da RPC da migration 0059, antes de qualquer cobrança). Não existe
+endpoint para corrigir o CPF de uma reserva já criada.
+
+Regra (02/10/2026, achado [medium] do Codex `review-muroohvc-k067jh`):
+com `PAYMENTS_UI_ENABLED`, o CPF válido (checksum) é obrigatório **antes**
+de criar a reserva:
+
+- `CustomerForm` com `cpfRequired`: rótulo "obrigatório para pagar com
+  Pix", `aria-required`, sem avançar para a revisão.
+- `BookingSelector.handleConfirmBooking` confere de novo antes do POST.
+- `/api/bookings` recusa (400 `INVALID_REQUEST`) sem CPF válido quando
+  `PAYMENTS_UI_ENABLED` — cobre chamada direta/build antigo.
+- Com pagamentos OFF, o CPF continua opcional (comportamento anterior).
+- CPF enviado só em dígitos (`normalizeCpf`), igual ao validado.
+- Defesa residual: se `CUSTOMER_DOCUMENT_REQUIRED` ainda vier, o
+  `PixPayment` mostra erro explícito sem retry, sem nova reserva e sem
+  nova cobrança (a mensagem não promete corrigir o CPF da reserva).
+
 ## Política de cancelamento no checkout
 
 Desde 02/10/2026 o `BookingReview` exibe, antes de "Confirmar reserva",
