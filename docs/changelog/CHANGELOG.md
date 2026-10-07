@@ -14,6 +14,54 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-02 — Recuperação de várias reservas na mesma aba (achado HIGH do Codex)
+
+O Codex review (`--base main`, depois de `54d7339`) teve verdict
+`needs-attention`, com 1 achado **[high]**: a recuperação tinha uma única
+entrada no `sessionStorage`. Reservar o passeio B apagava o Pix pendente
+do passeio A, e ao voltar para A havia risco de pagar de novo.
+
+**Mudanças:**
+
+- `booking-recovery.ts`:
+  - schema v3 `{ version: 3, bookings: { [bookingId]: entrada } }`;
+  - `findBookingRecovery(tourSlug)`, que devolve a mais recente daquele
+    passeio;
+  - `saveBookingRecovery` faz upsert de uma entrada só;
+  - `removeBookingRecovery(bookingId)` remove só aquela entrada;
+  - a v2 é migrada; v1 e versões desconhecidas são descartadas;
+  - entradas inválidas saem uma a uma.
+- `BookingSelector.tsx`:
+  - recupera pela entrada do passeio atual;
+  - "Fazer outra reserva" e `BOOKING_NOT_FOUND` removem só o
+    `bookingId` atual;
+  - com uma reserva recuperável do mesmo passeio já na aba, "Confirmar
+    reserva" retoma essa reserva por GET em vez de criar outra.
+
+**Testes:** o helper foi reescrito para v3 (save, update e remove
+independentes, migração v2, corrupção, PII). A integração ganhou:
+
+- Pix pendente em A → reserva B → volta para A, com o QR restaurado e
+  paid tardio levando ao voucher, sem POST;
+- A paga com B gravada;
+- erro de rede em A;
+- `BOOKING_NOT_FOUND` em A;
+- A expirada com "Fazer outra reserva";
+- "Fazer outra reserva" preservando B e outras chaves;
+- reserva já existente do mesmo passeio, que não cria outra.
+
+**Validações:**
+
+- `npm test`: 549/550. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+Sem PII no storage e nenhum controle server-side alterado. Nenhuma
+reserva, cobrança ou Pix real foi criado. O E2E financeiro ainda não foi
+executado. Production continua OFF/OFF.
+
+---
+
 ## 2026-10-02 — Recuperação desacoplada do catálogo de venda + reserva expirada (achados do Codex)
 
 O Codex review `review-murq0mbc-75mrlm` (`--base main`) teve verdict

@@ -59,14 +59,14 @@ const ok = (data: unknown, status = 200) => ({ ok: true, status, json: async () 
 const fail = (status: number, code: string) => ({ ok: false, status, json: async () => ({ error: { code } }) });
 
 /** `get`: fila de respostas do GET de status; POSTs de reserva/pagamento respondem sucesso, mas os testes provam quando NÃO são chamados. */
-function makeFetch(gets: Array<() => unknown> = []) {
+function makeFetch(gets: Array<() => unknown> = [], bookingId = BOOKING_ID) {
   const queue = [...gets];
   return vi.fn(async (url: string, init?: any) => {
     const method = init?.method ?? 'GET';
     if (url === '/api/bookings' && method === 'POST') {
       return ok(
         {
-          bookingId: BOOKING_ID,
+          bookingId,
           status: 'pendente',
           holdExpiresAt: holdExpiresAt(),
           tour: { slug: 't', name: 'T' },
@@ -80,10 +80,10 @@ function makeFetch(gets: Array<() => unknown> = []) {
         201,
       );
     }
-    if (url === `/api/bookings/${BOOKING_ID}/payment` && method === 'POST') return ok(view('pending'), 201);
-    if (url === `/api/bookings/${BOOKING_ID}/payment` && method === 'GET') {
+    if (url === `/api/bookings/${bookingId}/payment` && method === 'POST') return ok({ ...view('pending'), bookingId }, 201);
+    if (url === `/api/bookings/${bookingId}/payment` && method === 'GET') {
       const next = queue.shift();
-      if (!next) return ok(view('pending'));
+      if (!next) return ok({ ...view('pending'), bookingId });
       return next();
     }
     throw new Error(`fetch não esperado: ${method} ${url}`);
@@ -97,15 +97,17 @@ const bookingPosts = (f: ReturnType<typeof makeFetch>) => calls(f, '/api/booking
 const paymentPosts = (f: ReturnType<typeof makeFetch>) => calls(f, `/api/bookings/${BOOKING_ID}/payment`, 'POST');
 const statusGets = (f: ReturnType<typeof makeFetch>) => calls(f, `/api/bookings/${BOOKING_ID}/payment`, 'GET');
 
+/** Registro v3: uma entrada por bookingId; acrescenta sem apagar as existentes. */
 function saveRecovery(state: Record<string, unknown>) {
-  window.sessionStorage.setItem(
-    BOOKING_RECOVERY_STORAGE_KEY,
-    JSON.stringify({ version: 2, tourSlug: TOUR_SLUG, departsAt: available.departsAt, ...state }),
-  );
-}
-function savedRecovery() {
   const raw = window.sessionStorage.getItem(BOOKING_RECOVERY_STORAGE_KEY);
-  return raw ? JSON.parse(raw) : null;
+  const registry = raw ? JSON.parse(raw) : { version: 3, bookings: {} };
+  const entry: Record<string, unknown> = { tourSlug: TOUR_SLUG, departsAt: available.departsAt, paymentIdempotencyKey: null, ...state };
+  registry.bookings[entry.bookingId as string] = entry;
+  window.sessionStorage.setItem(BOOKING_RECOVERY_STORAGE_KEY, JSON.stringify(registry));
+}
+function savedRecovery(bookingId = BOOKING_ID) {
+  const raw = window.sessionStorage.getItem(BOOKING_RECOVERY_STORAGE_KEY);
+  return raw ? (JSON.parse(raw).bookings?.[bookingId] ?? null) : null;
 }
 
 async function flush() {
@@ -149,7 +151,6 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
     await bookAndOpenPix();
 
     expect(savedRecovery()).toEqual({
-      version: 2,
       bookingId: BOOKING_ID,
       tourSlug: TOUR_SLUG,
       departsAt: available.departsAt,
@@ -469,6 +470,151 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       expect(savedRecovery()).toBeNull();
       expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
       expect(bookingPosts(fetchSpy)).toHaveLength(1);
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+  });
+
+  /** Achado HIGH do Codex (02/10/2026): reservar outro passeio não pode apagar a recuperação de um Pix pendente. */
+  describe('várias reservas na mesma aba (registro v3, uma entrada por bookingId)', () => {
+    const BOOKING_ID_B = '2f0d6a3e-1c4b-4b7e-9a51-6d2e8f0c3a77';
+    const departureB: Departure = { ...available, id: 'dep-b', tourId: 'tour-b', departsAt: '2026-11-20T13:00:00+00:00' };
+
+    it('Pix pendente em A → reserva B → volta para A: A recuperada por GET, sem nova reserva nem novo Pix; paid tardio → voucher de A', async () => {
+      // Passeio A: reserva + Pix pendente.
+      const fetchA = makeFetch();
+      vi.stubGlobal('fetch', fetchA);
+      const pageA = render(<BookingSelector departures={[available]} tourSlug="passeio-a" />);
+      await bookAndOpenPix();
+      fireEvent.click(screen.getByRole('button', { name: /pagar com pix/i }));
+      await flush();
+      const keyA = savedRecovery(BOOKING_ID).paymentIdempotencyKey;
+      expect(keyA).toMatch(UUID_RE);
+      pageA.unmount();
+
+      // Passeio B: outra reserva na mesma aba.
+      const fetchB = makeFetch([], BOOKING_ID_B);
+      vi.stubGlobal('fetch', fetchB);
+      const pageB = render(<BookingSelector departures={[departureB]} tourSlug="passeio-b" />);
+      await flush();
+      expect(statusGets(fetchB)).toHaveLength(0); // a reserva de A não pertence a esta página
+      await bookAndOpenPix();
+      expect(bookingPosts(fetchB)).toHaveLength(1);
+
+      expect(savedRecovery(BOOKING_ID)).toEqual({ bookingId: BOOKING_ID, tourSlug: 'passeio-a', departsAt: available.departsAt, paymentIdempotencyKey: keyA });
+      expect(savedRecovery(BOOKING_ID_B)).toEqual({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt, paymentIdempotencyKey: null });
+      pageB.unmount();
+
+      // Volta para A.
+      const backToA = makeFetch([() => ok(view('pending')), () => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', backToA);
+      render(<BookingSelector departures={[available]} tourSlug="passeio-a" />);
+      await flush();
+
+      expect(screen.getByTestId('pix-copy-paste').textContent).toBe('codigo-pix-recuperado');
+      expect(bookingPosts(backToA)).toHaveLength(0);
+      expect(paymentPosts(backToA)).toHaveLength(0);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(screen.getByText(BOOKING_ID)).toBeTruthy();
+      expect(paymentPosts(backToA)).toHaveLength(0);
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+    });
+
+    it('"Fazer outra reserva" remove só a entrada atual — a de outro passeio e outras chaves continuam', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt, paymentIdempotencyKey: SAVED_KEY });
+      window.sessionStorage.setItem('outra-chave', 'intacta');
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).toEqual({
+        bookingId: BOOKING_ID_B,
+        tourSlug: 'passeio-b',
+        departsAt: departureB.departsAt,
+        paymentIdempotencyKey: SAVED_KEY,
+      });
+      expect(window.sessionStorage.getItem('outra-chave')).toBe('intacta');
+    });
+
+    it('BOOKING_NOT_FOUND remove só aquele bookingId', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt });
+      const fetchSpy = makeFetch([() => fail(404, 'BOOKING_NOT_FOUND')]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+    });
+
+    it('A paga + reserva B gravada → volta para A: voucher de A por GET; B intacta', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, tourSlug: 'passeio-a', paymentIdempotencyKey: SAVED_KEY });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt });
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug="passeio-a" />);
+      await flush();
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(screen.getByText(BOOKING_ID)).toBeTruthy();
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+    });
+
+    it('erro de rede ao recuperar A: A e B continuam no registro, nada é criado', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt });
+      const fetchSpy = makeFetch([() => Promise.reject(new TypeError('Failed to fetch'))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(screen.getByRole('button', { name: /verificar novamente/i })).toBeTruthy();
+      expect(savedRecovery(BOOKING_ID)).not.toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('A expirada sem pagamento + "Fazer outra reserva": remove só A; B continua', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt });
+      const pastHold = new Date(Date.now() - 60_000).toISOString();
+      const fetchSpy = makeFetch([() => ok(view(null, false, pastHold))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(screen.getByText(/esta reserva expirou/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('já existe reserva recuperável deste passeio na aba: "Confirmar reserva" NÃO cria outra, retoma a existente por GET', async () => {
+      const fetchSpy = makeFetch();
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      // Outra aba (sessionStorage duplicado) gravou uma reserva deste passeio depois da montagem.
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+
+      await bookAndOpenPix();
+
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+      expect(statusGets(fetchSpy)).toHaveLength(1);
+      expect(screen.getByTestId('pix-copy-paste')).toBeTruthy();
       expect(paymentPosts(fetchSpy)).toHaveLength(0);
     });
   });

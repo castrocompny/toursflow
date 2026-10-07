@@ -242,6 +242,17 @@ venda.
 - **Com tentativa `pending`:** a reconciliação continua, mesmo com o
   prazo local vencido.
 
+**Atualização (v3).** Agora há várias reservas por aba.
+
+- **Estrutura:** um registro com uma entrada por `bookingId`; o
+  `tourSlug` é só o índice de busca.
+- **Passeios diferentes:** reservar o passeio B não apaga a recuperação
+  do passeio A, e cada um é recuperado na própria página.
+- **Remoção:** "Fazer outra reserva" e `BOOKING_NOT_FOUND` removem só a
+  entrada atual.
+- **Mesmo passeio:** se já existe uma reserva recuperável dele, a tela
+  retoma essa reserva por GET em vez de criar outra.
+
 ## CPF obrigatório no checkout com Pix
 
 Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF

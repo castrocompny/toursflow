@@ -37,8 +37,8 @@ import { BOOKING_CHECKOUT_ENABLED, PAYMENTS_UI_ENABLED } from '@/lib/feature-fla
 import { isHoldExpired } from '@/lib/hold-countdown';
 import { PaymentClientError, ToursFlowPaymentClient } from '@/lib/payment-client';
 import {
-  clearBookingRecovery,
-  readBookingRecovery,
+  findBookingRecovery,
+  removeBookingRecovery,
   saveBookingRecovery,
   type BookingRecoveryState,
 } from '@/lib/booking-recovery';
@@ -329,8 +329,10 @@ export function BookingSelector({
   useEffect(() => {
     if (!PAYMENTS_UI_ENABLED || !tourSlug || recoveryStartedRef.current) return;
     recoveryStartedRef.current = true;
-    const saved = readBookingRecovery();
-    if (!saved || saved.tourSlug !== tourSlug) return;
+    // Só a entrada DESTE passeio; as de outros passeios ficam intactas no
+    // registro para as páginas deles (v3, uma entrada por bookingId).
+    const saved = findBookingRecovery(tourSlug);
+    if (!saved) return;
     setRecoveryState(saved);
     void recoverBooking(saved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -348,7 +350,7 @@ export function BookingSelector({
       if (error instanceof PaymentClientError && error.code === 'BOOKING_NOT_FOUND') {
         // Reserva não existe mais (ou nunca foi do marketplace): nada a
         // recuperar — limpa só a referência e volta ao fluxo normal.
-        clearBookingRecovery();
+        removeBookingRecovery(saved.bookingId);
         setRecoveryState(null);
         setStep('selection');
       } else {
@@ -401,7 +403,10 @@ export function BookingSelector({
   }
 
   function handleStartNewBooking() {
-    clearBookingRecovery();
+    // Remove só a entrada da reserva atual — reservas de outros passeios
+    // (e outras chaves do sessionStorage) continuam intactas.
+    const currentBookingId = bookingResult?.bookingId ?? recoveryState?.bookingId;
+    if (currentBookingId) removeBookingRecovery(currentBookingId);
     setRecoveryState(null);
     setBookingResult(null);
     setPaymentResult(null);
@@ -486,6 +491,15 @@ export function BookingSelector({
     // uma reserva que não conseguirá gerar o Pix.
     if (PAYMENTS_UI_ENABLED && validateCpf(customer.cpf, { required: true })) {
       setStep('customer-form');
+      return;
+    }
+    // Já existe uma reserva recuperável deste passeio nesta aba (ex.: outra
+    // aba duplicada, ou a recuperação ainda não terminou): nunca cria uma
+    // segunda — retoma a existente (GET), sem POST.
+    const existing = PAYMENTS_UI_ENABLED && tourSlug ? findBookingRecovery(tourSlug) : null;
+    if (existing) {
+      setRecoveryState(existing);
+      void recoverBooking(existing);
       return;
     }
     isSubmittingRef.current = true;

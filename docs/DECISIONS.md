@@ -1075,3 +1075,20 @@ reconstrói:
   - A confirmação ao vivo que expira na tela ganhou o mesmo botão.
 - Contrato do GET sem mudança, e nenhum controle server-side alterado.
 
+**Atualização v3 (Codex review `--base main` após `54d7339`, 02/10/2026): várias reservas por aba.**
+
+- **Antes:** a v2 tinha uma única entrada. Reservar o passeio B
+  sobrescrevia o Pix pendente do passeio A; ao voltar para A, a
+  recuperação não existia mais e havia risco de compra duplicada.
+- **Agora:** registro `{ version: 3, bookings: { [bookingId]: entrada } }`.
+  - Gravar, atualizar e remover sempre atingem uma única entrada;
+    `tourSlug` é só o índice de busca da página.
+  - "Fazer outra reserva" e `BOOKING_NOT_FOUND` removem só aquele
+    `bookingId`.
+  - A v2 é migrada para v3; v1 e versões desconhecidas são descartadas;
+    entradas individuais inválidas saem, e as válidas ficam.
+- **Mesmo passeio:** com uma reserva recuperável daquele passeio já na
+  aba, "Confirmar reserva" não cria outra e retoma a existente por GET.
+  Se houver mais de uma (aba duplicada), vale sempre a mais recente.
+- **Sem mudança:** os campos guardados continuam os mesmos 4, sem PII.
+

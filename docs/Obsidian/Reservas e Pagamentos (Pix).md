@@ -341,3 +341,13 @@ controle foi relaxado.
 - **Pagamento `pending`:** nunca é tratado como reserva abandonada; a
   reconciliação continua.
 
+**Atualização v3 (Codex, achado HIGH de reservas em vários passeios).**
+
+- **Estrutura:** registro com uma entrada por `bookingId`. Reservar B não
+  apaga A, e cada passeio recupera a própria reserva.
+- **Remoção:** "Fazer outra reserva" e `BOOKING_NOT_FOUND` removem só a
+  entrada atual.
+- **Mesmo passeio:** se já existe uma reserva recuperável dele, a tela
+  retoma essa reserva em vez de criar outra.
+- **Pendente:** o E2E financeiro ainda não foi executado.
+
