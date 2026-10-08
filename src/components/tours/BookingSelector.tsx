@@ -684,6 +684,7 @@ export function BookingSelector({
         }}
         initialView={recoveredView ?? undefined}
         canReplayCreate={recoveredView ? recoveredKeyIsOriginal : true}
+        onStartNewBooking={handleStartNewBooking}
         onPaid={(data) => {
           // A referência de recuperação continua salva: um reload depois do
           // pagamento ainda mostra o voucher (GET). Some ao fechar a aba ou em

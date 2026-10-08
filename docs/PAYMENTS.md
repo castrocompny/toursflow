@@ -263,6 +263,24 @@ venda.
   replay com a **mesma** key salva, só no clique. Nunca há POST
   automático no reload.
 
+**Estados finais (07/10/2026).** "Gerar novo Pix" só aparece se a reserva
+ainda aceita pagamento (`isBookingPayable`: não `cancelada`/`confirmada`
+e hold no futuro).
+
+- **`failed` com reserva expirada ou cancelada, `refunded` e
+  `partially_refunded`:** mostram o estado e "Fazer outra reserva", que
+  remove só o `bookingId` atual.
+- **`HOLD_EXPIRED` / `BOOKING_NOT_PENDING` ao criar o Pix:** um GET
+  decide:
+
+| Resultado do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| pendente | só "Verificar pagamento" |
+| encerrada | saída ("Fazer outra reserva") |
+
+- **Pagamento pendente:** nunca ganha saída.
+
 ## CPF obrigatório no checkout com Pix
 
 Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF

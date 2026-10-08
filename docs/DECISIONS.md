@@ -1122,3 +1122,36 @@ reconstrói:
     pagamento").
   - Timeout no replay leva ao retry com a mesma key; `paid` vence.
 
+**Atualização (Codex `review-muyso6rm-x7pxqg`, 07/10/2026): saída de pagamentos em estado final.**
+
+- **Contrato confirmado** (NauticFlow, RPC da migration 0059):
+  - status da reserva: `pendente`, `confirmada` ou `cancelada`;
+  - novo pagamento exige `pendente` (senão `BOOKING_NOT_PENDING`) e hold
+    no futuro (senão `HOLD_EXPIRED`);
+  - outra tentativa `pending` ou `paid` gera `PAYMENT_ALREADY_ACTIVE`;
+  - uma key nova depois de `failed` é permitida.
+- **`isBookingPayable`** (`src/lib/booking-payability.ts`): reserva não
+  `cancelada`/`confirmada` e hold no futuro. Só decide se a UI **oferece**
+  "Gerar novo Pix"; o servidor continua sendo a autoridade.
+- **`failed` + reserva pagável:** "Gerar novo Pix" com key nova, como
+  antes.
+- **`failed` + hold vencido ou cancelada:** a tela explica o estado e
+  mostra "Fazer outra reserva".
+- **`refunded` / `partially_refunded`:** o estado continua visível, sem
+  Pix, com "Fazer outra reserva".
+- **`HOLD_EXPIRED` / `BOOKING_NOT_PENDING` ao criar o Pix:** a UI faz um
+  GET (leitura) antes de decidir:
+
+| Resultado do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| tentativa ainda pendente | reconciliação (só "Verificar pagamento") |
+| sem pagamento | fase `closed` ("O prazo desta reserva expirou") + "Fazer outra reserva" |
+| `failed` | sem retry |
+
+  Depois dessa recusa, "Gerar novo Pix" não volta mais nesta tela, mesmo
+  que o relógio local ache o hold válido.
+- **"Fazer outra reserva"** remove só o `bookingId` atual e nunca aparece
+  com pagamento pendente ou ambíguo. No fallback (passeio indisponível),
+  volta ao 404 ou erro.
+

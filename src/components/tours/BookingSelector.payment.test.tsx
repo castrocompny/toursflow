@@ -282,20 +282,38 @@ describe('BookingSelector — integração do fluxo de pagamento (PAYMENTS_UI_EN
     expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
   });
 
-  it('HOLD_EXPIRED: sem retry de criação; "Verificar pagamento" só faz GET e nunca cria cobrança', async () => {
+  it('HOLD_EXPIRED com tentativa anterior ainda pendente (sem QR): GET automático (leitura), nunca nova cobrança, só "Verificar pagamento"', async () => {
     const pendingNoPix = { ...paymentView('pending'), pix: undefined };
-    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'HOLD_EXPIRED')], get: [ok(pendingNoPix)] });
+    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'HOLD_EXPIRED')], get: [ok(pendingNoPix), ok(pendingNoPix)] });
     await reachPixStep(fetchSpy);
+    await flush();
 
+    // Pagamento anterior ainda pendente: ambíguo — nunca oferece saída nem retry.
     expect(screen.getByRole('alert').textContent).toMatch(/tempo da sua reserva expirou/i);
     expect(screen.queryByRole('button', { name: /tentar gerar pix novamente/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /fazer outra reserva/i })).toBeNull();
+    expect(paymentCalls(fetchSpy, 'GET')).toHaveLength(1);
 
     fireEvent.click(screen.getByRole('button', { name: /verificar pagamento/i }));
     await flush();
 
-    expect(paymentCalls(fetchSpy, 'GET')).toHaveLength(1);
+    expect(paymentCalls(fetchSpy, 'GET')).toHaveLength(2);
     expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(1);
-    expect(screen.getByRole('alert').textContent).toMatch(/tempo da sua reserva expirou/i);
+  });
+
+  it('HOLD_EXPIRED sem nenhuma tentativa: reserva encerrada com "Fazer outra reserva" (sem retry, sem POST extra)', async () => {
+    const noPayment = { ...paymentView('pending'), payment: null, pix: undefined };
+    const fetchSpy = makeScriptedFetch({ post: [fail(422, 'HOLD_EXPIRED')], get: [ok(noPayment)] });
+    await reachPixStep(fetchSpy);
+    await flush();
+
+    expect(screen.getByText(/o prazo desta reserva expirou/i)).toBeTruthy();
+    expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+    expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
+    expect(paymentCalls(fetchSpy, 'POST')).toHaveLength(1);
+    expect(bookingPostCalls(fetchSpy)).toHaveLength(1);
   });
 
   it('erro não recuperável (CUSTOMER_DOCUMENT_REQUIRED): só a mensagem, nenhuma ação que crie algo', async () => {

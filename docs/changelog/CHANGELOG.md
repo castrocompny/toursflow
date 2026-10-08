@@ -14,6 +14,59 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-07 — Saída de pagamentos recuperados em estado final (achado do Codex)
+
+O Codex review `review-muyso6rm-x7pxqg` (`--base main`) teve verdict
+`needs-attention`, com 1 achado **[medium]**:
+
+- `failed` com hold vencido ou reserva cancelada só oferecia "Gerar novo
+  Pix", que o NauticFlow recusa com `HOLD_EXPIRED`;
+- `refunded` não tinha ação nenhuma;
+- a recuperação persistia e impedia outra reserva do passeio.
+
+**Mudanças:**
+
+- Novo `src/lib/booking-payability.ts`: `isBookingPayable`, que espelha a
+  RPC 0059.
+- `PixPayment.tsx`:
+  - "Gerar novo Pix" só aparece com a reserva pagável;
+  - `failed` não pagável, `refunded` e `partially_refunded` ganham
+    "Fazer outra reserva" (prop `onStartNewBooking`);
+  - `HOLD_EXPIRED` e `BOOKING_NOT_PENDING` na criação são classificados
+    como `closed` e levam a um GET que decide:
+
+| Resultado do GET | O que a UI mostra |
+|---|---|
+| `paid` | voucher |
+| pendente | só "Verificar pagamento" |
+| sem pagamento | nova fase `closed` com saída |
+
+  - depois dessa recusa, "Gerar novo Pix" não volta.
+- `BookingSelector.tsx` passa `handleStartNewBooking`, que remove só o
+  `bookingId` atual e, no fallback, volta ao 404 ou erro.
+
+**Testes:**
+
+- `booking-payability.test.ts`: 4 testes.
+- `BookingSelector.recovery.test.tsx`: +9 testes (`failed` pagável, hold
+  vencido, cancelada, `refunded`, `partially_refunded`, `HOLD_EXPIRED`
+  após clique, `BOOKING_NOT_PENDING` revelando paid, fallback com saída
+  para 404, pendente sem saída).
+- `BookingSelector.payment.test.tsx`: o teste antigo de `HOLD_EXPIRED`
+  foi atualizado para o GET automático, mais 1 teste novo.
+- 9 dos testes novos falham contra o código anterior.
+
+**Validações:**
+
+- `npm test`: 574/575. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+Nenhuma reserva, cobrança ou Pix real foi criado. O E2E financeiro ainda
+não foi executado. Production continua OFF/OFF.
+
+---
+
 ## 2026-10-07 — Recuperação fora do catálogo + replay explícito do Pix (achados do Codex)
 
 O Codex review `review-muyritqs-6vp4et` (`--base main`) teve verdict

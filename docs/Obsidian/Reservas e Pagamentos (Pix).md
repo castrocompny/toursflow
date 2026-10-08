@@ -360,3 +360,14 @@ controle foi relaxado.
   a mesma key.
 - **Pendente:** o E2E financeiro ainda não foi executado.
 
+**Atualização (Codex `review-muyso6rm-x7pxqg`, 07/10/2026).**
+
+- **Retry:** "Gerar novo Pix" só aparece enquanto a reserva está
+  pendente e com o hold no futuro (`isBookingPayable`).
+- **Estados finais:** `failed` com reserva encerrada, `refunded` e
+  `partially_refunded` mostram "Fazer outra reserva", que remove só a
+  reserva atual.
+- **Recusa do servidor:** `HOLD_EXPIRED` ou `BOOKING_NOT_PENDING` levam a
+  um GET que decide entre voucher, reconciliação e reserva encerrada.
+- **Pendente:** o E2E financeiro ainda não foi executado.
+

@@ -796,5 +796,125 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       expect(paymentPosts(fetchSpy)).toHaveLength(0);
     });
   });
+
+  /** Achado MEDIUM do Codex (review-muyso6rm-x7pxqg): pagamento recuperado em estado final precisa de saída. */
+  describe('recuperação de pagamento em estado final', () => {
+    const BOOKING_ID_B = '2f0d6a3e-1c4b-4b7e-9a51-6d2e8f0c3a77';
+    const pastHold = () => new Date(Date.now() - 60_000).toISOString();
+    const failedView = (hold: string, bookingStatus = 'pendente') => ({ ...view('failed', false, hold), bookingStatus });
+
+    async function recover(viewData: unknown, extraPosts: Array<() => unknown> = [], extraGets: Array<() => unknown> = []) {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', paymentIdempotencyKey: null });
+      const posts = [...extraPosts];
+      const base = makeFetch([() => ok(viewData), ...extraGets]);
+      const fetchSpy = vi.fn(async (url: string, init?: any) => {
+        if (url === `/api/bookings/${BOOKING_ID}/payment` && init?.method === 'POST' && posts.length) return posts.shift()!();
+        return base(url, init);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      return fetchSpy;
+    }
+    const posts = (f: ReturnType<typeof vi.fn>, url: string) => f.mock.calls.filter(([u, i]) => u === url && i?.method === 'POST');
+
+    it('A: failed + reserva ainda pagável → "Gerar novo Pix" (sem saída prematura)', async () => {
+      await recover(failedView(holdExpiresAt()));
+      expect(screen.getByRole('button', { name: /gerar novo pix/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /fazer outra reserva/i })).toBeNull();
+    });
+
+    it('B: failed + hold vencido → sem "Gerar novo Pix"; "Fazer outra reserva" remove só A e volta à seleção, sem POST', async () => {
+      const fetchSpy = await recover(failedView(pastHold()));
+
+      expect(screen.getByText(/não foi concluída e a reserva expirou/i)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+      expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
+      expect(posts(fetchSpy, '/api/bookings')).toHaveLength(0);
+      expect(posts(fetchSpy, `/api/bookings/${BOOKING_ID}/payment`)).toHaveLength(0);
+    });
+
+    it('C: failed + reserva cancelada (hold ainda no futuro) → sem "Gerar novo Pix", com saída', async () => {
+      await recover(failedView(holdExpiresAt(), 'cancelada'));
+      expect(screen.getByText(/esta reserva foi cancelada/i)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /fazer outra reserva/i })).toBeTruthy();
+    });
+
+    it.each([
+      ['D: refunded', 'refunded', /pagamento estornado/i],
+      ['E: partially_refunded', 'partially_refunded', /parcialmente estornado/i],
+    ])('%s → estado exibido, nenhum Pix, "Fazer outra reserva" remove só A', async (_label, status, text) => {
+      const fetchSpy = await recover({ ...view('failed', false), payment: { status, method: 'pix' } });
+
+      expect(screen.getByText(text)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
+      expect(posts(fetchSpy, `/api/bookings/${BOOKING_ID}/payment`)).toHaveLength(0);
+    });
+
+    it('F: "Gerar novo Pix" recebe HOLD_EXPIRED (relógio local achava o hold válido) → GET → reserva encerrada, saída; sem nova tentativa automática', async () => {
+      const fetchSpy = await recover(
+        failedView(holdExpiresAt()),
+        [() => fail(422, 'HOLD_EXPIRED')],
+        [() => ok(failedView(holdExpiresAt()))],
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /gerar novo pix/i }));
+      await flush();
+
+      expect(screen.queryByRole('button', { name: /gerar novo pix/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /fazer outra reserva/i })).toBeTruthy();
+      expect(posts(fetchSpy, `/api/bookings/${BOOKING_ID}/payment`)).toHaveLength(1);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(30_000);
+      });
+      expect(posts(fetchSpy, `/api/bookings/${BOOKING_ID}/payment`)).toHaveLength(1);
+      expect(posts(fetchSpy, '/api/bookings')).toHaveLength(0);
+      expect(savedRecovery(BOOKING_ID)).not.toBeNull(); // só some no clique
+    });
+
+    it('F2: BOOKING_NOT_PENDING porque a reserva já foi paga → GET revela paid → voucher', async () => {
+      await recover(failedView(holdExpiresAt()), [() => fail(409, 'BOOKING_NOT_PENDING')], [() => ok(view('paid', false))]);
+
+      fireEvent.click(screen.getByRole('button', { name: /gerar novo pix/i }));
+      await flush();
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+    });
+
+    it('I: fallback (passeio despublicado) + failed com hold vencido → saída volta ao 404 público', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      vi.stubGlobal('fetch', makeFetch([() => ok(failedView(pastHold()))]));
+      render(<BookingRecoveryFallback>{<p>Esta página não existe</p>}</BookingRecoveryFallback>);
+      await flush();
+
+      expect(screen.getByText(/não foi concluída e a reserva expirou/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery()).toBeNull();
+      expect(screen.getByText(/esta página não existe/i)).toBeTruthy();
+      expect(screen.queryByText(/nenhuma saída programada/i)).toBeNull();
+    });
+
+    it('J: pending (QR válido ou já em reconciliação) nunca ganha "Fazer outra reserva"', async () => {
+      await recover(view('pending', true, pastHold()));
+      expect(screen.getByTestId('pix-copy-paste')).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /fazer outra reserva/i })).toBeNull();
+      cleanup();
+
+      await recover(view('pending', false, pastHold()));
+      expect(screen.getByText(/verificando pagamento/i)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /fazer outra reserva/i })).toBeNull();
+    });
+  });
 });
 

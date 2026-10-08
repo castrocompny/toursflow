@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { PaymentClientError, type PaymentClient } from '@/lib/payment-client';
 import { formatPrice, centsToReais } from '@/lib/format';
 import { formatCountdown, isHoldExpired, msUntilExpiry } from '@/lib/hold-countdown';
+import { isBookingPayable } from '@/lib/booking-payability';
 import type { ClientPaymentErrorCode } from '@/lib/payment-error-messages';
 import type { NauticFlowBookingPaymentView, PaymentStatus } from '@/types/payment';
 
@@ -36,9 +37,13 @@ const RECONCILE_MAX_POLLS = 24;
  * - `verify`: já existe pagamento ativo, ou a reserva saiu de pending /
  *   o hold venceu — nunca tenta criar outro; só consulta o status (GET),
  *   que pode revelar `paid` ou o Pix já ativo.
+ * - `closed`: o servidor confirmou que a reserva não aceita NOVO pagamento
+ *   (`HOLD_EXPIRED`, `BOOKING_NOT_PENDING`). Uma consulta GET decide o
+ *   desfecho: `paid` → voucher; pagamento ainda pendente → reconciliação;
+ *   senão → reserva encerrada, com "Fazer outra reserva".
  * - `fatal`: nada que o turista consiga resolver nesta tela.
  */
-type CreateErrorKind = 'retry' | 'verify' | 'fatal';
+type CreateErrorKind = 'retry' | 'verify' | 'closed' | 'fatal';
 
 const RETRY_SAME_KEY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set([
   'NETWORK_ERROR',
@@ -51,17 +56,15 @@ const RETRY_SAME_KEY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set([
   'UNAUTHORIZED',
 ]);
 
-const VERIFY_ONLY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set([
-  'PAYMENT_ALREADY_ACTIVE',
-  'HOLD_EXPIRED',
-  'BOOKING_NOT_PENDING',
-  'BOOKING_NOT_FOUND',
-]);
+const VERIFY_ONLY_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set(['PAYMENT_ALREADY_ACTIVE', 'BOOKING_NOT_FOUND']);
+
+const BOOKING_CLOSED_CODES: ReadonlySet<ClientPaymentErrorCode> = new Set(['HOLD_EXPIRED', 'BOOKING_NOT_PENDING']);
 
 function classifyCreateError(error: unknown): CreateErrorKind {
   if (!(error instanceof PaymentClientError)) return 'fatal';
   if (RETRY_SAME_KEY_CODES.has(error.code)) return 'retry';
   if (VERIFY_ONLY_CODES.has(error.code)) return 'verify';
+  if (BOOKING_CLOSED_CODES.has(error.code)) return 'closed';
   return 'fatal';
 }
 
@@ -79,6 +82,8 @@ type Phase =
   | 'refunded'
   | 'partially_refunded'
   | 'expired'
+  // Reserva encerrada (hold vencido/cancelada) e nenhum pagamento em jogo.
+  | 'closed'
   | 'error';
 
 interface PixPaymentProps {
@@ -107,6 +112,12 @@ interface PixPaymentProps {
    * uma key inventada não reconcilia a tentativa existente.
    */
   canReplayCreate?: boolean;
+  /**
+   * Saída de estados finais (reserva que não aceita mais pagamento, estorno):
+   * o `BookingSelector` remove só a recuperação DESTA reserva e volta à
+   * seleção. Nunca oferecido com pagamento pendente/ambíguo.
+   */
+  onStartNewBooking?: () => void;
 }
 
 /**
@@ -134,6 +145,7 @@ export function PixPayment({
   onNewAttempt,
   initialView,
   canReplayCreate = true,
+  onStartNewBooking,
 }: PixPaymentProps) {
   const [phase, setPhase] = useState<Phase>('creating');
   const [view, setView] = useState<NauticFlowBookingPaymentView | null>(null);
@@ -156,6 +168,10 @@ export function PixPayment({
   const creatingRef = useRef(false);
   const reconcilePollsRef = useRef(0);
   const finalCheckStartedRef = useRef(false);
+  // O servidor recusou um novo pagamento por reserva encerrada: daqui em
+  // diante nunca oferece "Gerar novo Pix" (mesmo que o relógio local ainda
+  // ache o hold válido).
+  const serverClosedRef = useRef(false);
   const hasView = view !== null;
 
   /** Aplica a resposta autoritativa do servidor; devolve o status lido. */
@@ -191,7 +207,13 @@ export function PixPayment({
       } catch (error) {
         if (cancelled) return;
         setErrorMessage(error instanceof PaymentClientError ? error.message : 'Pagamento Pix ainda não está disponível.');
-        setCreateErrorKind(classifyCreateError(error));
+        const kind = classifyCreateError(error);
+        if (kind === 'closed') {
+          serverClosedRef.current = true;
+          await resolveClosedBooking();
+          return;
+        }
+        setCreateErrorKind(kind);
         setPhase('error');
       } finally {
         if (!cancelled) creatingRef.current = false;
@@ -245,6 +267,35 @@ export function PixPayment({
     }
   }, [phase, view, now]);
 
+  /**
+   * Depois de `HOLD_EXPIRED`/`BOOKING_NOT_PENDING`: um GET (leitura) decide.
+   * Uma tentativa anterior ainda pode ter sido paga ou estar pendente —
+   * nunca encerra a reserva sem conferir isso.
+   */
+  async function resolveClosedBooking() {
+    try {
+      const updated = await paymentClient.getBookingPaymentStatus(bookingId);
+      if (!updated.payment) {
+        setView(updated);
+        setPhase('closed');
+        return;
+      }
+      const status = applyServerView(updated);
+      if (status === 'pending') {
+        if (updated.pix) {
+          setPhase('pending');
+        } else {
+          setCreateErrorKind('verify');
+          setPhase('error');
+        }
+      }
+    } catch {
+      // Sem resposta: ambíguo — só "Verificar pagamento", nunca uma saída.
+      setCreateErrorKind('verify');
+      setPhase('error');
+    }
+  }
+
   /** Só consulta status (GET) do mesmo `bookingId` — nunca cria reserva, cobrança ou Pix. */
   async function handleVerifyPayment() {
     if (checkingRef.current) return;
@@ -253,6 +304,11 @@ export function PixPayment({
     setCheckMessage(null);
     try {
       const updated = await paymentClient.getBookingPaymentStatus(bookingId);
+      if (!updated.payment && serverClosedRef.current) {
+        setView(updated);
+        setPhase('closed');
+        return;
+      }
       const status = applyServerView(updated);
       if (status === 'pending' && phase === 'error' && updated.pix) {
         // Pix já ativo para esta reserva (ex.: PAYMENT_ALREADY_ACTIVE, ou a
@@ -328,6 +384,26 @@ export function PixPayment({
 
   if (!view) return null;
 
+  const startNewBookingAction = onStartNewBooking ? (
+    <button type="button" onClick={onStartNewBooking} className="btn-primary mt-4 w-full">
+      Fazer outra reserva
+    </button>
+  ) : null;
+  const bookingCancelled = view.bookingStatus === 'cancelada';
+
+  if (phase === 'closed') {
+    return (
+      <div className="rounded-card border border-ink/10 bg-white p-6">
+        <p className="eyebrow">Reserva encerrada</p>
+        <h3 className="mt-2 font-display text-xl font-bold">
+          {bookingCancelled ? 'Esta reserva foi cancelada.' : 'O prazo desta reserva expirou.'}
+        </h3>
+        <p className="mt-2 text-sm text-ink-muted">Esta reserva não aceita mais pagamento. Nenhum valor foi cobrado.</p>
+        {startNewBookingAction}
+      </div>
+    );
+  }
+
   if (phase === 'paid') {
     return (
       <div className="rounded-card border border-ink/10 bg-white p-6">
@@ -343,11 +419,23 @@ export function PixPayment({
         <p role="alert" className="text-sm text-red-700">
           Não foi possível confirmar este pagamento.
         </p>
-        {onNewAttempt ? (
+        {/* Nova tentativa só enquanto a reserva aceita pagamento (pendente e
+            hold no futuro); senão o NauticFlow recusaria com HOLD_EXPIRED /
+            BOOKING_NOT_PENDING e o turista ficaria preso aqui. */}
+        {onNewAttempt && !serverClosedRef.current && isBookingPayable(view) ? (
           <button type="button" onClick={onNewAttempt} className="btn-primary mt-4 w-full">
             Gerar novo Pix
           </button>
-        ) : null}
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-ink-muted">
+              {bookingCancelled
+                ? 'Esta reserva foi cancelada.'
+                : 'Esta tentativa de pagamento não foi concluída e a reserva expirou.'}
+            </p>
+            {startNewBookingAction}
+          </>
+        )}
       </div>
     );
   }
@@ -360,6 +448,7 @@ export function PixPayment({
           {phase === 'refunded' ? 'Pagamento estornado' : 'Pagamento parcialmente estornado'}
         </h3>
         <p className="mt-2 text-sm text-ink-muted">Você pode acompanhar o estorno pelo meio de pagamento utilizado.</p>
+        {startNewBookingAction}
       </div>
     );
   }
