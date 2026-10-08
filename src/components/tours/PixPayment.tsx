@@ -101,6 +101,12 @@ interface PixPaymentProps {
    * mesma key = replay) ou "Gerar novo Pix" (depois de `failed`) faz POST.
    */
   initialView?: NauticFlowBookingPaymentView;
+  /**
+   * `false` quando a key desta tentativa NÃO é a original (recuperação sem
+   * key salva): aí o replay explícito de "pending sem Pix" é escondido —
+   * uma key inventada não reconcilia a tentativa existente.
+   */
+  canReplayCreate?: boolean;
 }
 
 /**
@@ -120,7 +126,15 @@ interface PixPaymentProps {
  * 29/09/2026). `manual_review` foi removido: não é um `PaymentStatus`
  * confirmado no contrato real.
  */
-export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, onNewAttempt, initialView }: PixPaymentProps) {
+export function PixPayment({
+  bookingId,
+  idempotencyKey,
+  paymentClient,
+  onPaid,
+  onNewAttempt,
+  initialView,
+  canReplayCreate = true,
+}: PixPaymentProps) {
   const [phase, setPhase] = useState<Phase>('creating');
   const [view, setView] = useState<NauticFlowBookingPaymentView | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -259,7 +273,7 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, o
   }
 
   function handleRetryCreate() {
-    if (phase !== 'error' || creatingRef.current) return;
+    if ((phase !== 'error' && phase !== 'pending') || creatingRef.current || settledRef.current) return;
     creatingRef.current = true;
     setErrorMessage(null);
     setCheckMessage(null);
@@ -377,9 +391,25 @@ export function PixPayment({ bookingId, idempotencyKey, paymentClient, onPaid, o
 
   // phase === 'pending'
   if (!view.pix) {
+    // Tentativa existe no servidor, mas sem QR (ex.: criação interrompida
+    // por timeout antes de chegar ao Asaas, e a página recarregou). O
+    // polling continua; o replay é sempre um clique explícito, com a MESMA
+    // Idempotency-Key — no NauticFlow isso devolve a mesma tentativa e
+    // reconcilia/cria a cobrança por `externalReference`, nunca uma segunda.
     return (
       <div className="rounded-card border border-ink/10 bg-white p-6">
         <p className="text-sm text-ink-muted">Aguardando confirmação...</p>
+        {canReplayCreate ? (
+          <>
+            <p className="mt-2 text-sm text-ink-muted">
+              Se o código Pix não apareceu, recupere o mesmo Pix desta reserva — nenhuma cobrança nova é criada.
+            </p>
+            <button type="button" onClick={handleRetryCreate} className="btn-primary mt-4 w-full">
+              Recuperar Pix
+            </button>
+          </>
+        ) : null}
+        {verifyAction}
       </div>
     );
   }

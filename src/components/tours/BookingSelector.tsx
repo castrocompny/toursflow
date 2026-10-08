@@ -153,6 +153,13 @@ interface BookingSelectorProps {
    * saída esgota ou sai da lista. Ausente: sem recuperação.
    */
   tourSlug?: string;
+  /**
+   * Chamado quando a recuperação some (`BOOKING_NOT_FOUND` ou "Fazer outra
+   * reserva") — usado pelo `BookingRecoveryFallback`, que monta este
+   * componente sem catálogo (passeio despublicado/catálogo fora) e precisa
+   * voltar ao 404/erro em vez de mostrar uma seleção vazia.
+   */
+  onRecoveryDismissed?: () => void;
 }
 
 type Step =
@@ -226,6 +233,7 @@ export function BookingSelector({
   boardingPointName,
   boardingPointReference,
   tourSlug,
+  onRecoveryDismissed,
 }: BookingSelectorProps) {
   const router = useRouter();
   const dateWindowSize = useDateWindowSize();
@@ -294,6 +302,7 @@ export function BookingSelector({
   // Recuperação depois de reload: view lida por GET, entregue ao PixPayment
   // para exibir a tentativa existente sem POST de criação.
   const [recoveredView, setRecoveredView] = useState<NauticFlowBookingPaymentView | null>(null);
+  const [recoveredKeyIsOriginal, setRecoveredKeyIsOriginal] = useState(true);
   const [recoveryState, setRecoveryState] = useState<BookingRecoveryState | null>(null);
   const [recoveryErrorMessage, setRecoveryErrorMessage] = useState<string | null>(null);
   // Uma única recuperação por montagem — inclusive no double-invoke de
@@ -353,6 +362,7 @@ export function BookingSelector({
         removeBookingRecovery(saved.bookingId);
         setRecoveryState(null);
         setStep('selection');
+        onRecoveryDismissed?.();
       } else {
         // Falha transitória: mantém a referência, nunca cria nada — o
         // turista tenta de novo (GET) quando quiser.
@@ -398,6 +408,8 @@ export function BookingSelector({
     // view, sem POST. A key salva é a da MESMA tentativa (retry = replay);
     // sem ela, a key nova só seria usada por uma ação explícita.
     setPaymentIdempotencyKey(saved.paymentIdempotencyKey ?? createIdempotencyKey());
+    // Sem a key original, nunca oferece replay de criação (só GET).
+    setRecoveredKeyIsOriginal(saved.paymentIdempotencyKey !== null);
     setRecoveredView(view);
     setStep('payment-pix');
   }
@@ -414,6 +426,7 @@ export function BookingSelector({
     setRecoveredView(null);
     setSelectedDepartureId(null);
     setStep('selection');
+    onRecoveryDismissed?.();
   }
 
   /** Grava a referência opaca de recuperação (só no checkout com Pix e com `tourSlug`). */
@@ -665,10 +678,12 @@ export function BookingSelector({
         onNewAttempt={() => {
           const key = createIdempotencyKey();
           setRecoveredView(null);
+          setRecoveredKeyIsOriginal(true);
           setPaymentIdempotencyKey(key);
           if (bookedDeparture) persistRecovery(bookingResult.bookingId, bookedDeparture.departsAt, key);
         }}
         initialView={recoveredView ?? undefined}
+        canReplayCreate={recoveredView ? recoveredKeyIsOriginal : true}
         onPaid={(data) => {
           // A referência de recuperação continua salva: um reload depois do
           // pagamento ainda mostra o voucher (GET). Some ao fechar a aba ou em

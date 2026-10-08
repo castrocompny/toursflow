@@ -253,6 +253,16 @@ venda.
 - **Mesmo passeio:** se já existe uma reserva recuperável dele, a tela
   retoma essa reserva por GET em vez de criar outra.
 
+**Atualização (07/10/2026).**
+
+- **Recuperação independente do catálogo:** com o passeio despublicado
+  (404) ou o catálogo fora do ar (erro), os boundaries do segmento
+  montam a recuperação via `BookingRecoveryFallback`, só por GET. Sem
+  reserva salva, aparece o 404 ou o erro de sempre.
+- **Pix pendente sem QR:** aparece "Recuperar Pix", que faz o POST de
+  replay com a **mesma** key salva, só no clique. Nunca há POST
+  automático no reload.
+
 ## CPF obrigatório no checkout com Pix
 
 Contrato real (NauticFlow `ede8fb0`): `POST /bookings` aceita CPF

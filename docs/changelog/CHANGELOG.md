@@ -14,6 +14,62 @@ Para o diagnóstico completo pré-integração com o NauticFlow, ver [../AUDITOR
 
 ---
 
+## 2026-10-07 — Recuperação fora do catálogo + replay explícito do Pix (achados do Codex)
+
+O Codex review `review-muyritqs-6vp4et` (`--base main`) teve verdict
+`needs-attention`, com 2 achados.
+
+**[high] A recuperação dependia da página do passeio carregar.** Com o
+passeio despublicado ou o catálogo fora do ar, a compra ficava
+inacessível.
+
+- Novo `BookingRecoveryFallback`. Os novos `not-found.tsx` e `error.tsx`
+  em `passeios/[destino]/[slug]` usam esse fallback: com uma reserva
+  daquele slug salva na aba, ele mostra a recuperação (só GET); sem
+  reserva, mostra o 404 ou o erro de sempre.
+- Nova prop `BookingSelector.onRecoveryDismissed`: "Fazer outra reserva"
+  e `BOOKING_NOT_FOUND` voltam ao 404 ou erro.
+- `page.tsx`: a falha dos relacionados esconde a seção em vez de derrubar
+  a página.
+
+**[medium] Pix pendente sem QR depois de reload ficava preso.**
+
+- O `PixPayment` passa a mostrar "Recuperar Pix" mais "Verificar
+  pagamento" quando `pending` vem sem `pix`.
+- O replay é explícito, com a **mesma** Idempotency-Key, e tem trava
+  contra clique duplo.
+- O replay fica escondido quando a recuperação não tem a key original
+  (`canReplayCreate`).
+
+**Testes:** +10 em `BookingSelector.recovery.test.tsx`; 7 deles falham
+contra o código anterior. Cobrem:
+
+- passeio despublicado com reserva paga;
+- catálogo fora do ar com Pix pendente;
+- sem reserva salva: 404;
+- "Fazer outra reserva" e `BOOKING_NOT_FOUND` no fallback;
+- reload com pendente sem QR: nenhum POST e mesma key;
+- replay com a mesma key, mais clique duplo;
+- replay com timeout seguido de retry com a mesma key;
+- `paid` antes do clique;
+- registro de B intacto;
+- sem key original: sem replay.
+
+**Validações:**
+
+- `npm test`: 560/561. A única falha é a conhecida do `localStorage`
+  experimental Node/jsdom.
+- typecheck, lint e build OK.
+
+**Observação pré-existente:** o 404 de passeio inexistente responde HTTP
+200, por causa do streaming do `loading.tsx`. Medido igual antes e
+depois desta mudança.
+
+Nenhuma reserva, cobrança ou Pix real foi criado. O E2E financeiro ainda
+não foi executado. Production continua OFF/OFF.
+
+---
+
 ## 2026-10-02 — Recuperação de várias reservas na mesma aba (achado HIGH do Codex)
 
 O Codex review (`--base main`, depois de `54d7339`) teve verdict

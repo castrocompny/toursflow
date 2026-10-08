@@ -1092,3 +1092,33 @@ reconstrói:
   Se houver mais de uma (aba duplicada), vale sempre a mais recente.
 - **Sem mudança:** os campos guardados continuam os mesmos 4, sem PII.
 
+**Atualização (Codex `review-muyritqs-6vp4et`, 07/10/2026).**
+
+- **[high] Recuperar a compra não depende mais da página do passeio
+  carregar.**
+  - O problema: o `BookingSelector` só montava se `getTour` e
+    `listDepartures` funcionassem. Com o passeio despublicado (404) ou o
+    catálogo fora do ar (erro), a recuperação nem rodava.
+  - Novos `not-found.tsx` e `error.tsx` no segmento
+    `passeios/[destino]/[slug]` envolvem o 404 e o erro de sempre em
+    `BookingRecoveryFallback`. Se a aba tem uma reserva desse `slug`, ele
+    monta o fluxo de recuperação sem catálogo (`departures=[]`, só GET);
+    senão, mostra o 404 ou o erro público.
+  - "Fazer outra reserva" e `BOOKING_NOT_FOUND` voltam ao 404 ou erro
+    (`onRecoveryDismissed`), nunca a uma seleção vazia.
+  - Os relacionados deixam de derrubar a página: em falha, a seção some.
+  - Não houve rota nem endpoint novo; o GET é o mesmo, com os mesmos
+    controles.
+  - Observação pré-existente: por causa do streaming do `loading.tsx`, o
+    404 de passeio inexistente já respondia HTTP 200 com a tela de 404
+    (medido antes e depois desta mudança). Não foi alterado aqui.
+- **[medium] Pix pendente sem QR depois de reload.**
+  - A tela continua consultando por GET e passa a oferecer "Recuperar
+    Pix". O clique faz o POST de replay com a **mesma** key salva, que o
+    NauticFlow trata como replay da tentativa e reconcilia por
+    `externalReference`; não há cobrança nova.
+  - Nunca há POST automático.
+  - Sem a key original salva, o botão não aparece (só "Verificar
+    pagamento").
+  - Timeout no replay leva ao retry com a mesma key; `paid` vence.
+

@@ -351,3 +351,12 @@ controle foi relaxado.
   retoma essa reserva em vez de criar outra.
 - **Pendente:** o E2E financeiro ainda não foi executado.
 
+**Atualização (Codex `review-muyritqs-6vp4et`, 07/10/2026).**
+
+- **Recuperação de compra independente da página carregar:** os
+  `not-found.tsx` e `error.tsx` do passeio montam a recuperação se a aba
+  tem reserva daquele slug. Os relacionados não derrubam mais a página.
+- **Pix pendente sem QR:** "Recuperar Pix" faz o replay só no clique, com
+  a mesma key.
+- **Pendente:** o E2E financeiro ainda não foi executado.
+

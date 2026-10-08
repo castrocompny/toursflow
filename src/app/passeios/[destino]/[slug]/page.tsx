@@ -67,7 +67,13 @@ export default async function TourPage({ params, searchParams }: PageProps) {
   const [tour, departures, relatedResult, resolvedSearchParams] = await Promise.all([
     getTour(destino, slug),
     listDepartures(slug),
-    listTours({ destination: destino, limit: 4 }),
+    // Relacionados são só sugestão de descoberta: falha aqui esconde a
+    // seção, nunca derruba a página (nem a recuperação de uma compra feita
+    // nela — ver `BookingRecoveryFallback`).
+    listTours({ destination: destino, limit: 4 }).catch((error: unknown) => {
+      console.error('[passeios/[slug]] relacionados indisponíveis', error);
+      return { tours: [] as Awaited<ReturnType<typeof listTours>>['tours'] };
+    }),
     searchParams,
   ]);
   if (!tour) notFound();

@@ -5,8 +5,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Departure } from '@/types';
 import { BOOKING_RECOVERY_STORAGE_KEY } from '@/lib/booking-recovery';
 
+const pathname = { current: '/passeios/buzios/passeio-teste' };
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ refresh: vi.fn(), push: vi.fn(), replace: vi.fn(), back: vi.fn() }),
+  usePathname: () => pathname.current,
 }));
 
 /**
@@ -18,6 +20,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/feature-flags', () => ({ BOOKING_CHECKOUT_ENABLED: true, PAYMENTS_UI_ENABLED: true }));
 
 const { BookingSelector } = await import('./BookingSelector');
+const { BookingRecoveryFallback } = await import('./BookingRecoveryFallback');
 
 const BOOKING_ID = '9c858901-8a57-4791-81fe-4c455b099bc9';
 const TOUR_SLUG = 'passeio-teste';
@@ -615,6 +618,181 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       expect(bookingPosts(fetchSpy)).toHaveLength(0);
       expect(statusGets(fetchSpy)).toHaveLength(1);
       expect(screen.getByTestId('pix-copy-paste')).toBeTruthy();
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+  });
+
+  /**
+   * Achado HIGH do Codex (07/10/2026): passeio despublicado (404) ou catálogo
+   * fora do ar (error boundary) não podem esconder uma compra existente.
+   * `BookingRecoveryFallback` é o que os boundaries do segmento renderizam.
+   */
+  describe('recuperação fora do catálogo (404 / erro do catálogo)', () => {
+    const FALLBACK = <p>Esta página não existe</p>;
+
+    it('passeio despublicado + reserva paga salva: voucher em vez do 404, sem POST', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{FALLBACK}</BookingRecoveryFallback>);
+      await flush();
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(screen.getByText(BOOKING_ID)).toBeTruthy();
+      expect(screen.queryByText(/esta página não existe/i)).toBeNull();
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('catálogo fora do ar + Pix pendente salvo: QR recuperado por GET, sem POST', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      const fetchSpy = makeFetch([() => ok(view('pending'))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{<p>Não conseguimos carregar agora</p>}</BookingRecoveryFallback>);
+      await flush();
+
+      expect(screen.getByTestId('pix-copy-paste').textContent).toBe('codigo-pix-recuperado');
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('sem reserva salva deste passeio: 404/erro público de sempre, nenhuma requisição', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, tourSlug: 'outro-passeio' });
+      const fetchSpy = makeFetch();
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{FALLBACK}</BookingRecoveryFallback>);
+      await flush();
+
+      expect(screen.getByText(/esta página não existe/i)).toBeTruthy();
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('"Fazer outra reserva" (passeio indisponível): remove só esta reserva e volta ao 404 — nunca uma seleção vazia', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{FALLBACK}</BookingRecoveryFallback>);
+      await flush();
+
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery()).toBeNull();
+      expect(screen.getByText(/esta página não existe/i)).toBeTruthy();
+      expect(screen.queryByText(/nenhuma saída programada/i)).toBeNull();
+    });
+
+    it('BOOKING_NOT_FOUND no fallback: limpa a referência e mostra o 404', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      const fetchSpy = makeFetch([() => fail(404, 'BOOKING_NOT_FOUND')]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{FALLBACK}</BookingRecoveryFallback>);
+      await flush();
+
+      expect(savedRecovery()).toBeNull();
+      expect(screen.getByText(/esta página não existe/i)).toBeTruthy();
+    });
+  });
+
+  /**
+   * Achado MEDIUM do Codex (07/10/2026): criação do Pix interrompida antes
+   * do QR → reload → GET pending sem Pix. Nunca POST automático; replay só
+   * por clique, sempre com a MESMA key.
+   */
+  describe('Pix pendente sem QR depois de reload (replay explícito com a mesma key)', () => {
+    async function reloadIntoPendingWithoutPix(posts: Array<() => unknown>, gets: Array<() => unknown> = []) {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      const queue = [...posts];
+      const base = makeFetch([() => ok(view('pending', false)), ...gets]);
+      const fetchSpy = vi.fn(async (url: string, init?: any) => {
+        if (url === `/api/bookings/${BOOKING_ID}/payment` && init?.method === 'POST' && queue.length) return queue.shift()!();
+        return base(url, init);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      return fetchSpy;
+    }
+    const posts = (f: ReturnType<typeof vi.fn>) =>
+      f.mock.calls.filter(([u, init]) => u === `/api/bookings/${BOOKING_ID}/payment` && init?.method === 'POST');
+
+    it('reload: nenhum POST automático; key K preservada; "Recuperar Pix" oferecido', async () => {
+      const fetchSpy = await reloadIntoPendingWithoutPix([]);
+
+      expect(screen.getByText(/aguardando confirmação/i)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /recuperar pix/i })).toBeTruthy();
+      expect(posts(fetchSpy)).toHaveLength(0);
+      expect(fetchSpy.mock.calls.filter(([u, i]) => u === '/api/bookings' && i?.method === 'POST')).toHaveLength(0);
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+    });
+
+    it('clique: POST com a MESMA key K (nunca nova) e o QR aparece; duplo clique = uma chamada', async () => {
+      const fetchSpy = await reloadIntoPendingWithoutPix([() => ok(view('pending'), 201)]);
+
+      const button = screen.getByRole('button', { name: /recuperar pix/i });
+      await act(async () => {
+        fireEvent.click(button);
+        fireEvent.click(button);
+      });
+      await flush();
+
+      expect(posts(fetchSpy)).toHaveLength(1);
+      expect(posts(fetchSpy)[0][1].headers['Idempotency-Key']).toBe(SAVED_KEY);
+      expect(screen.getByTestId('pix-copy-paste').textContent).toBe('codigo-pix-recuperado');
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+    });
+
+    it('replay com novo timeout: K continua, retry disponível com a mesma K', async () => {
+      const fetchSpy = await reloadIntoPendingWithoutPix([
+        () => Promise.reject(new TypeError('Failed to fetch')),
+        () => ok(view('pending'), 201),
+      ]);
+
+      fireEvent.click(screen.getByRole('button', { name: /recuperar pix/i }));
+      await flush();
+      expect(screen.getByRole('button', { name: /tentar gerar pix novamente/i })).toBeTruthy();
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+
+      fireEvent.click(screen.getByRole('button', { name: /tentar gerar pix novamente/i }));
+      await flush();
+
+      expect(posts(fetchSpy)).toHaveLength(2);
+      expect(posts(fetchSpy).every(([, init]) => init.headers['Idempotency-Key'] === SAVED_KEY)).toBe(true);
+      expect(screen.getByTestId('pix-copy-paste')).toBeTruthy();
+    });
+
+    it('paid chega pelo polling antes do clique: voucher, sem replay', async () => {
+      const fetchSpy = await reloadIntoPendingWithoutPix([], [() => ok(view('paid', false))]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /recuperar pix/i })).toBeNull();
+      expect(posts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('replay de A não toca na entrada de B do registro', async () => {
+      const BOOKING_ID_B = '2f0d6a3e-1c4b-4b7e-9a51-6d2e8f0c3a77';
+      saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', paymentIdempotencyKey: null });
+      const before = savedRecovery(BOOKING_ID_B);
+      await reloadIntoPendingWithoutPix([() => ok(view('pending'), 201)]);
+
+      fireEvent.click(screen.getByRole('button', { name: /recuperar pix/i }));
+      await flush();
+
+      expect(savedRecovery(BOOKING_ID_B)).toEqual(before);
+    });
+
+    it('sem key original salva: nunca oferece replay (só "Verificar pagamento")', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      const fetchSpy = makeFetch([() => ok(view('pending', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(screen.queryByRole('button', { name: /recuperar pix/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /verificar pagamento/i })).toBeTruthy();
       expect(paymentPosts(fetchSpy)).toHaveLength(0);
     });
   });
