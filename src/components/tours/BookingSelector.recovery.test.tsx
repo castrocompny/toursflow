@@ -122,7 +122,11 @@ async function flush() {
 }
 
 async function bookAndOpenPix() {
-  const departureButton = within(screen.getByRole('list')).getAllByRole('button').find((el) => el.getAttribute('aria-pressed') !== null)!;
+  // Pode haver mais de uma lista na tela (ex.: reservas pagas) — a de saídas é a que tem botões aria-pressed.
+  const departureButton = screen
+    .getAllByRole('list')
+    .flatMap((list) => within(list).queryAllByRole('button'))
+    .find((el) => el.getAttribute('aria-pressed') !== null)!;
   fireEvent.click(departureButton);
   fireEvent.click(screen.getByRole('button', { name: /continuar reserva/i }));
   fireEvent.change(screen.getByLabelText(/nome completo/i), { target: { value: 'Turista Teste' } });
@@ -212,7 +216,7 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
     expect(savedRecovery()).not.toBeNull();
 
     fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
-    expect(savedRecovery()).toBeNull();
+    expect(savedRecovery()).toMatchObject({ bookingId: BOOKING_ID, completed: true }); // comprovante guardado
     expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
   });
 
@@ -526,7 +530,7 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       expect(savedRecovery(BOOKING_ID_B)).not.toBeNull();
     });
 
-    it('"Fazer outra reserva" remove só a entrada atual — a de outro passeio e outras chaves continuam', async () => {
+    it('"Fazer outra reserva" num voucher pago guarda a entrada como comprovante — a de outro passeio e outras chaves continuam', async () => {
       saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
       saveRecovery({ bookingId: BOOKING_ID_B, tourSlug: 'passeio-b', departsAt: departureB.departsAt, paymentIdempotencyKey: SAVED_KEY });
       window.sessionStorage.setItem('outra-chave', 'intacta');
@@ -537,7 +541,7 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
 
       fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
 
-      expect(savedRecovery(BOOKING_ID)).toBeNull();
+      expect(savedRecovery(BOOKING_ID)).toMatchObject({ completed: true }); // paga: vira comprovante, nunca apagada
       expect(savedRecovery(BOOKING_ID_B)).toEqual({
         bookingId: BOOKING_ID_B,
         tourSlug: 'passeio-b',
@@ -667,7 +671,7 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       expect(fetchSpy).not.toHaveBeenCalled();
     });
 
-    it('"Fazer outra reserva" (passeio indisponível): remove só esta reserva e volta ao 404 — nunca uma seleção vazia', async () => {
+    it('"Fazer outra reserva" (passeio indisponível) num voucher pago: guarda como comprovante e volta ao 404 — nunca uma seleção vazia', async () => {
       saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
       const fetchSpy = makeFetch([() => ok(view('paid', false))]);
       vi.stubGlobal('fetch', fetchSpy);
@@ -676,7 +680,7 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
 
       fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
 
-      expect(savedRecovery()).toBeNull();
+      expect(savedRecovery()).toMatchObject({ completed: true });
       expect(screen.getByText(/esta página não existe/i)).toBeTruthy();
       expect(screen.queryByText(/nenhuma saída programada/i)).toBeNull();
     });
@@ -914,6 +918,231 @@ describe('BookingSelector — recuperação depois de reload (sem POST automáti
       await recover(view('pending', false, pastHold()));
       expect(screen.getByText(/verificando pagamento/i)).toBeTruthy();
       expect(screen.queryByRole('button', { name: /fazer outra reserva/i })).toBeNull();
+    });
+  });
+
+  /** Achado HIGH do Codex (review-muytl0wb-7efpju): GET com payment=null nunca pode descartar a key salva. */
+  describe('key salva + GET ainda sem pagamento (POST original possivelmente em andamento)', () => {
+    async function reloadBeforeOriginalPostCommits(postResponses: Array<() => unknown>, getResponses: Array<() => unknown>) {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      const posts = [...postResponses];
+      const base = makeFetch([() => ok(view(null)), ...getResponses]);
+      const fetchSpy = vi.fn(async (url: string, init?: any) => {
+        if (url === `/api/bookings/${BOOKING_ID}/payment` && init?.method === 'POST' && posts.length) return posts.shift()!();
+        return base(url, init);
+      });
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      return fetchSpy;
+    }
+    const paymentPostCalls = (f: ReturnType<typeof vi.fn>) =>
+      f.mock.calls.filter(([u, i]) => u === `/api/bookings/${BOOKING_ID}/payment` && i?.method === 'POST');
+    const bookingPostCalls = (f: ReturnType<typeof vi.fn>) => f.mock.calls.filter(([u, i]) => u === '/api/bookings' && i?.method === 'POST');
+
+    it('A/B/C: K restaurada, nenhuma key nova, nenhum POST automático, nenhuma reserva nova; "Recuperar Pix" oferecido (não a confirmação)', async () => {
+      const fetchSpy = await reloadBeforeOriginalPostCommits([], []);
+
+      expect(screen.queryByRole('button', { name: /pagar com pix/i })).toBeNull();
+      expect(screen.getByRole('button', { name: /recuperar pix/i })).toBeTruthy();
+      expect(paymentPostCalls(fetchSpy)).toHaveLength(0);
+      expect(bookingPostCalls(fetchSpy)).toHaveLength(0);
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+    });
+
+    it('K salva prevalece sobre hold expirado quando o GET ainda não vê o pagamento', async () => {
+      const expiredHold = new Date(Date.now() - 60_000).toISOString();
+      const fetchSpy = await reloadBeforeOriginalPostCommits([], [() => ok(view(null, false, expiredHold))]);
+
+      expect(screen.queryByText(/esta reserva expirou/i)).toBeNull();
+      expect(screen.getByRole('button', { name: /recuperar pix/i })).toBeTruthy();
+      expect(paymentPostCalls(fetchSpy)).toHaveLength(0);
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+    });
+
+    it('D/E: clique → POST com exatamente K; o replay devolve a tentativa que terminou durante o reload (QR)', async () => {
+      const fetchSpy = await reloadBeforeOriginalPostCommits([() => ok(view('pending'), 201)], []);
+
+      fireEvent.click(screen.getByRole('button', { name: /recuperar pix/i }));
+      await flush();
+
+      expect(paymentPostCalls(fetchSpy)).toHaveLength(1);
+      expect(paymentPostCalls(fetchSpy)[0][1].headers['Idempotency-Key']).toBe(SAVED_KEY);
+      expect(screen.getByTestId('pix-copy-paste').textContent).toBe('codigo-pix-recuperado');
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+    });
+
+    it('F: replay com novo timeout → K continua; novo retry usa K', async () => {
+      const fetchSpy = await reloadBeforeOriginalPostCommits(
+        [() => Promise.reject(new TypeError('Failed to fetch')), () => ok(view('pending'), 201)],
+        [],
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: /recuperar pix/i }));
+      await flush();
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+      fireEvent.click(screen.getByRole('button', { name: /tentar gerar pix novamente/i }));
+      await flush();
+
+      expect(paymentPostCalls(fetchSpy).map(([, i]) => i.headers['Idempotency-Key'])).toEqual([SAVED_KEY, SAVED_KEY]);
+      expect(bookingPostCalls(fetchSpy)).toHaveLength(0);
+    });
+
+    it('G: PAYMENT_ALREADY_ACTIVE no replay → K preservada; GET reconcilia com o Pix ativo', async () => {
+      const fetchSpy = await reloadBeforeOriginalPostCommits([() => fail(409, 'PAYMENT_ALREADY_ACTIVE')], [() => ok(view('pending'))]);
+
+      fireEvent.click(screen.getByRole('button', { name: /recuperar pix/i }));
+      await flush();
+      fireEvent.click(screen.getByRole('button', { name: /verificar pagamento/i }));
+      await flush();
+
+      expect(screen.getByTestId('pix-copy-paste')).toBeTruthy();
+      expect(savedRecovery().paymentIdempotencyKey).toBe(SAVED_KEY);
+      expect(paymentPostCalls(fetchSpy)).toHaveLength(1);
+    });
+
+    it('H: o polling vê paid (o POST original terminou e foi pago) → voucher, sem replay', async () => {
+      const fetchSpy = await reloadBeforeOriginalPostCommits([], [() => ok(view('paid', false))]);
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(paymentPostCalls(fetchSpy)).toHaveLength(0);
+    });
+
+    it('sem key salva + GET sem pagamento: confirmação normal ("Pagar com Pix"), como antes', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null });
+      vi.stubGlobal('fetch', makeFetch([() => ok(view(null))]));
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(screen.getByRole('button', { name: /pagar com pix/i })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: /recuperar pix/i })).toBeNull();
+    });
+  });
+
+  /** Achado MEDIUM do Codex (review-muytl0wb-7efpju): começar outra reserva não pode apagar o comprovante pago. */
+  describe('compras pagas guardadas como comprovante', () => {
+    const BOOKING_ID_B = '2f0d6a3e-1c4b-4b7e-9a51-6d2e8f0c3a77';
+
+    async function payThenStartAnother() {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: SAVED_KEY });
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      const page = render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+      return { fetchSpy, page };
+    }
+
+    it('A: voucher pago → "Fazer outra reserva" → A continua no registro como comprovante e aparece na lista', async () => {
+      await payThenStartAnother();
+
+      expect(savedRecovery(BOOKING_ID)).toMatchObject({ bookingId: BOOKING_ID, completed: true, paymentIdempotencyKey: SAVED_KEY });
+      const list = screen.getByTestId('completed-bookings');
+      expect(within(list).getByText(BOOKING_ID)).toBeTruthy();
+      expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
+    });
+
+    it('B/C/D/G: depois disso, reserva B do MESMO passeio é criada; A (paga) e B (ativa) coexistem, B não sobrescreve A', async () => {
+      const { page } = await payThenStartAnother();
+      page.unmount();
+
+      const fetchB = makeFetch([], BOOKING_ID_B);
+      vi.stubGlobal('fetch', fetchB);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      expect(statusGets(fetchB)).toHaveLength(0); // A concluída não é retomada como checkout
+      await bookAndOpenPix();
+      fireEvent.click(screen.getByRole('button', { name: /pagar com pix/i }));
+      await flush();
+
+      expect(calls(fetchB, '/api/bookings', 'POST')).toHaveLength(1);
+      expect(savedRecovery(BOOKING_ID)).toMatchObject({ completed: true });
+      expect(savedRecovery(BOOKING_ID_B)).toMatchObject({ bookingId: BOOKING_ID_B, tourSlug: TOUR_SLUG });
+      expect(savedRecovery(BOOKING_ID_B).completed).toBeUndefined();
+    });
+
+    it('E/F: após reload, "Ver comprovante" reabre o voucher de A só por GET (nenhum POST)', async () => {
+      const { page } = await payThenStartAnother();
+      page.unmount();
+
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+      expect(statusGets(fetchSpy)).toHaveLength(0); // nada é consultado sozinho
+
+      fireEvent.click(within(screen.getByTestId('completed-bookings')).getByRole('button', { name: /ver comprovante/i }));
+      await flush();
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(screen.getByText(BOOKING_ID)).toBeTruthy();
+      expect(statusGets(fetchSpy)).toHaveLength(1);
+      expect(bookingPosts(fetchSpy)).toHaveLength(0);
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('H: duas reservas pagas do mesmo passeio — ambas listadas, nenhuma apagada', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null, completed: true });
+      saveRecovery({ bookingId: BOOKING_ID_B, paymentIdempotencyKey: null, completed: true });
+      vi.stubGlobal('fetch', makeFetch());
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      const list = screen.getByTestId('completed-bookings');
+      expect(within(list).getByText(BOOKING_ID)).toBeTruthy();
+      expect(within(list).getByText(BOOKING_ID_B)).toBeTruthy();
+    });
+
+    it('I: encerrar uma reserva terminal (expirada) remove só ela — as pagas ficam', async () => {
+      const BOOKING_ID_C = '5e7b9c1d-2a3f-4b6c-8d9e-1f2a3b4c5d6e';
+      saveRecovery({ bookingId: BOOKING_ID_B, paymentIdempotencyKey: null, completed: true });
+      saveRecovery({ bookingId: BOOKING_ID_C, paymentIdempotencyKey: null });
+      const pastHold = new Date(Date.now() - 60_000).toISOString();
+      vi.stubGlobal('fetch', makeFetch([() => ok({ ...view(null, false, pastHold), bookingId: BOOKING_ID_C })], BOOKING_ID_C));
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      expect(screen.getByText(/esta reserva expirou/i)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: /fazer outra reserva/i }));
+
+      expect(savedRecovery(BOOKING_ID_C)).toBeNull();
+      expect(savedRecovery(BOOKING_ID_B)).toMatchObject({ completed: true });
+      expect(within(screen.getByTestId('completed-bookings')).getByText(BOOKING_ID_B)).toBeTruthy();
+    });
+
+    it('fallback (passeio despublicado) só com comprovante: lista aparece e reabre o voucher por GET', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null, completed: true });
+      const fetchSpy = makeFetch([() => ok(view('paid', false))]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingRecoveryFallback>{<p>Esta página não existe</p>}</BookingRecoveryFallback>);
+      await flush();
+
+      fireEvent.click(within(screen.getByTestId('completed-bookings')).getByRole('button', { name: /ver comprovante/i }));
+      await flush();
+
+      expect(screen.getByText(/pagamento recebido/i)).toBeTruthy();
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
+    });
+
+    it('comprovante inexistente: BOOKING_NOT_FOUND remove a entrada da lista sem exigir reload', async () => {
+      saveRecovery({ bookingId: BOOKING_ID, paymentIdempotencyKey: null, completed: true });
+      const fetchSpy = makeFetch([() => fail(404, 'BOOKING_NOT_FOUND')]);
+      vi.stubGlobal('fetch', fetchSpy);
+      render(<BookingSelector departures={[available]} tourSlug={TOUR_SLUG} />);
+      await flush();
+
+      fireEvent.click(within(screen.getByTestId('completed-bookings')).getByRole('button', { name: /ver comprovante/i }));
+      await flush();
+
+      expect(savedRecovery()).toBeNull();
+      expect(screen.queryByTestId('completed-bookings')).toBeNull();
+      expect(screen.getByRole('button', { name: /continuar reserva/i })).toBeTruthy();
+      expect(paymentPosts(fetchSpy)).toHaveLength(0);
     });
   });
 });

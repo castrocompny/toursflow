@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   BOOKING_RECOVERY_STORAGE_KEY,
   findBookingRecovery,
+  listCompletedBookings,
+  markBookingCompleted,
   readBookingRecoveries,
   removeBookingRecovery,
   saveBookingRecovery,
@@ -154,5 +156,44 @@ describe('booking-recovery (registro v3, uma entrada por bookingId)', () => {
     expect(findBookingRecovery('passeio-a', throwing)).toBeNull();
     expect(() => saveBookingRecovery(A, throwing)).not.toThrow();
     expect(() => removeBookingRecovery(A.bookingId, throwing)).not.toThrow();
+  });
+
+  it('compra paga marcada como concluída: some do checkout ativo, fica listada como comprovante; nunca é apagada', () => {
+    const storage = memoryStorage();
+    saveBookingRecovery(A, storage);
+    markBookingCompleted(A.bookingId, storage);
+
+    expect(findBookingRecovery('passeio-a', storage)).toBeNull();
+    expect(listCompletedBookings('passeio-a', storage)).toEqual([{ ...A, completed: true }]);
+
+    const A2 = { ...B, tourSlug: 'passeio-a' };
+    saveBookingRecovery(A2, storage); // novo checkout do MESMO passeio
+    expect(findBookingRecovery('passeio-a', storage)).toEqual(A2);
+    expect(listCompletedBookings('passeio-a', storage)).toEqual([{ ...A, completed: true }]);
+  });
+
+  it('várias pagas do mesmo passeio: todas listadas, na ordem; remover uma terminal não toca nas pagas', () => {
+    const storage = memoryStorage();
+    const A2 = { ...B, tourSlug: 'passeio-a' };
+    const C = { ...A, bookingId: '5e7b9c1d-2a3f-4b6c-8d9e-1f2a3b4c5d6e', paymentIdempotencyKey: null };
+    saveBookingRecovery(A, storage);
+    markBookingCompleted(A.bookingId, storage);
+    saveBookingRecovery(A2, storage);
+    markBookingCompleted(A2.bookingId, storage);
+    saveBookingRecovery(C, storage);
+
+    removeBookingRecovery(C.bookingId, storage);
+
+    expect(listCompletedBookings('passeio-a', storage).map((e) => e.bookingId)).toEqual([A.bookingId, A2.bookingId]);
+    expect(findBookingRecovery('passeio-a', storage)).toBeNull();
+  });
+
+  it('completed inválido descarta só aquela entrada; completed ausente = ativa', () => {
+    const storage = memoryStorage();
+    storage.setItem(
+      BOOKING_RECOVERY_STORAGE_KEY,
+      JSON.stringify({ version: 3, bookings: { [A.bookingId]: A, [B.bookingId]: { ...B, completed: 'sim' } } }),
+    );
+    expect(readBookingRecoveries(storage)).toEqual([A]);
   });
 });

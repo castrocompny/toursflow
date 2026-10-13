@@ -175,9 +175,17 @@ export function PixPayment({
   const hasView = view !== null;
 
   /** Aplica a resposta autoritativa do servidor; devolve o status lido. */
-  function applyServerView(updated: NauticFlowBookingPaymentView): PaymentStatus {
+  function applyServerView(updated: NauticFlowBookingPaymentView): PaymentStatus | 'closed' {
+    if (settledRef.current) return updated.payment?.status ?? 'pending';
+    if (!updated.payment && !isBookingPayable(updated)) {
+      // Servidor: nenhuma tentativa existe e a reserva não aceita mais uma
+      // (hold vencido/cancelada) — nada foi cobrado, reserva encerrada.
+      settledRef.current = true;
+      setView(updated);
+      setPhase('closed');
+      return 'closed';
+    }
     const status = updated.payment?.status ?? 'pending';
-    if (settledRef.current) return status;
     setView(updated);
     if (status === 'paid') {
       settledRef.current = true;

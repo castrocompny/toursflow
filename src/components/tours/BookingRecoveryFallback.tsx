@@ -3,7 +3,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
 import { PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
-import { findBookingRecovery } from '@/lib/booking-recovery';
+import { findBookingRecovery, listCompletedBookings } from '@/lib/booking-recovery';
 import { BookingSelector } from './BookingSelector';
 
 /** `/passeios/{destino}/{slug}` → `slug` (= `tour.slug`, o mesmo gravado na recuperação). */
@@ -32,7 +32,8 @@ export function BookingRecoveryFallback({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!PAYMENTS_UI_ENABLED) return;
     const slug = tourSlugFromPathname(pathname);
-    if (slug && findBookingRecovery(slug)) setTourSlug(slug);
+    // Checkout ativo OU compra paga guardada (comprovante) deste passeio.
+    if (slug && (findBookingRecovery(slug) || listCompletedBookings(slug).length > 0)) setTourSlug(slug);
   }, [pathname]);
 
   if (!tourSlug || dismissed) return <>{children}</>;

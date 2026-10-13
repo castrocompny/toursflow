@@ -38,6 +38,8 @@ import { isHoldExpired } from '@/lib/hold-countdown';
 import { PaymentClientError, ToursFlowPaymentClient } from '@/lib/payment-client';
 import {
   findBookingRecovery,
+  listCompletedBookings,
+  markBookingCompleted,
   removeBookingRecovery,
   saveBookingRecovery,
   type BookingRecoveryState,
@@ -308,6 +310,9 @@ export function BookingSelector({
   // Uma única recuperação por montagem — inclusive no double-invoke de
   // efeitos do React Strict Mode (GET é leitura, mas não precisa duplicar).
   const recoveryStartedRef = useRef(false);
+  // Compras pagas guardadas deste passeio (comprovantes) — só referências
+  // opacas; o voucher é sempre remontado por GET ao reabrir.
+  const [completedBookings, setCompletedBookings] = useState<BookingRecoveryState[]>([]);
   const recoveringRef = useRef(false);
 
   // Janela atual de datas — só essas ficam montadas no DOM da faixa
@@ -338,6 +343,7 @@ export function BookingSelector({
   useEffect(() => {
     if (!PAYMENTS_UI_ENABLED || !tourSlug || recoveryStartedRef.current) return;
     recoveryStartedRef.current = true;
+    setCompletedBookings(listCompletedBookings(tourSlug));
     // Só a entrada DESTE passeio; as de outros passeios ficam intactas no
     // registro para as páginas deles (v3, uma entrada por bookingId).
     const saved = findBookingRecovery(tourSlug);
@@ -360,6 +366,7 @@ export function BookingSelector({
         // Reserva não existe mais (ou nunca foi do marketplace): nada a
         // recuperar — limpa só a referência e volta ao fluxo normal.
         removeBookingRecovery(saved.bookingId);
+        setCompletedBookings(tourSlug ? listCompletedBookings(tourSlug) : []);
         setRecoveryState(null);
         setStep('selection');
         onRecoveryDismissed?.();
@@ -375,6 +382,11 @@ export function BookingSelector({
   }
 
   function applyRecoveredView(view: NauticFlowBookingPaymentView, saved: BookingRecoveryState) {
+    // A key salva volta ANTES de olhar o pagamento: ela representa uma
+    // tentativa possivelmente ainda em andamento (o POST original pode não ter
+    // terminado quando a aba recarregou) e nunca é trocada por uma nova.
+    setPaymentIdempotencyKey(saved.paymentIdempotencyKey);
+    setRecoveredKeyIsOriginal(saved.paymentIdempotencyKey !== null);
     setBookingResult({
       bookingId: view.bookingId,
       status: view.bookingStatus,
@@ -389,12 +401,21 @@ export function BookingSelector({
       return;
     }
     if (!view.payment) {
+      if (saved.paymentIdempotencyKey) {
+        // "Pagar com Pix" já foi clicado (key salva), mas o GET ainda não vê
+        // a tentativa: possível POST em andamento. A key preserva a
+        // reconciliação mesmo se o hold local já estiver vencido ou o status
+        // ainda não refletir o POST original. Nada é criado sozinho — o
+        // PixPayment mostra "Recuperar Pix" (replay com a MESMA key) e segue
+        // consultando por GET.
+        setRecoveredView(view);
+        setStep('payment-pix');
+        return;
+      }
       // Sem NENHUMA tentativa de pagamento, não há dinheiro em jogo: hold
       // vencido (`holdExpiresAt` do servidor) ou reserva cancelada vira um
       // estado final com "Fazer outra reserva" (achado MEDIUM do Codex) —
-      // nunca uma confirmação inutilizável restaurada a cada reload. Com
-      // tentativa existente (abaixo) isso NUNCA acontece: pending segue para
-      // reconciliação no PixPayment, mesmo com o prazo local vencido.
+      // nunca uma confirmação inutilizável restaurada a cada reload.
       if (view.bookingStatus === 'cancelada' || isHoldExpired(view.holdExpiresAt)) {
         setStep('recovery-expired');
         return;
@@ -407,18 +428,25 @@ export function BookingSelector({
     // Tentativa existente (pending/failed/estornada): exibida a partir da
     // view, sem POST. A key salva é a da MESMA tentativa (retry = replay);
     // sem ela, a key nova só seria usada por uma ação explícita.
-    setPaymentIdempotencyKey(saved.paymentIdempotencyKey ?? createIdempotencyKey());
-    // Sem a key original, nunca oferece replay de criação (só GET).
-    setRecoveredKeyIsOriginal(saved.paymentIdempotencyKey !== null);
+    // Sem key salva, uma key nova fica só para ação explícita ("Gerar novo
+    // Pix" após failed) — nunca para replay de criação (só GET).
+    if (!saved.paymentIdempotencyKey) setPaymentIdempotencyKey(createIdempotencyKey());
     setRecoveredView(view);
     setStep('payment-pix');
   }
 
   function handleStartNewBooking() {
-    // Remove só a entrada da reserva atual — reservas de outros passeios
-    // (e outras chaves do sessionStorage) continuam intactas.
+    // Só a reserva atual é afetada — outros passeios (e outras chaves do
+    // sessionStorage) continuam intactos. Compra PAGA nunca é apagada: vira
+    // comprovante guardado (`completed`), reabrível pela lista de reservas
+    // pagas. Reserva encerrada sem compra (expirada, cancelada, failed não
+    // pagável, estornada) sai do registro.
     const currentBookingId = bookingResult?.bookingId ?? recoveryState?.bookingId;
-    if (currentBookingId) removeBookingRecovery(currentBookingId);
+    if (currentBookingId) {
+      if (step === 'voucher') markBookingCompleted(currentBookingId);
+      else removeBookingRecovery(currentBookingId);
+    }
+    if (tourSlug) setCompletedBookings(listCompletedBookings(tourSlug));
     setRecoveryState(null);
     setBookingResult(null);
     setPaymentResult(null);
@@ -601,11 +629,42 @@ export function BookingSelector({
     );
   }
 
+  // Compras pagas desta aba para este passeio: reabre o voucher por GET
+  // (nenhum POST), sem depender do catálogo de venda.
+  const completedBookingsList =
+    step === 'selection' && completedBookings.length > 0 ? (
+      <section aria-labelledby="completed-bookings" className="rounded-card border border-ink/10 bg-white p-4" data-testid="completed-bookings">
+        <h4 id="completed-bookings" className="text-sm font-semibold">
+          Reservas pagas neste passeio
+        </h4>
+        <ul className="mt-2 space-y-2">
+          {completedBookings.map((entry) => (
+            <li key={entry.bookingId} className="flex items-center justify-between gap-3 text-sm">
+              <span className="truncate text-ink-muted">{entry.bookingId}</span>
+              <button
+                type="button"
+                className="btn-secondary shrink-0 px-3 py-1.5 text-xs"
+                onClick={() => {
+                  setRecoveryState(entry);
+                  void recoverBooking(entry);
+                }}
+              >
+                Ver comprovante
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ) : null;
+
   if (departures.length === 0 && step === 'selection') {
     return (
-      <p className="rounded-card border border-dashed border-ink/20 bg-sand px-5 py-6 text-center text-sm text-ink-muted">
-        Nenhuma saída programada no momento. Volte em breve para conferir novas datas.
-      </p>
+      <div className="space-y-4">
+        {completedBookingsList}
+        <p className="rounded-card border border-dashed border-ink/20 bg-sand px-5 py-6 text-center text-sm text-ink-muted">
+          Nenhuma saída programada no momento. Volte em breve para conferir novas datas.
+        </p>
+      </div>
     );
   }
 
@@ -723,6 +782,7 @@ export function BookingSelector({
 
   return (
     <div className="space-y-4 sm:space-y-5">
+      {completedBookingsList}
       {/* Faixa "Escolha a data" — janela deslizante de no máximo `dateWindowSize`
           chips (3 <400px / 4 mobile / 5 tablet / 7 desktop), nunca a agenda
           inteira montada de uma vez. `‹`/`›` deslizam a janela; tocar num chip

@@ -30,6 +30,19 @@
  * índice de busca da página atual; gravar, atualizar e remover sempre
  * atingem uma única entrada.
  *
+ * Checkout ATIVO vs. compra CONCLUÍDA (achado do Codex, 07/10/2026): uma
+ * entrada paga não é apagada quando o turista começa outra reserva — vira
+ * `completed: true` (comprovante guardado). Só entradas ativas bloqueiam um
+ * novo checkout do mesmo passeio (`findBookingRecovery`); as concluídas
+ * ficam listadas para reabrir o voucher (`listCompletedBookings`), sempre
+ * por GET. Não existe conta nem histórico de reservas — este registro da
+ * aba é o único caminho da aplicação de volta ao comprovante.
+ *
+ * `paymentIdempotencyKey` salva = tentativa POTENCIALMENTE em andamento:
+ * mesmo que o GET ainda devolva `payment: null` (o POST original pode não
+ * ter terminado quando a aba recarregou), a key nunca é descartada nem
+ * trocada por uma nova (achado HIGH do Codex, 07/10/2026).
+ *
  * Toda falha de storage (indisponível, cota, modo privado) é engolida: a
  * recuperação é um extra, nunca pode quebrar o checkout.
  */
@@ -49,6 +62,8 @@ export interface BookingRecoveryState {
   tourSlug: string;
   departsAt: string;
   paymentIdempotencyKey: string | null;
+  /** Compra paga guardada só como comprovante — não é mais o checkout ativo do passeio. Ausente = ativa. */
+  completed?: boolean;
 }
 
 type Registry = Map<string, BookingRecoveryState>;
@@ -74,17 +89,19 @@ function isValidEntry(value: unknown): value is BookingRecoveryState {
     v.departsAt.length <= MAX_DEPARTS_AT_LENGTH &&
     !Number.isNaN(new Date(v.departsAt).getTime()) &&
     (v.paymentIdempotencyKey === null ||
-      (typeof v.paymentIdempotencyKey === 'string' && UUID_RE.test(v.paymentIdempotencyKey)))
+      (typeof v.paymentIdempotencyKey === 'string' && UUID_RE.test(v.paymentIdempotencyKey))) &&
+    (v.completed === undefined || typeof v.completed === 'boolean')
   );
 }
 
-/** Whitelist explícita — só estes 4 campos, nunca o objeto recebido. */
+/** Whitelist explícita — só estes campos, nunca o objeto recebido. */
 function pick(entry: BookingRecoveryState): BookingRecoveryState {
   return {
     bookingId: entry.bookingId,
     tourSlug: entry.tourSlug,
     departsAt: entry.departsAt,
     paymentIdempotencyKey: entry.paymentIdempotencyKey,
+    ...(entry.completed ? { completed: true } : {}),
   };
 }
 
@@ -157,14 +174,30 @@ export function readBookingRecoveries(storage: Storage | null = getStorage()): B
 }
 
 /**
- * A reserva recuperável deste passeio, ou `null`. O `BookingSelector` não
- * cria uma segunda reserva do mesmo passeio enquanto existir uma aqui, então
- * em uso normal há no máximo uma; se ainda assim houver mais (aba
- * duplicada etc.), devolve sempre a mais recente — nunca uma ao acaso.
+ * O checkout ATIVO deste passeio, ou `null` (compras concluídas não contam).
+ * O `BookingSelector` não cria uma segunda reserva do mesmo passeio enquanto
+ * existir uma ativa aqui, então em uso normal há no máximo uma; se ainda
+ * assim houver mais (aba duplicada etc.), devolve sempre a mais recente —
+ * nunca uma ao acaso.
  */
 export function findBookingRecovery(tourSlug: string, storage: Storage | null = getStorage()): BookingRecoveryState | null {
-  const forTour = readBookingRecoveries(storage).filter((entry) => entry.tourSlug === tourSlug);
+  const forTour = readBookingRecoveries(storage).filter((entry) => entry.tourSlug === tourSlug && !entry.completed);
   return forTour[forTour.length - 1] ?? null;
+}
+
+/** Compras pagas guardadas deste passeio (ordem de criação) — todas, nunca uma escolhida ao acaso. */
+export function listCompletedBookings(tourSlug: string, storage: Storage | null = getStorage()): BookingRecoveryState[] {
+  return readBookingRecoveries(storage).filter((entry) => entry.tourSlug === tourSlug && entry.completed);
+}
+
+/** Paga e fora do checkout ativo: mantém a entrada só como comprovante. */
+export function markBookingCompleted(bookingId: string, storage: Storage | null = getStorage()): void {
+  if (!storage) return;
+  const registry = loadRegistry(storage);
+  const entry = registry.get(bookingId);
+  if (!entry || entry.completed) return;
+  registry.set(bookingId, { ...entry, completed: true });
+  persist(storage, registry);
 }
 
 /** Upsert de UMA entrada (por `bookingId`) — nunca apaga as demais. */
