@@ -65,6 +65,18 @@ A rota `/api/bookings` **exige** o header `Idempotency-Key` (formato UUID) e o r
 
 `validateBookingInput()` extrai **só** `departureId`, `quantity`, `customer.{name,email,phone,cpf}` — mesmo que o JSON recebido contenha `companyId`, `tourId`, `price`, `total`, `status`, `source` ou qualquer outro campo, eles nunca chegam ao objeto validado nem são repassados ao NauticFlow. Preço e operador são sempre resolvidos pelo NauticFlow a partir do `departureId`.
 
+### Snapshot da política de cancelamento (em implementação)
+
+A rota server-side do ToursFlow acrescenta `marketplacePolicy` ao payload enviado ao NauticFlow. Esse objeto nunca vem do navegador: é a constante oficial `MARKETPLACE_CANCELLATION_POLICY`, com `id`, `version`, `title`, `summary` e `terms`.
+
+A migration `0080_marketplace_policy_snapshot.sql` adiciona à reserva do NauticFlow:
+
+- `marketplace_policy_id`;
+- `marketplace_policy_version`;
+- `marketplace_policy_snapshot` (`jsonb`).
+
+O NauticFlow valida a estrutura e grava a cópia na mesma transação da reserva. A migration ainda precisa ser aplicada/verificada no ambiente correto; até essa confirmação, o fluxo de checkout permanece desligado.
+
 ## Contrato de price types (confirmado)
 
 Tabela completa, padrão de segurança e histórico em

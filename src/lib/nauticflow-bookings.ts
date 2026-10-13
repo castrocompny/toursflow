@@ -1,5 +1,6 @@
 import 'server-only';
 import type { BookingRequestInput, NauticFlowBookingResponseData } from '@/types/booking';
+import { MARKETPLACE_CANCELLATION_POLICY, type MarketplaceCancellationPolicy } from './marketplace-cancellation-policy';
 import { BookingApiError, isKnownBookingErrorCode } from './booking-errors';
 import { getBookingErrorMessage } from './booking-error-messages';
 
@@ -43,6 +44,7 @@ export async function createNauticFlowBooking(
   input: BookingRequestInput,
   idempotencyKey: string,
   clientKey: string,
+  marketplacePolicy: MarketplaceCancellationPolicy = MARKETPLACE_CANCELLATION_POLICY,
 ): Promise<NauticFlowBookingResult> {
   const baseUrl = process.env.NAUTICFLOW_API_URL;
   const secret = process.env.TOURSFLOW_API_SECRET;
@@ -62,6 +64,13 @@ export async function createNauticFlowBooking(
       email: input.customer.email,
       phone: input.customer.phone,
       ...(input.customer.cpf ? { cpf: input.customer.cpf } : {}),
+    },
+    marketplacePolicy: {
+      id: marketplacePolicy.id,
+      version: marketplacePolicy.version,
+      title: marketplacePolicy.title,
+      summary: marketplacePolicy.summary,
+      terms: [...marketplacePolicy.terms],
     },
   };
 

@@ -8,6 +8,7 @@ import { createToursFlowClientKey } from '@/lib/toursflow-client-key';
 import { MAX_BODY_BYTES, hasAllowedContentType, isTrustedOrigin, noStoreJson, readBodyWithLimit } from '@/lib/http-guards';
 import { BOOKING_CHECKOUT_ENABLED, PAYMENTS_UI_ENABLED } from '@/lib/feature-flags';
 import { validateCpf } from '@/lib/customer-form';
+import { MARKETPLACE_CANCELLATION_POLICY } from '@/lib/marketplace-cancellation-policy';
 
 /**
  * POST /api/bookings — única rota do ToursFlow que inicia uma reserva.
@@ -103,7 +104,12 @@ export async function POST(request: Request) {
       throw new BookingApiError(400, 'INVALID_REQUEST', 'customer.cpf válido é obrigatório para pagar com Pix.');
     }
 
-    const result = await createNauticFlowBooking(input.data, idempotency.data, clientKey);
+    const result = await createNauticFlowBooking(
+      input.data,
+      idempotency.data,
+      clientKey,
+      MARKETPLACE_CANCELLATION_POLICY,
+    );
 
     const response = noStoreJson({ data: result.data }, { status: result.status });
     if (result.replayed) response.headers.set('Idempotency-Replayed', 'true');
